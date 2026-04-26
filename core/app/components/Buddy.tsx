@@ -295,8 +295,29 @@ export default function Buddy() {
 
     let lastJson = '';
     let raf = 0;
+    let dragActive = false;
+
+    const pushFullWindow = () => {
+      const dpr = window.devicePixelRatio || 1;
+      const rect = [{
+        x: 0,
+        y: 0,
+        w: Math.ceil(window.innerWidth * dpr),
+        h: Math.ceil(window.innerHeight * dpr),
+      }];
+      const json = JSON.stringify(rect);
+      if (json !== lastJson) {
+        lastJson = json;
+        try { native.setTouchableRegion(json); } catch { /* noop */ }
+      }
+    };
+
     const measure = () => {
       raf = 0;
+      // While a pointer is down on a buddy element, keep the entire window
+      // touchable so the gesture stream survives the finger leaving any
+      // single rect. Per-element rects resume on pointerup/pointercancel.
+      if (dragActive) { pushFullWindow(); return; }
       const dpr = window.devicePixelRatio || 1;
       const els = document.querySelectorAll<HTMLElement>('[data-buddy-interactive]');
       const rects: { x: number; y: number; w: number; h: number }[] = [];
@@ -321,6 +342,18 @@ export default function Buddy() {
       raf = requestAnimationFrame(measure);
     };
 
+    const onPointerDownCapture = (ev: PointerEvent) => {
+      const t = ev.target as Element | null;
+      if (!t || !t.closest?.('[data-buddy-interactive]')) return;
+      dragActive = true;
+      pushFullWindow();
+    };
+    const onPointerEnd = () => {
+      if (!dragActive) return;
+      dragActive = false;
+      schedule();
+    };
+
     schedule();
     const ro = new ResizeObserver(schedule);
     ro.observe(document.documentElement);
@@ -333,18 +366,18 @@ export default function Buddy() {
     mo.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['style', 'class'] });
     window.addEventListener('scroll', schedule, true);
     window.addEventListener('resize', schedule);
-
-    // Buddy positions update via React state every animation frame during
-    // drag — the MutationObserver catches style changes, but a low-rate poll
-    // covers any cases the observer misses.
-    const poll = window.setInterval(schedule, 250);
+    document.addEventListener('pointerdown', onPointerDownCapture, true);
+    document.addEventListener('pointerup', onPointerEnd, true);
+    document.addEventListener('pointercancel', onPointerEnd, true);
 
     return () => {
       ro.disconnect();
       mo.disconnect();
       window.removeEventListener('scroll', schedule, true);
       window.removeEventListener('resize', schedule);
-      window.clearInterval(poll);
+      document.removeEventListener('pointerdown', onPointerDownCapture, true);
+      document.removeEventListener('pointerup', onPointerEnd, true);
+      document.removeEventListener('pointercancel', onPointerEnd, true);
       if (raf) cancelAnimationFrame(raf);
       try { native.setTouchableRegion('[]'); } catch { /* noop */ }
     };

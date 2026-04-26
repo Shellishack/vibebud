@@ -1,7 +1,9 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import dynamic from 'next/dynamic';
+import { Capacitor } from '@capacitor/core';
 import { VARIANTS, buildAnimation, cssColor, type Emotion } from './avatars';
 import { PERSONALITY_BY_VARIANT, type Personality } from './personalities';
 import {
@@ -50,7 +52,21 @@ export default function BuddyInstance({ state, anchor, canRemove, onChange, onSp
     PERSONALITY_BY_VARIANT[state.variantId] ?? PERSONALITY_BY_VARIANT.violet;
 
   const [open, setOpen] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
   const [toasts, setToasts] = useState<Toast[]>([]);
+
+  useEffect(() => {
+    // Detect mobile-style runtime: Capacitor Android (definitive — that's our
+    // overlay) or any narrow viewport (covers chrome://inspect / web preview).
+    const onResize = () => {
+      const native = Capacitor.getPlatform() !== 'web';
+      const narrow = window.matchMedia('(max-width: 480px)').matches;
+      setIsMobile(native || narrow);
+    };
+    onResize();
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
   const [input, setInput] = useState('');
   const [emotion, setEmotion] = useState<Emotion>('idle');
   const [busy, setBusy] = useState(false);
@@ -211,6 +227,18 @@ export default function BuddyInstance({ state, anchor, canRemove, onChange, onSp
 
   const onPointerDown = (e: React.PointerEvent) => {
     e.preventDefault();
+    // Defensive: if a previous drag never received pointerup/pointercancel
+    // (can happen on Android when a finger leaves the touchable region on a
+    // hardened OEM ROM), the buddy gets stuck with draggingRef + the click
+    // suppressor justDraggedRef set, making it look unresponsive. Reset both
+    // before starting a fresh gesture.
+    if (dragRef.current || draggingRef.current) {
+      dragRef.current = null;
+      draggingRef.current = false;
+      justDraggedRef.current = false;
+      setIsDragging(false);
+      ((window as any).__vibemojiDragging as Set<string> | undefined)?.delete(state.id);
+    }
     const v = (window as any).vibemoji;
     try { (e.currentTarget as Element).setPointerCapture(e.pointerId); } catch { /* noop */ }
     draggingRef.current = true;
@@ -298,8 +326,38 @@ export default function BuddyInstance({ state, anchor, canRemove, onChange, onSp
         transition: isDragging ? 'none' : 'transform 360ms cubic-bezier(0.22, 1, 0.36, 1)',
       }}
     >
-      {/* Toast stack — anchored above this buddy. */}
-      <div className="pointer-events-none absolute bottom-full right-0 mb-3 flex w-80 flex-col gap-2">
+      {/* Toast stack — anchored above this buddy on desktop, full-width
+          bottom-anchored on mobile (the buddy lives at the bottom-right edge
+          of a phone screen so the desktop right-anchored 320 px stack would
+          overflow off-screen). */}
+      {isMobile && toasts.length > 0 && typeof document !== 'undefined' && createPortal(
+        <div className="pointer-events-none fixed left-3 right-3 bottom-36 z-[60] flex flex-col gap-2">
+          {toasts.map((t) => (
+            <div
+              key={t.id}
+              data-buddy-interactive
+              className={`pointer-events-auto rounded-2xl border bg-white/95 p-4 shadow-xl backdrop-blur-md transition-all dark:bg-zinc-900/95 ${
+                t.tone === 'action' ? 'border-violet-300 dark:border-violet-500/50'
+                : t.tone === 'success' ? 'border-emerald-300 dark:border-emerald-500/50'
+                : 'border-zinc-200 dark:border-zinc-700'
+              }`}
+              style={{ animation: 'buddy-toast-in 240ms ease-out' }}
+            >
+              <div className="flex items-start gap-3">
+                <div className={`mt-0.5 h-2 w-2 shrink-0 rounded-full ${
+                  t.tone === 'action' ? 'bg-violet-500' : t.tone === 'success' ? 'bg-emerald-500' : 'bg-zinc-400'
+                }`} />
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">{t.title}</p>
+                  <p className="mt-0.5 text-xs leading-relaxed text-zinc-600 dark:text-zinc-400">{t.body}</p>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>,
+        document.body,
+      )}
+      <div className={`pointer-events-none absolute bottom-full right-0 mb-3 flex w-80 flex-col gap-2 ${isMobile ? 'hidden' : ''}`}>
         {toasts.map((t) => (
           <div
             key={t.id}
@@ -325,11 +383,18 @@ export default function BuddyInstance({ state, anchor, canRemove, onChange, onSp
       </div>
 
       <div className="flex items-end gap-3">
-        {open && (
+        {open && (() => {
+          const panel = (
           <div
             data-buddy-interactive
-            className="pointer-events-auto mb-2 flex w-80 flex-col rounded-3xl border border-zinc-200 bg-white/95 shadow-2xl backdrop-blur-md dark:border-zinc-700 dark:bg-zinc-900/95"
-            style={{ height: 380, animation: 'buddy-bubble-in 220ms ease-out' }}
+            className={isMobile
+              ? "pointer-events-auto fixed left-3 right-3 bottom-3 z-[60] flex flex-col rounded-3xl border border-zinc-200 bg-white/95 shadow-2xl backdrop-blur-md dark:border-zinc-700 dark:bg-zinc-900/95"
+              : "pointer-events-auto mb-2 flex w-80 flex-col rounded-3xl border border-zinc-200 bg-white/95 shadow-2xl backdrop-blur-md dark:border-zinc-700 dark:bg-zinc-900/95"
+            }
+            style={isMobile
+              ? { maxHeight: '85vh', animation: 'buddy-bubble-in 220ms ease-out' }
+              : { height: 380, animation: 'buddy-bubble-in 220ms ease-out' }
+            }
           >
             <div className="border-b border-zinc-200 px-4 py-3 dark:border-zinc-700">
               <div className="flex items-center justify-between">
@@ -530,7 +595,23 @@ export default function BuddyInstance({ state, anchor, canRemove, onChange, onSp
               </div>
             </div>
           </div>
-        )}
+          );
+          if (isMobile && typeof document !== 'undefined') {
+            return createPortal(
+              <>
+                <div
+                  data-buddy-interactive
+                  onClick={() => setOpen(false)}
+                  className="fixed inset-0 z-[55] bg-black/30 backdrop-blur-sm"
+                  style={{ animation: 'buddy-bubble-in 180ms ease-out' }}
+                />
+                {panel}
+              </>,
+              document.body,
+            );
+          }
+          return panel;
+        })()}
 
         <div className="relative">
           {magnetState && (

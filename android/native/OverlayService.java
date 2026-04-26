@@ -339,13 +339,13 @@ public class OverlayService extends Service {
                     touchableRects.clear();
                     touchableRects.addAll(next);
                 }
-                // Force a layout pass so onComputeInternalInsets fires with
-                // the new region. requestLayout alone is unreliable for this.
+                // Force a measurement pass so onComputeInternalInsets fires
+                // with the new region. requestLayout is much lighter than
+                // WindowManager.updateViewLayout — the latter sometimes
+                // perturbs in-flight gesture routing and was causing taps to
+                // "die" after a drag in earlier iterations.
                 main.post(() -> {
-                    if (windowManager == null || webView == null || params == null) return;
-                    try {
-                        windowManager.updateViewLayout(webView, params);
-                    } catch (IllegalArgumentException ignored) { /* detached */ }
+                    if (webView != null) webView.requestLayout();
                 });
             } catch (Exception ignored) { /* malformed JSON */ }
         }
