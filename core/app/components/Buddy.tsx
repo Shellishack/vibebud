@@ -97,6 +97,17 @@ export default function Buddy() {
     setBuddies((cur) => (cur.length <= 1 ? cur : cur.filter((b) => b.id !== id)));
   };
 
+  const openSetRef = useRef<Set<string>>(new Set());
+  const focusableRef = useRef(false);
+  const onOpenChange = (id: string, isOpen: boolean) => {
+    if (isOpen) openSetRef.current.add(id);
+    else openSetRef.current.delete(id);
+    const wantFocusable = openSetRef.current.size > 0;
+    if (wantFocusable === focusableRef.current) return;
+    focusableRef.current = wantFocusable;
+    (window as any).vibemoji?.setFocusable?.(wantFocusable);
+  };
+
   return (
     <>
       {buddies.map((b, i) => (
@@ -108,6 +119,7 @@ export default function Buddy() {
           onChange={(next) => updateBuddy(b.id, next)}
           onSpawn={spawnBuddy}
           onRemove={() => removeBuddy(b.id)}
+          onOpenChange={onOpenChange}
         />
       ))}
 

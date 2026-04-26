@@ -30,6 +30,10 @@ function createWindow() {
     hasShadow: false,
     alwaysOnTop: true,
     skipTaskbar: true,
+    // Non-focusable so clicks on the avatar don't steal keyboard focus from
+    // text-input apps (notepad, VS Code, etc.). Renderer flips this to true
+    // while a chat bubble is open so its input can accept typing.
+    focusable: false,
     backgroundColor: '#00000000',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
@@ -83,6 +87,12 @@ app.whenReady().then(() => {
     } else {
       win.setIgnoreMouseEvents(true, { forward: true });
     }
+  });
+
+  ipcMain.on('set-focusable', (_event, focusable) => {
+    if (!win) return;
+    win.setFocusable(Boolean(focusable));
+    if (focusable) win.focus();
   });
 
   createWindow();

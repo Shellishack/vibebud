@@ -31,9 +31,10 @@ type Props = {
   onChange: (next: BuddyInstanceState) => void;
   onSpawn: () => void;
   onRemove: () => void;
+  onOpenChange?: (id: string, open: boolean) => void;
 };
 
-export default function BuddyInstance({ state, anchor, canRemove, onChange, onSpawn, onRemove }: Props) {
+export default function BuddyInstance({ state, anchor, canRemove, onChange, onSpawn, onRemove, onOpenChange }: Props) {
   const personality: Personality =
     PERSONALITY_BY_VARIANT[state.variantId] ?? PERSONALITY_BY_VARIANT.violet;
 
@@ -53,6 +54,7 @@ export default function BuddyInstance({ state, anchor, canRemove, onChange, onSp
 
   const stateRef = useRef(state);
   useEffect(() => { stateRef.current = state; }, [state]);
+  useEffect(() => { onOpenChange?.(state.id, open); }, [open, state.id, onOpenChange]);
   const update = (patch: Partial<BuddyInstanceState>) => onChange({ ...stateRef.current, ...patch });
 
   const feel = (next: Emotion, ms = 1600) => {
