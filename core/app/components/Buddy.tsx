@@ -42,6 +42,7 @@ export default function Buddy() {
   const interactiveRef = useRef(false);
   const openRef = useRef(false);
   openRef.current = open;
+  const draggingRef = useRef(false);
 
   const setInteractive = (on: boolean) => {
     if (interactiveRef.current === on) return;
@@ -59,6 +60,7 @@ export default function Buddy() {
   useEffect(() => {
     if (typeof window === 'undefined') return;
     const onMove = (e: MouseEvent) => {
+      if (draggingRef.current) { setInteractive(true); return; }
       const el = document.elementFromPoint(e.clientX, e.clientY) as HTMLElement | null;
       const overInteractive = !!el?.closest('[data-buddy-interactive]');
       setInteractive(overInteractive);
@@ -107,6 +109,8 @@ export default function Buddy() {
   const onPointerDown = (e: React.PointerEvent) => {
     (e.target as HTMLElement).setPointerCapture(e.pointerId);
     dragRef.current = { startX: e.clientX, startY: e.clientY, baseX: pos.x, baseY: pos.y };
+    draggingRef.current = true;
+    setInteractive(true);
   };
   const onPointerMove = (e: React.PointerEvent) => {
     if (!dragRef.current) return;
@@ -114,7 +118,10 @@ export default function Buddy() {
     const dy = e.clientY - dragRef.current.startY;
     setPos({ x: dragRef.current.baseX + dx, y: dragRef.current.baseY + dy });
   };
-  const onPointerUp = () => { dragRef.current = null; };
+  const onPointerUp = () => {
+    dragRef.current = null;
+    draggingRef.current = false;
+  };
 
   return (
     <>
