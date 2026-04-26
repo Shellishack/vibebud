@@ -47,6 +47,7 @@ export default function Buddy() {
   const [buddies, setBuddies] = useState<BuddyInstanceState[]>(initialBuddies);
   const [groups, setGroups] = useState<Group[]>([]);
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  const [magnet, setMagnet] = useState<{ draggedId: string; targetId: string; targetType: 'buddy' | 'group' } | null>(null);
   const idRef = useRef(2);
   const groupIdRef = useRef(1);
   const hydratedRef = useRef(false);
@@ -240,21 +241,43 @@ export default function Buddy() {
 
   const onDragMove = (id: string, pos: { x: number; y: number }) => {
     const b = buddiesRef.current.find((x) => x.id === id);
-    if (!b?.groupId) return;
-    const g = groupsRef.current.find((x) => x.id === b.groupId);
-    if (!g) return;
-    const i = g.memberIds.indexOf(id);
-    if (i < 0) return;
-    const stride = expandedRef.current[g.id] ? EXPANDED_STRIDE : COLLAPSED_STRIDE;
-    const slot = slotPos(g, i, stride);
-    const dx = pos.x - slot.x;
-    const dy = pos.y - slot.y;
-    if (Math.hypot(dx, dy) > EJECT_RADIUS) {
-      ejectFromGroup(id, g.id);
+    if (!b) return;
+    if (b.groupId) {
+      const g = groupsRef.current.find((x) => x.id === b.groupId);
+      if (!g) return;
+      const i = g.memberIds.indexOf(id);
+      if (i < 0) return;
+      const stride = expandedRef.current[g.id] ? EXPANDED_STRIDE : COLLAPSED_STRIDE;
+      const slot = slotPos(g, i, stride);
+      const dx = pos.x - slot.x;
+      const dy = pos.y - slot.y;
+      if (Math.hypot(dx, dy) > EJECT_RADIUS) {
+        ejectFromGroup(id, g.id);
+      }
+      return;
     }
+    // Free buddy: compute magnet target preview.
+    let bestId: string | null = null;
+    let bestType: 'buddy' | 'group' = 'buddy';
+    let bestD = MERGE_RADIUS;
+    for (const g of groupsRef.current) {
+      const d = Math.hypot(g.pos.x - pos.x, g.pos.y - pos.y);
+      if (d < bestD) { bestD = d; bestId = g.id; bestType = 'group'; }
+    }
+    for (const other of buddiesRef.current) {
+      if (other.id === id || other.groupId) continue;
+      const d = Math.hypot(other.pos.x - pos.x, other.pos.y - pos.y);
+      if (d < bestD) { bestD = d; bestId = other.id; bestType = 'buddy'; }
+    }
+    setMagnet((cur) => {
+      if (!bestId) return cur ? null : cur;
+      if (cur && cur.draggedId === id && cur.targetId === bestId && cur.targetType === bestType) return cur;
+      return { draggedId: id, targetId: bestId, targetType: bestType };
+    });
   };
 
   const onDragEnd = (id: string, pos: { x: number; y: number }, moved: boolean) => {
+    setMagnet(null);
     if (!moved) return;
     const b = buddiesRef.current.find((x) => x.id === id);
     if (!b) return;
@@ -301,20 +324,28 @@ export default function Buddy() {
     setGroups((cur) => cur.map((g) => (g.id === gid ? { ...g, pos } : g)));
   };
 
-  const renderBuddy = (b: BuddyInstanceState) => (
-    <BuddyInstance
-      key={b.id}
-      state={b}
-      anchor={ANCHOR}
-      canRemove={buddies.length > 1}
-      onChange={(next) => updateBuddy(b.id, next)}
-      onSpawn={spawnBuddy}
-      onRemove={() => removeBuddy(b.id)}
-      onOpenChange={onOpenChange}
-      onDragMove={onDragMove}
-      onDragEnd={onDragEnd}
-    />
-  );
+  const renderBuddy = (b: BuddyInstanceState) => {
+    let magnetState: 'attractor' | 'target' | null = null;
+    if (magnet) {
+      if (magnet.draggedId === b.id) magnetState = 'attractor';
+      else if (magnet.targetType === 'buddy' && magnet.targetId === b.id) magnetState = 'target';
+    }
+    return (
+      <BuddyInstance
+        key={b.id}
+        state={b}
+        anchor={ANCHOR}
+        canRemove={buddies.length > 1}
+        onChange={(next) => updateBuddy(b.id, next)}
+        onSpawn={spawnBuddy}
+        onRemove={() => removeBuddy(b.id)}
+        onOpenChange={onOpenChange}
+        onDragMove={onDragMove}
+        onDragEnd={onDragEnd}
+        magnetState={magnetState}
+      />
+    );
+  };
 
   return (
     <>
@@ -338,6 +369,7 @@ export default function Buddy() {
             padBottom={HULL_PAD_BOTTOM}
             anchor={ANCHOR}
             visible={!!expanded[g.id]}
+            magnetActive={magnet?.targetType === 'group' && magnet.targetId === g.id}
             onGroupDragMove={onGroupDragMove}
           />
         );
@@ -353,6 +385,14 @@ export default function Buddy() {
         @keyframes buddy-bubble-in {
           from { opacity: 0; transform: translateY(8px) scale(0.96); transform-origin: bottom right; }
           to { opacity: 1; transform: translateY(0) scale(1); }
+        }
+        @keyframes buddy-magnet-pulse {
+          0%, 100% { transform: scale(1); opacity: 0.85; }
+          50% { transform: scale(1.06); opacity: 1; }
+        }
+        @keyframes buddy-magnet-ping {
+          0% { transform: scale(1); opacity: 0.7; }
+          100% { transform: scale(1.45); opacity: 0; }
         }
       `}</style>
     </>

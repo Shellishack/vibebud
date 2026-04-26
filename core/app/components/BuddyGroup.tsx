@@ -13,12 +13,13 @@ type Props = {
   padBottom: number;
   anchor: { right: number; bottom: number };
   visible: boolean;
+  magnetActive?: boolean;
   onGroupDragMove: (id: string, pos: { x: number; y: number }) => void;
 };
 
 export default function BuddyGroup({
   groupId, pos, memberCount, stride, avatarSize, padX, padTop, padBottom, anchor,
-  visible, onGroupDragMove,
+  visible, magnetActive, onGroupDragMove,
 }: Props) {
   const width = (memberCount - 1) * stride + avatarSize + padX * 2;
   const height = avatarSize + padTop + padBottom;
@@ -105,17 +106,18 @@ export default function BuddyGroup({
       data-group={groupId}
       onPointerDown={onPointerDown}
       title="Drag to move group"
-      className={`pointer-events-auto fixed cursor-grab rounded-[28px] border active:cursor-grabbing transition-opacity duration-150 ${
-        visible
+      className={`pointer-events-auto fixed cursor-grab rounded-full border active:cursor-grabbing transition-opacity duration-150 ${
+        visible || magnetActive
           ? 'border-zinc-200 bg-white/55 shadow-xl backdrop-blur-md opacity-100 dark:border-zinc-700 dark:bg-zinc-900/55'
           : 'border-transparent bg-transparent opacity-0'
-      }`}
+      } ${magnetActive ? 'ring-4 ring-violet-400/80 shadow-[0_0_36px_8px_rgba(167,139,250,0.55)]' : ''}`}
       style={{
         right: rightCss,
         bottom: bottomCss,
         width,
         height,
         zIndex: 30,
+        animation: magnetActive ? 'buddy-magnet-pulse 1100ms ease-in-out infinite' : undefined,
       }}
     >
       {visible && (

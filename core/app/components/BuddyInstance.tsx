@@ -35,9 +35,10 @@ type Props = {
   onOpenChange?: (id: string, open: boolean) => void;
   onDragMove?: (id: string, pos: { x: number; y: number }) => void;
   onDragEnd?: (id: string, pos: { x: number; y: number }, moved: boolean) => void;
+  magnetState?: 'attractor' | 'target' | null;
 };
 
-export default function BuddyInstance({ state, anchor, canRemove, onChange, onSpawn, onRemove, onOpenChange, onDragMove, onDragEnd }: Props) {
+export default function BuddyInstance({ state, anchor, canRemove, onChange, onSpawn, onRemove, onOpenChange, onDragMove, onDragEnd, magnetState }: Props) {
   const personality: Personality =
     PERSONALITY_BY_VARIANT[state.variantId] ?? PERSONALITY_BY_VARIANT.violet;
 
@@ -317,25 +318,49 @@ export default function BuddyInstance({ state, anchor, canRemove, onChange, onSp
           </div>
         )}
 
-        <button
-          data-buddy-interactive
-          onPointerDown={onPointerDown}
-          onClick={() => {
-            if (justDraggedRef.current) {
-              justDraggedRef.current = false;
-              return;
-            }
-            if (!open) {
-              setOpen(true);
-              feel('love', 1400);
-            }
-          }}
-          onPointerEnter={() => feel('happy', 1200)}
-          className="pointer-events-auto h-28 w-28 cursor-grab rounded-full transition-transform hover:scale-105 active:cursor-grabbing active:scale-95"
-          aria-label={`open ${personality.name}`}
-        >
-          <Lottie animationData={animation} loop autoplay />
-        </button>
+        <div className="relative">
+          {magnetState && (
+            <>
+              <span
+                aria-hidden
+                className={`pointer-events-none absolute inset-0 rounded-full ${
+                  magnetState === 'target'
+                    ? 'ring-4 ring-violet-400/80 shadow-[0_0_28px_6px_rgba(167,139,250,0.55)]'
+                    : 'ring-4 ring-emerald-400/80 shadow-[0_0_28px_6px_rgba(52,211,153,0.55)]'
+                }`}
+                style={{ animation: 'buddy-magnet-pulse 1100ms ease-in-out infinite' }}
+              />
+              <span
+                aria-hidden
+                className={`pointer-events-none absolute inset-0 rounded-full ${
+                  magnetState === 'target' ? 'ring-2 ring-violet-300/70' : 'ring-2 ring-emerald-300/70'
+                }`}
+                style={{ animation: 'buddy-magnet-ping 1100ms ease-out infinite' }}
+              />
+            </>
+          )}
+          <button
+            data-buddy-interactive
+            onPointerDown={onPointerDown}
+            onClick={() => {
+              if (justDraggedRef.current) {
+                justDraggedRef.current = false;
+                return;
+              }
+              if (!open) {
+                setOpen(true);
+                feel('love', 1400);
+              }
+            }}
+            onPointerEnter={() => feel('happy', 1200)}
+            className={`pointer-events-auto relative h-28 w-28 cursor-grab rounded-full transition-transform hover:scale-105 active:cursor-grabbing active:scale-95 ${
+              magnetState === 'target' ? 'scale-110' : magnetState === 'attractor' ? 'scale-105' : ''
+            }`}
+            aria-label={`open ${personality.name}`}
+          >
+            <Lottie animationData={animation} loop autoplay />
+          </button>
+        </div>
       </div>
     </div>
   );
