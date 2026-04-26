@@ -28,6 +28,8 @@
       "main.js",
       "preload.js",
       "core-out/**/*",
+      "build/tray.png",
+      "build/tray@2x.png",
       "package.json"
     ],
     "win": {
@@ -46,7 +48,10 @@
       "oneClick": true,
       "perMachine": false,
       "allowToChangeInstallationDirectory": false,
-      "deleteAppDataOnUninstall": false
+      "deleteAppDataOnUninstall": false,
+      "installerIcon": "build/icon.ico",
+      "uninstallerIcon": "build/icon.ico",
+      "installerHeaderIcon": "build/icon.ico"
     }
   }
 }

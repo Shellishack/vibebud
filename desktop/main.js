@@ -54,7 +54,8 @@ function createWindow() {
 }
 
 function createTray() {
-  tray = new Tray(nativeImage.createEmpty());
+  const trayIcon = nativeImage.createFromPath(path.join(__dirname, 'build', 'tray.png'));
+  tray = new Tray(trayIcon.isEmpty() ? nativeImage.createEmpty() : trayIcon);
   tray.setToolTip('vibemoji');
   tray.setContextMenu(Menu.buildFromTemplate([
     { label: 'Show / hide', click: () => (win?.isVisible() ? win.hide() : win?.show()) },

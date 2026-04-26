@@ -39,25 +39,34 @@ export default function Buddy() {
   const toastIdRef = useRef(100);
   const msgIdRef = useRef(2);
   const emotionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const hoverCountRef = useRef(0);
+  const interactiveRef = useRef(false);
+  const openRef = useRef(false);
+  openRef.current = open;
 
   const setInteractive = (on: boolean) => {
+    if (interactiveRef.current === on) return;
+    interactiveRef.current = on;
     const api = (typeof window !== 'undefined' && (window as any).vibemoji) || null;
     api?.setInteractive?.(on);
   };
-  // When the bubble is open or any region is hovered, the OS window must
-  // accept clicks. Otherwise it stays click-through so apps behind us work.
+
+  // Click-through is toggled by a global pointer-tracker: if the element
+  // under the cursor is inside an [data-buddy-interactive] region, the OS
+  // window accepts clicks; otherwise clicks pass to apps behind. We rely on
+  // document-level mousemove (forwarded by Electron with `forward: true`)
+  // because per-element React handlers don't fire reliably while the window
+  // is click-through.
   useEffect(() => {
-    setInteractive(open);
-  }, [open]);
-  const onRegionEnter = () => {
-    hoverCountRef.current += 1;
-    setInteractive(true);
-  };
-  const onRegionLeave = () => {
-    hoverCountRef.current = Math.max(0, hoverCountRef.current - 1);
-    if (hoverCountRef.current === 0 && !open) setInteractive(false);
-  };
+    if (typeof window === 'undefined') return;
+    const onMove = (e: MouseEvent) => {
+      const el = document.elementFromPoint(e.clientX, e.clientY) as HTMLElement | null;
+      const overInteractive = !!el?.closest('[data-buddy-interactive]');
+      setInteractive(overInteractive);
+    };
+    document.addEventListener('mousemove', onMove);
+    return () => document.removeEventListener('mousemove', onMove);
+  }, []);
+
 
   const feel = (next: Emotion, ms = 1600) => {
     if (emotionTimerRef.current) clearTimeout(emotionTimerRef.current);
@@ -113,8 +122,7 @@ export default function Buddy() {
         {toasts.map((t) => (
           <div
             key={t.id}
-            onPointerEnter={onRegionEnter}
-            onPointerLeave={onRegionLeave}
+            data-buddy-interactive
             className={`pointer-events-auto w-80 rounded-2xl border bg-white/95 p-4 shadow-xl backdrop-blur-md transition-all dark:bg-zinc-900/95 ${
               t.tone === 'action' ? 'border-violet-300 dark:border-violet-500/50'
               : t.tone === 'success' ? 'border-emerald-300 dark:border-emerald-500/50'
@@ -141,8 +149,7 @@ export default function Buddy() {
       >
         {open && (
           <div
-            onPointerEnter={onRegionEnter}
-            onPointerLeave={onRegionLeave}
+            data-buddy-interactive
             className="pointer-events-auto mb-2 flex w-80 flex-col rounded-3xl border border-zinc-200 bg-white/95 shadow-2xl backdrop-blur-md dark:border-zinc-700 dark:bg-zinc-900/95"
             style={{ height: 380, animation: 'buddy-bubble-in 220ms ease-out' }}
           >
@@ -152,12 +159,23 @@ export default function Buddy() {
                   <p className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">buddy · {variant.name}</p>
                   <p className="text-xs text-emerald-600 dark:text-emerald-400">● online · watching 3 repos</p>
                 </div>
-                <button
-                  onClick={triggerScriptedToast}
-                  className="rounded-full bg-violet-100 px-2.5 py-1 text-xs font-medium text-violet-700 hover:bg-violet-200 dark:bg-violet-500/20 dark:text-violet-300"
-                >
-                  ping
-                </button>
+                <div className="flex items-center gap-1">
+                  <button
+                    onClick={triggerScriptedToast}
+                    className="rounded-full bg-violet-100 px-2.5 py-1 text-xs font-medium text-violet-700 hover:bg-violet-200 dark:bg-violet-500/20 dark:text-violet-300"
+                  >
+                    ping
+                  </button>
+                  <button
+                    onClick={() => setOpen(false)}
+                    aria-label="Close chat"
+                    className="grid h-7 w-7 place-items-center rounded-full text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
+                  >
+                    <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round">
+                      <path d="M6 6l12 12M18 6 6 18" />
+                    </svg>
+                  </button>
+                </div>
               </div>
               <div className="mt-3 flex items-center gap-2">
                 <span className="text-[10px] uppercase tracking-wider text-zinc-500 dark:text-zinc-400">avatar</span>
@@ -211,17 +229,17 @@ export default function Buddy() {
         )}
 
         <button
+          data-buddy-interactive
           onPointerDown={onPointerDown}
           onPointerMove={onPointerMove}
           onPointerUp={onPointerUp}
           onClick={(e) => {
-            if (Math.abs(pos.x - (dragRef.current?.baseX ?? pos.x)) < 4) {
-              setOpen((o) => !o);
+            if (Math.abs(pos.x - (dragRef.current?.baseX ?? pos.x)) < 4 && !open) {
+              setOpen(true);
               feel('love', 1400);
             }
           }}
-          onPointerEnter={() => { onRegionEnter(); feel('happy', 1200); }}
-          onPointerLeave={onRegionLeave}
+          onPointerEnter={() => feel('happy', 1200)}
           className="pointer-events-auto h-28 w-28 cursor-grab rounded-full transition-transform hover:scale-105 active:cursor-grabbing active:scale-95"
           aria-label="open buddy"
         >
