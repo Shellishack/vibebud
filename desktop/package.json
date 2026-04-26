@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "description": "Electron shell for vibemoji — loads core/ as a transparent floating window.",
+  "author": "Shellishack",
   "main": "main.js",
   "scripts": {
     "dev": "cross-env VIBEMOJI_DEV_URL=http://localhost:3060 electron .",

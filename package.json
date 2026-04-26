@@ -8,7 +8,7 @@
     "web-build": "npm --prefix core run build",
     "desktop-dev": "npm --prefix desktop run dev",
     "desktop-start": "npm --prefix desktop start",
-    "desktop-build": "npm --prefix core run build && npm --prefix desktop run sync-core && npm --prefix desktop run make-icon && npm --prefix desktop exec -- electron-builder --win --x64",
+    "desktop-build": "npm --prefix core run build && npm --prefix desktop run build:win",
     "desktop-run": "npm run web-build && npm --prefix desktop run sync-core && npm --prefix desktop start",
     "install-all": "npm --prefix core install && npm --prefix desktop install"
   }
