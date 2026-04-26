@@ -4,6 +4,12 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
 import { VARIANTS, buildAnimation, cssColor, type Emotion } from './avatars';
 import { PERSONALITY_BY_VARIANT, type Personality } from './personalities';
+import {
+  buildSystemPrompt, streamChat, trimHistory, fetchModels,
+  getProvider, setProvider, getApiKey, setApiKey, getModel, setModel,
+  PROVIDERS,
+  type ChatTurn, type Teammate, type ProviderId,
+} from './llm';
 
 const Lottie = dynamic(() => import('lottie-react'), { ssr: false });
 
@@ -36,9 +42,10 @@ type Props = {
   onDragMove?: (id: string, pos: { x: number; y: number }) => void;
   onDragEnd?: (id: string, pos: { x: number; y: number }, moved: boolean) => void;
   magnetState?: 'attractor' | 'target' | null;
+  teammates?: Teammate[];
 };
 
-export default function BuddyInstance({ state, anchor, canRemove, onChange, onSpawn, onRemove, onOpenChange, onDragMove, onDragEnd, magnetState }: Props) {
+export default function BuddyInstance({ state, anchor, canRemove, onChange, onSpawn, onRemove, onOpenChange, onDragMove, onDragEnd, magnetState, teammates }: Props) {
   const personality: Personality =
     PERSONALITY_BY_VARIANT[state.variantId] ?? PERSONALITY_BY_VARIANT.violet;
 
@@ -46,6 +53,58 @@ export default function BuddyInstance({ state, anchor, canRemove, onChange, onSp
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [input, setInput] = useState('');
   const [emotion, setEmotion] = useState<Emotion>('idle');
+  const [busy, setBusy] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [providerDraft, setProviderDraft] = useState<ProviderId>('openai');
+  const [keyDraft, setKeyDraft] = useState('');
+  const [modelDraft, setModelDraft] = useState('');
+  const [modelList, setModelList] = useState<string[]>([]);
+  const [loadingModels, setLoadingModels] = useState(false);
+  const abortRef = useRef<AbortController | null>(null);
+  const modelsAbortRef = useRef<AbortController | null>(null);
+  const messagesEndRef = useRef<HTMLDivElement | null>(null);
+  const teammatesRef = useRef<Teammate[]>(teammates ?? []);
+  useEffect(() => { teammatesRef.current = teammates ?? []; }, [teammates]);
+
+  const loadModelsFor = (p: ProviderId, key: string) => {
+    modelsAbortRef.current?.abort();
+    const ac = new AbortController();
+    modelsAbortRef.current = ac;
+    setLoadingModels(true);
+    setModelList([]);
+    fetchModels(p, key, ac.signal)
+      .then((list) => { if (!ac.signal.aborted) setModelList(list); })
+      .finally(() => { if (!ac.signal.aborted) setLoadingModels(false); });
+  };
+
+  const openSettings = () => {
+    const cur = getProvider();
+    const k = getApiKey(cur);
+    const m = getModel(cur);
+    setProviderDraft(cur);
+    setKeyDraft(k);
+    setModelDraft(m);
+    setSettingsOpen(true);
+    loadModelsFor(cur, k);
+  };
+
+  const switchProvider = (p: ProviderId) => {
+    const k = getApiKey(p);
+    const m = getModel(p);
+    setProviderDraft(p);
+    setKeyDraft(k);
+    setModelDraft(m);
+    loadModelsFor(p, k);
+  };
+
+  const saveSettings = () => {
+    const k = keyDraft.trim();
+    const m = modelDraft.trim() || PROVIDERS[providerDraft].defaultModel;
+    setProvider(providerDraft);
+    setApiKey(providerDraft, k);
+    setModel(providerDraft, m);
+    setSettingsOpen(false);
+  };
 
   const variant = VARIANTS.find((v) => v.id === state.variantId) ?? VARIANTS[0];
   const animation = useMemo(() => buildAnimation(variant, emotion), [variant, emotion]);
@@ -61,6 +120,10 @@ export default function BuddyInstance({ state, anchor, canRemove, onChange, onSp
   const stateRef = useRef(state);
   useEffect(() => { stateRef.current = state; }, [state]);
   useEffect(() => { onOpenChange?.(state.id, open); }, [open, state.id, onOpenChange]);
+  useEffect(() => {
+    if (!open) return;
+    messagesEndRef.current?.scrollIntoView({ block: 'end', behavior: 'smooth' });
+  }, [open, state.messages]);
   const update = (patch: Partial<BuddyInstanceState>) => onChange({ ...stateRef.current, ...patch });
 
   const feel = (next: Emotion, ms = 1600) => {
@@ -80,19 +143,56 @@ export default function BuddyInstance({ state, anchor, canRemove, onChange, onSp
     pushToast(SCRIPTED_TOASTS[Math.floor(Math.random() * SCRIPTED_TOASTS.length)]);
   };
 
-  const send = () => {
+  const writeMessages = (msgs: ChatMsg[]) => {
+    update({ messages: msgs });
+  };
+
+  const send = async () => {
     const text = input.trim();
-    if (!text) return;
+    if (!text || busy) return;
+    if (!getApiKey()) {
+      openSettings();
+      return;
+    }
     const userMsg: ChatMsg = { id: msgIdRef.current++, from: 'you', text };
-    update({ messages: [...stateRef.current.messages, userMsg] });
+    const replyId = msgIdRef.current++;
+    const baseMessages = [...stateRef.current.messages, userMsg];
+    writeMessages([...baseMessages, { id: replyId, from: 'buddy', text: '' }]);
     setInput('');
-    feel('thinking', 600);
-    setTimeout(() => {
-      const reply = personality.replies[Math.floor(Math.random() * personality.replies.length)];
-      const buddyMsg: ChatMsg = { id: msgIdRef.current++, from: 'buddy', text: reply };
-      update({ messages: [...stateRef.current.messages, buddyMsg] });
+    setBusy(true);
+    feel('thinking', 1400);
+
+    const turns: ChatTurn[] = baseMessages.map((m) => ({
+      role: m.from === 'you' ? 'user' : 'assistant',
+      content: m.text,
+    }));
+    const sys = buildSystemPrompt(personality, teammatesRef.current);
+
+    abortRef.current?.abort();
+    const ac = new AbortController();
+    abortRef.current = ac;
+
+    let acc = '';
+    try {
+      for await (const chunk of streamChat({
+        system: sys, messages: trimHistory(turns), signal: ac.signal,
+      })) {
+        acc += chunk;
+        writeMessages([...baseMessages, { id: replyId, from: 'buddy', text: acc }]);
+      }
       feel('happy', 1500);
-    }, 600);
+    } catch (e: unknown) {
+      if (ac.signal.aborted) return;
+      const msg = e instanceof Error ? e.message : String(e);
+      writeMessages([
+        ...baseMessages,
+        { id: replyId, from: 'buddy', text: acc ? `${acc}\n\n(error: ${msg})` : `(error: ${msg})` },
+      ]);
+      feel('surprised', 1500);
+    } finally {
+      if (abortRef.current === ac) abortRef.current = null;
+      setBusy(false);
+    }
   };
 
   const onPointerDown = (e: React.PointerEvent) => {
@@ -221,7 +321,7 @@ export default function BuddyInstance({ state, anchor, canRemove, onChange, onSp
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">{personality.name} · {variant.name}</p>
-                  <p className="text-xs text-emerald-600 dark:text-emerald-400">● online · watching 3 repos</p>
+                  <p className="text-xs text-emerald-600 dark:text-emerald-400">● {personality.role}</p>
                 </div>
                 <div className="flex items-center gap-1">
                   <button
@@ -230,6 +330,17 @@ export default function BuddyInstance({ state, anchor, canRemove, onChange, onSp
                     className="rounded-full bg-violet-100 px-2.5 py-1 text-xs font-medium text-violet-700 hover:bg-violet-200 dark:bg-violet-500/20 dark:text-violet-300"
                   >
                     ping
+                  </button>
+                  <button
+                    onClick={() => (settingsOpen ? setSettingsOpen(false) : openSettings())}
+                    title="LLM settings"
+                    aria-label="LLM settings"
+                    className="grid h-7 w-7 place-items-center rounded-full text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
+                  >
+                    <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <circle cx="12" cy="12" r="3" />
+                      <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9c.36.16.66.42.87.74A1.65 1.65 0 0 0 21 10h.09a2 2 0 1 1 0 4H21a1.65 1.65 0 0 0-1.51 1z" />
+                    </svg>
                   </button>
                   <button
                     onClick={onSpawn}
@@ -282,41 +393,126 @@ export default function BuddyInstance({ state, anchor, canRemove, onChange, onSp
                 </div>
               </div>
             </div>
-            <div className="flex-1 space-y-2 overflow-y-auto px-4 py-3">
+            {settingsOpen && (
+              <div className="max-h-64 shrink-0 overflow-y-auto border-b border-zinc-200 bg-zinc-50/80 px-4 py-3 text-xs dark:border-zinc-700 dark:bg-zinc-800/50">
+                <p className="mb-2 font-semibold text-zinc-700 dark:text-zinc-200">LLM settings</p>
+
+                <label className="mb-1 block text-zinc-600 dark:text-zinc-400">Provider</label>
+                <div className="mb-2 flex gap-1">
+                  {(Object.keys(PROVIDERS) as ProviderId[]).map((p) => (
+                    <button
+                      key={p}
+                      onClick={() => switchProvider(p)}
+                      className={`rounded-full px-2.5 py-1 text-[11px] font-medium transition-colors ${
+                        providerDraft === p
+                          ? 'bg-violet-600 text-white'
+                          : 'bg-white text-zinc-700 ring-1 ring-zinc-200 hover:bg-zinc-100 dark:bg-zinc-900 dark:text-zinc-200 dark:ring-zinc-700 dark:hover:bg-zinc-800'
+                      }`}
+                    >
+                      {PROVIDERS[p].label}
+                    </button>
+                  ))}
+                </div>
+
+                <label className="mb-1 block text-zinc-600 dark:text-zinc-400">{PROVIDERS[providerDraft].label} API key</label>
+                <input
+                  type="password"
+                  value={keyDraft}
+                  onChange={(e) => setKeyDraft(e.target.value)}
+                  onBlur={() => loadModelsFor(providerDraft, keyDraft.trim())}
+                  placeholder={PROVIDERS[providerDraft].keyPlaceholder}
+                  className="mb-2 w-full rounded-lg border border-zinc-200 bg-white px-2 py-1 outline-none focus:border-violet-400 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
+                />
+
+                <div className="mb-1 flex items-center justify-between">
+                  <label className="block text-zinc-600 dark:text-zinc-400">Model</label>
+                  <button
+                    onClick={() => loadModelsFor(providerDraft, keyDraft.trim())}
+                    className="text-[10px] text-violet-600 hover:underline disabled:opacity-50 dark:text-violet-400"
+                    disabled={loadingModels}
+                  >
+                    {loadingModels ? 'loading…' : 'refresh'}
+                  </button>
+                </div>
+                <input
+                  type="text"
+                  list={`buddy-models-${state.id}`}
+                  value={modelDraft}
+                  onChange={(e) => setModelDraft(e.target.value)}
+                  placeholder={PROVIDERS[providerDraft].defaultModel}
+                  className="mb-2 w-full rounded-lg border border-zinc-200 bg-white px-2 py-1 outline-none focus:border-violet-400 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
+                />
+                <datalist id={`buddy-models-${state.id}`}>
+                  {(modelList.length ? modelList : PROVIDERS[providerDraft].knownModels).map((m) => (
+                    <option key={m} value={m} />
+                  ))}
+                </datalist>
+
+                <div className="flex justify-end gap-2">
+                  <button
+                    onClick={() => setSettingsOpen(false)}
+                    className="rounded-full px-2.5 py-1 text-zinc-600 hover:bg-zinc-200 dark:text-zinc-300 dark:hover:bg-zinc-700"
+                  >
+                    cancel
+                  </button>
+                  <button
+                    onClick={saveSettings}
+                    className="rounded-full bg-violet-600 px-2.5 py-1 font-medium text-white hover:bg-violet-700"
+                  >
+                    save
+                  </button>
+                </div>
+                <p className="mt-2 text-[10px] leading-relaxed text-zinc-500 dark:text-zinc-400">
+                  Stored locally in this browser only. Calls go direct from your browser to {PROVIDERS[providerDraft].label}.
+                </p>
+              </div>
+            )}
+            <div className="min-h-0 flex-1 space-y-2 overflow-y-auto overscroll-contain px-4 py-3">
               {state.messages.length === 0 && (
                 <div className="flex justify-start">
-                  <div className="max-w-[80%] rounded-2xl bg-zinc-100 px-3 py-2 text-sm text-zinc-900 dark:bg-zinc-800 dark:text-zinc-100">
+                  <div className="max-w-[80%] whitespace-pre-wrap break-words rounded-2xl bg-zinc-100 px-3 py-2 text-sm text-zinc-900 dark:bg-zinc-800 dark:text-zinc-100">
                     {personality.greeting}
                   </div>
                 </div>
               )}
               {state.messages.map((m) => (
                 <div key={m.id} className={`flex ${m.from === 'you' ? 'justify-end' : 'justify-start'}`}>
-                  <div className={`max-w-[80%] rounded-2xl px-3 py-2 text-sm ${
+                  <div className={`max-w-[80%] whitespace-pre-wrap break-words rounded-2xl px-3 py-2 text-sm ${
                     m.from === 'you'
                       ? 'bg-violet-600 text-white'
                       : 'bg-zinc-100 text-zinc-900 dark:bg-zinc-800 dark:text-zinc-100'
                   }`}>
-                    {m.text}
+                    {m.text || (busy && m.from === 'buddy' ? '…' : '')}
                   </div>
                 </div>
               ))}
+              <div ref={messagesEndRef} />
             </div>
             <div className="border-t border-zinc-200 p-2 dark:border-zinc-700">
               <div className="flex gap-2">
                 <input
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
-                  onKeyDown={(e) => e.key === 'Enter' && send()}
-                  placeholder={`talk to ${personality.name}…`}
-                  className="flex-1 rounded-full border border-zinc-200 bg-white px-3 py-1.5 text-sm outline-none focus:border-violet-400 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
+                  onKeyDown={(e) => { if (e.key === 'Enter') void send(); }}
+                  disabled={busy}
+                  placeholder={busy ? `${personality.name} is typing…` : `talk to ${personality.name}…`}
+                  className="flex-1 rounded-full border border-zinc-200 bg-white px-3 py-1.5 text-sm outline-none focus:border-violet-400 disabled:opacity-60 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
                 />
-                <button
-                  onClick={send}
-                  className="rounded-full bg-violet-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-violet-700"
-                >
-                  send
-                </button>
+                {busy ? (
+                  <button
+                    onClick={() => abortRef.current?.abort()}
+                    className="rounded-full bg-zinc-200 px-3 py-1.5 text-sm font-medium text-zinc-800 hover:bg-zinc-300 dark:bg-zinc-700 dark:text-zinc-100 dark:hover:bg-zinc-600"
+                  >
+                    stop
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => void send()}
+                    className="rounded-full bg-violet-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-violet-700"
+                  >
+                    send
+                  </button>
+                )}
               </div>
             </div>
           </div>

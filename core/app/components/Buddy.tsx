@@ -4,7 +4,8 @@ import { useEffect, useRef, useState } from 'react';
 import BuddyInstance, { type BuddyInstanceState } from './BuddyInstance';
 import BuddyGroup from './BuddyGroup';
 import { VARIANTS } from './avatars';
-import { nextUnusedPersonality } from './personalities';
+import { nextUnusedPersonality, PERSONALITY_BY_VARIANT } from './personalities';
+import type { Teammate } from './llm';
 
 // Lighten each avatar color toward white so the hull reads as a pastel
 // backdrop and the saturated avatars pop against it.
@@ -396,6 +397,20 @@ export default function Buddy() {
     setGroups((cur) => cur.map((g) => (g.id === gid ? { ...g, pos } : g)));
   };
 
+  const teammatesFor = (b: BuddyInstanceState): Teammate[] => {
+    if (!b.groupId) return [];
+    const g = groups.find((x) => x.id === b.groupId);
+    if (!g) return [];
+    return g.memberIds
+      .filter((mid) => mid !== b.id)
+      .map((mid) => buddies.find((x) => x.id === mid))
+      .filter((x): x is BuddyInstanceState => !!x)
+      .map((mb) => {
+        const p = PERSONALITY_BY_VARIANT[mb.variantId] ?? PERSONALITY_BY_VARIANT.violet;
+        return { name: p.name, role: p.role };
+      });
+  };
+
   const renderBuddy = (b: BuddyInstanceState) => {
     let magnetState: 'attractor' | 'target' | null = null;
     if (magnet) {
@@ -415,6 +430,7 @@ export default function Buddy() {
         onDragMove={onDragMove}
         onDragEnd={onDragEnd}
         magnetState={magnetState}
+        teammates={teammatesFor(b)}
       />
     );
   };
