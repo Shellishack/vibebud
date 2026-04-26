@@ -168,7 +168,16 @@ export default function Buddy() {
       setInteractive(!!interactiveEl || (!!dragging && dragging.size > 0));
 
       const groupEl = el?.closest('[data-group]') as HTMLElement | null;
-      const hoverGid = groupEl?.getAttribute('data-group') || null;
+      let hoverGid = groupEl?.getAttribute('data-group') || null;
+      // If a buddy/group is being dragged, treat its group as hovered so the
+      // bracket stays visible even when the cursor outpaces the avatar.
+      if (!hoverGid && dragging && dragging.size > 0) {
+        for (const k of dragging) {
+          if (k.startsWith('group:')) { hoverGid = k.slice('group:'.length); break; }
+          const b = buddiesRef.current.find((x) => x.id === k);
+          if (b?.groupId) { hoverGid = b.groupId; break; }
+        }
+      }
       if (hoverGid) {
         cancelCollapse(hoverGid);
         setExpanded((cur) => (cur[hoverGid] ? cur : { ...cur, [hoverGid]: true }));

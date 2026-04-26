@@ -38,7 +38,6 @@ export default function BuddyGroup({
     e.preventDefault();
     e.stopPropagation();
     const v = (window as any).vibemoji;
-    if (!v?.getCursorPoint) return;
     try { (e.currentTarget as Element).setPointerCapture(e.pointerId); } catch { /* noop */ }
     const dragSet: Set<string> = ((window as any).__vibemojiDragging ||= new Set<string>());
     const key = `group:${groupId}`;
@@ -46,32 +45,51 @@ export default function BuddyGroup({
 
     let raf = 0;
     let cancelled = false;
-    v.getCursorPoint().then((origin: { x: number; y: number }) => {
-      if (cancelled) return;
+    let onPointerMove: ((ev: PointerEvent) => void) | null = null;
+
+    const apply = (dx: number, dy: number) => {
+      if (!dragRef.current) return;
+      onGroupDragMove(groupId, {
+        x: dragRef.current.baseX + dx,
+        y: dragRef.current.baseY + dy,
+      });
+    };
+
+    if (v?.getCursorPoint) {
+      v.getCursorPoint().then((origin: { x: number; y: number }) => {
+        if (cancelled) return;
+        dragRef.current = {
+          startX: origin.x, startY: origin.y,
+          baseX: posRef.current.x, baseY: posRef.current.y,
+        };
+        const tick = () => {
+          if (!dragRef.current) return;
+          v.getCursorPoint().then((p: { x: number; y: number }) => {
+            if (!dragRef.current) return;
+            apply(p.x - dragRef.current.startX, p.y - dragRef.current.startY);
+            raf = requestAnimationFrame(tick);
+          });
+        };
+        raf = requestAnimationFrame(tick);
+      });
+    } else {
       dragRef.current = {
-        startX: origin.x, startY: origin.y,
+        startX: e.clientX, startY: e.clientY,
         baseX: posRef.current.x, baseY: posRef.current.y,
       };
-      const tick = () => {
+      onPointerMove = (ev: PointerEvent) => {
         if (!dragRef.current) return;
-        v.getCursorPoint().then((p: { x: number; y: number }) => {
-          if (!dragRef.current) return;
-          const next = {
-            x: dragRef.current.baseX + (p.x - dragRef.current.startX),
-            y: dragRef.current.baseY + (p.y - dragRef.current.startY),
-          };
-          onGroupDragMove(groupId, next);
-          raf = requestAnimationFrame(tick);
-        });
+        apply(ev.clientX - dragRef.current.startX, ev.clientY - dragRef.current.startY);
       };
-      raf = requestAnimationFrame(tick);
-    });
+      document.addEventListener('pointermove', onPointerMove);
+    }
 
     const stop = () => {
       cancelled = true;
       if (raf) cancelAnimationFrame(raf);
       dragRef.current = null;
       dragSet.delete(key);
+      if (onPointerMove) document.removeEventListener('pointermove', onPointerMove);
       document.removeEventListener('pointerup', stop);
       document.removeEventListener('pointercancel', stop);
       window.removeEventListener('blur', stop);

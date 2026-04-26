@@ -96,44 +96,58 @@ export default function BuddyInstance({ state, anchor, canRemove, onChange, onSp
   const onPointerDown = (e: React.PointerEvent) => {
     e.preventDefault();
     const v = (window as any).vibemoji;
-    if (!v?.getCursorPoint) return; // non-Electron: skip drag (web preview)
     try { (e.currentTarget as Element).setPointerCapture(e.pointerId); } catch { /* noop */ }
     draggingRef.current = true;
     const dragSet: Set<string> = ((window as any).__vibemojiDragging ||= new Set<string>());
     dragSet.add(state.id);
 
-    // Seed with current state.pos; fetch the cursor's screen-space origin
-    // asynchronously, then poll cursor position each frame. This avoids
-    // expanding the OS window during drag (which would evict Chromium's
-    // hardware video overlay below us) and is immune to client-coord shifts.
     let raf = 0;
     let cancelled = false;
-    v.getCursorPoint().then((origin: { x: number; y: number }) => {
-      if (cancelled) return;
+    let onPointerMove: ((ev: PointerEvent) => void) | null = null;
+
+    const applyDelta = (dx: number, dy: number) => {
+      if (!dragRef.current) return;
+      if (!dragRef.current.moved && Math.abs(dx) + Math.abs(dy) > 4) {
+        dragRef.current.moved = true;
+      }
+      const nextPos = { x: dragRef.current.baseX + dx, y: dragRef.current.baseY + dy };
+      update({ pos: nextPos });
+      onDragMove?.(state.id, nextPos);
+    };
+
+    if (v?.getCursorPoint) {
+      // Electron path: poll OS cursor each frame so we don't expand the
+      // click-through window (which would evict Chromium's video overlay).
+      v.getCursorPoint().then((origin: { x: number; y: number }) => {
+        if (cancelled) return;
+        dragRef.current = {
+          startScreenX: origin.x, startScreenY: origin.y,
+          baseX: stateRef.current.pos.x, baseY: stateRef.current.pos.y,
+          moved: false,
+        };
+        const tick = () => {
+          if (!dragRef.current) return;
+          v.getCursorPoint().then((p: { x: number; y: number }) => {
+            if (!dragRef.current) return;
+            applyDelta(p.x - dragRef.current.startScreenX, p.y - dragRef.current.startScreenY);
+            raf = requestAnimationFrame(tick);
+          });
+        };
+        raf = requestAnimationFrame(tick);
+      });
+    } else {
+      // Browser path: standard pointermove tracking.
       dragRef.current = {
-        startScreenX: origin.x,
-        startScreenY: origin.y,
-        baseX: stateRef.current.pos.x,
-        baseY: stateRef.current.pos.y,
+        startScreenX: e.clientX, startScreenY: e.clientY,
+        baseX: stateRef.current.pos.x, baseY: stateRef.current.pos.y,
         moved: false,
       };
-      const tick = () => {
+      onPointerMove = (ev: PointerEvent) => {
         if (!dragRef.current) return;
-        v.getCursorPoint().then((p: { x: number; y: number }) => {
-          if (!dragRef.current) return;
-          const dx = p.x - dragRef.current.startScreenX;
-          const dy = p.y - dragRef.current.startScreenY;
-          if (!dragRef.current.moved && Math.abs(dx) + Math.abs(dy) > 4) {
-            dragRef.current.moved = true;
-          }
-          const nextPos = { x: dragRef.current.baseX + dx, y: dragRef.current.baseY + dy };
-          update({ pos: nextPos });
-          onDragMove?.(state.id, nextPos);
-          raf = requestAnimationFrame(tick);
-        });
+        applyDelta(ev.clientX - dragRef.current.startScreenX, ev.clientY - dragRef.current.startScreenY);
       };
-      raf = requestAnimationFrame(tick);
-    });
+      document.addEventListener('pointermove', onPointerMove);
+    }
 
     const stop = () => {
       cancelled = true;
@@ -144,6 +158,7 @@ export default function BuddyInstance({ state, anchor, canRemove, onChange, onSp
       dragRef.current = null;
       draggingRef.current = false;
       dragSet.delete(state.id);
+      if (onPointerMove) document.removeEventListener('pointermove', onPointerMove);
       document.removeEventListener('pointerup', stop);
       document.removeEventListener('pointercancel', stop);
       window.removeEventListener('blur', stop);
