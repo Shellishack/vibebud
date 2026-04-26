@@ -25,7 +25,6 @@ function loadFromStorage(): BuddyInstanceState[] | null {
 
 export default function Buddy() {
   const [buddies, setBuddies] = useState<BuddyInstanceState[]>(initialBuddies);
-  const interactiveRef = useRef(false);
   const idRef = useRef(2);
   const hydratedRef = useRef(false);
 
@@ -52,25 +51,10 @@ export default function Buddy() {
     }
   }, [buddies]);
 
-  // Single global tracker: any [data-buddy-interactive] under the cursor (or
-  // any in-flight drag) keeps the OS window mouse-interactive. Otherwise the
-  // window is click-through so apps behind us work.
-  const setInteractive = (on: boolean) => {
-    if (interactiveRef.current === on) return;
-    interactiveRef.current = on;
-    (window as any).vibemoji?.setInteractive?.(on);
-  };
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    const onMove = (e: MouseEvent) => {
-      const dragging: Set<string> | undefined = (window as any).__vibemojiDragging;
-      if (dragging && dragging.size > 0) { setInteractive(true); return; }
-      const el = document.elementFromPoint(e.clientX, e.clientY) as HTMLElement | null;
-      setInteractive(!!el?.closest('[data-buddy-interactive]'));
-    };
-    document.addEventListener('mousemove', onMove);
-    return () => document.removeEventListener('mousemove', onMove);
-  }, []);
+  // (Click-through is no longer toggled per hover — see the resize effect
+  // below. The window is sized to the interactive bounding box so any pixel
+  // inside it is intentionally interactive, and toggling WS_EX_TRANSPARENT is
+  // what caused Chrome below us to evict its hardware video overlay.)
 
   const updateBuddy = (id: string, next: BuddyInstanceState) => {
     setBuddies((cur) => cur.map((b) => (b.id === id ? next : b)));
@@ -96,6 +80,30 @@ export default function Buddy() {
   useEffect(() => {
     const off = (window as any).vibemoji?.onSpawnBuddy?.(() => spawnBuddy());
     return () => { if (typeof off === 'function') off(); };
+  }, []);
+
+  // The OS window covers the full work area and is click-through by default
+  // (setIgnoreMouseEvents in main.js). We toggle interactivity on whenever
+  // the OS-forwarded mousemove lands over an element marked
+  // data-buddy-interactive (or a descendant), and back off otherwise.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const v = (window as any).vibemoji;
+    if (!v?.setInteractive) return;
+    let interactive = false;
+    const setInteractive = (next: boolean) => {
+      if (next === interactive) return;
+      interactive = next;
+      v.setInteractive(next);
+    };
+    const onMove = (ev: MouseEvent) => {
+      const dragging: Set<string> | undefined = (window as any).__vibemojiDragging;
+      if (dragging && dragging.size > 0) { setInteractive(true); return; }
+      const el = document.elementFromPoint(ev.clientX, ev.clientY) as HTMLElement | null;
+      setInteractive(!!el?.closest('[data-buddy-interactive]'));
+    };
+    document.addEventListener('mousemove', onMove);
+    return () => document.removeEventListener('mousemove', onMove);
   }, []);
 
   const removeBuddy = (id: string) => {

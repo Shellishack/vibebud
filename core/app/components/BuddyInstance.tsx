@@ -46,8 +46,9 @@ export default function BuddyInstance({ state, anchor, canRemove, onChange, onSp
   const variant = VARIANTS.find((v) => v.id === state.variantId) ?? VARIANTS[0];
   const animation = useMemo(() => buildAnimation(variant, emotion), [variant, emotion]);
 
-  const dragRef = useRef<{ startX: number; startY: number; baseX: number; baseY: number } | null>(null);
+  const dragRef = useRef<{ startScreenX: number; startScreenY: number; baseX: number; baseY: number; moved: boolean } | null>(null);
   const draggingRef = useRef(false);
+  const justDraggedRef = useRef(false);
   const toastIdRef = useRef(100);
   const msgIdRef = useRef(state.messages.reduce((m, x) => Math.max(m, x.id), 0) + 1);
   const emotionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -91,28 +92,55 @@ export default function BuddyInstance({ state, anchor, canRemove, onChange, onSp
 
   const onPointerDown = (e: React.PointerEvent) => {
     e.preventDefault();
-    dragRef.current = { startX: e.clientX, startY: e.clientY, baseX: state.pos.x, baseY: state.pos.y };
+    const v = (window as any).vibemoji;
+    if (!v?.getCursorPoint) return; // non-Electron: skip drag (web preview)
+    try { (e.currentTarget as Element).setPointerCapture(e.pointerId); } catch { /* noop */ }
     draggingRef.current = true;
     const dragSet: Set<string> = ((window as any).__vibemojiDragging ||= new Set<string>());
     dragSet.add(state.id);
-    (window as any).vibemoji?.setInteractive?.(true);
 
-    const onMove = (ev: PointerEvent) => {
-      if (!dragRef.current) return;
-      const dx = ev.clientX - dragRef.current.startX;
-      const dy = ev.clientY - dragRef.current.startY;
-      update({ pos: { x: dragRef.current.baseX + dx, y: dragRef.current.baseY + dy } });
-    };
+    // Seed with current state.pos; fetch the cursor's screen-space origin
+    // asynchronously, then poll cursor position each frame. This avoids
+    // expanding the OS window during drag (which would evict Chromium's
+    // hardware video overlay below us) and is immune to client-coord shifts.
+    let raf = 0;
+    let cancelled = false;
+    v.getCursorPoint().then((origin: { x: number; y: number }) => {
+      if (cancelled) return;
+      dragRef.current = {
+        startScreenX: origin.x,
+        startScreenY: origin.y,
+        baseX: stateRef.current.pos.x,
+        baseY: stateRef.current.pos.y,
+        moved: false,
+      };
+      const tick = () => {
+        if (!dragRef.current) return;
+        v.getCursorPoint().then((p: { x: number; y: number }) => {
+          if (!dragRef.current) return;
+          const dx = p.x - dragRef.current.startScreenX;
+          const dy = p.y - dragRef.current.startScreenY;
+          if (!dragRef.current.moved && Math.abs(dx) + Math.abs(dy) > 4) {
+            dragRef.current.moved = true;
+          }
+          update({ pos: { x: dragRef.current.baseX + dx, y: dragRef.current.baseY + dy } });
+          raf = requestAnimationFrame(tick);
+        });
+      };
+      raf = requestAnimationFrame(tick);
+    });
+
     const stop = () => {
+      cancelled = true;
+      if (raf) cancelAnimationFrame(raf);
+      justDraggedRef.current = !!dragRef.current?.moved;
       dragRef.current = null;
       draggingRef.current = false;
       dragSet.delete(state.id);
-      document.removeEventListener('pointermove', onMove);
       document.removeEventListener('pointerup', stop);
       document.removeEventListener('pointercancel', stop);
       window.removeEventListener('blur', stop);
     };
-    document.addEventListener('pointermove', onMove);
     document.addEventListener('pointerup', stop);
     document.addEventListener('pointercancel', stop);
     window.addEventListener('blur', stop);
@@ -269,7 +297,11 @@ export default function BuddyInstance({ state, anchor, canRemove, onChange, onSp
           data-buddy-interactive
           onPointerDown={onPointerDown}
           onClick={() => {
-            if (Math.abs(state.pos.x - (dragRef.current?.baseX ?? state.pos.x)) < 4 && !open) {
+            if (justDraggedRef.current) {
+              justDraggedRef.current = false;
+              return;
+            }
+            if (!open) {
               setOpen(true);
               feel('love', 1400);
             }

@@ -5,7 +5,7 @@
   "description": "Electron shell for vibemoji — loads core/ as a transparent floating window.",
   "main": "main.js",
   "scripts": {
-    "dev": "cross-env VIBEMOJI_DEV_URL=http://localhost:3000 electron .",
+    "dev": "cross-env VIBEMOJI_DEV_URL=http://localhost:3060 electron .",
     "start": "electron .",
     "sync-core": "node sync-core.js",
     "make-icon": "node make-icon.js",

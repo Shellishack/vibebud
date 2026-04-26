@@ -14,7 +14,10 @@ protocol.registerSchemesAsPrivileged([
 
 function createWindow() {
   const { workArea } = screen.getPrimaryDisplay();
-
+  // Cover the full work area. Click-through is enabled by default via
+  // setIgnoreMouseEvents(true, {forward: true}) below; the renderer toggles
+  // it off via the `set-interactive` IPC when the cursor enters an
+  // interactive element (avatars, chat bubbles, toasts).
   win = new BrowserWindow({
     x: workArea.x,
     y: workArea.y,
@@ -44,10 +47,6 @@ function createWindow() {
 
   win.setAlwaysOnTop(true, 'screen-saver');
   win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
-  // Click-through by default — clicks pass to apps behind. The renderer toggles
-  // this off via IPC when the cursor is over an interactive element (avatar,
-  // chat bubble, toast). `forward: true` keeps mouse-move events flowing so the
-  // renderer can still detect hover even while ignoring clicks.
   win.setIgnoreMouseEvents(true, { forward: true });
 
   if (DEV_URL) {
@@ -96,8 +95,25 @@ app.whenReady().then(() => {
       win.setIgnoreMouseEvents(false);
     } else {
       win.setIgnoreMouseEvents(true, { forward: true });
+      // Always hand focus back to the previously focused OS window when the
+      // cursor leaves all interactive elements, even if a chat panel is open
+      // — otherwise focus gets stuck on vibemoji after any click. The user
+      // can re-focus the chat input by moving the cursor back and clicking.
+      win.blur();
     }
   });
+
+  ipcMain.on('set-bounds', (_event, payload) => {
+    if (!win) return;
+    const { workArea } = screen.getPrimaryDisplay();
+    const width = Math.max(1, Math.ceil(payload?.width ?? 1));
+    const height = Math.max(1, Math.ceil(payload?.height ?? 1));
+    const x = workArea.x + workArea.width - width;
+    const y = workArea.y + workArea.height - height;
+    win.setBounds({ x, y, width, height });
+  });
+
+  ipcMain.handle('get-cursor-point', () => screen.getCursorScreenPoint());
 
   ipcMain.on('set-focusable', (_event, focusable) => {
     if (!win) return;
