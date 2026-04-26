@@ -21,9 +21,15 @@ export const PROVIDERS: Record<ProviderId, ProviderInfo> = {
     keyPlaceholder: 'sk-…',
     defaultModel: 'gpt-4o-mini',
     knownModels: [
-      'gpt-5', 'gpt-5-mini', 'gpt-4.1', 'gpt-4.1-mini',
+      // Flagship + reasoning
+      'gpt-5', 'gpt-5-mini', 'gpt-5-nano',
+      'o4-mini', 'o3', 'o3-mini', 'o3-pro', 'o1', 'o1-mini',
+      // GPT-4.1 family
+      'gpt-4.1', 'gpt-4.1-mini', 'gpt-4.1-nano',
+      // GPT-4o family
       'gpt-4o', 'gpt-4o-mini',
-      'o1', 'o3', 'o3-mini', 'o4-mini',
+      // Cheap fast option
+      'gpt-3.5-turbo',
     ],
     chatUrl: 'https://api.openai.com/v1/chat/completions',
     modelsUrl: 'https://api.openai.com/v1/models',
@@ -34,8 +40,13 @@ export const PROVIDERS: Record<ProviderId, ProviderInfo> = {
     keyPlaceholder: 'sk-ant-…',
     defaultModel: 'claude-sonnet-4-5',
     knownModels: [
+      // Latest Claude 4.x family
       'claude-opus-4-7', 'claude-sonnet-4-6', 'claude-sonnet-4-5',
-      'claude-haiku-4-5', 'claude-opus-4-1',
+      'claude-haiku-4-5', 'claude-opus-4-1', 'claude-sonnet-4', 'claude-opus-4',
+      // Aliases
+      'claude-opus-latest', 'claude-sonnet-latest', 'claude-haiku-latest',
+      // Claude 3.x (legacy but still popular)
+      'claude-3-5-sonnet-latest', 'claude-3-5-haiku-latest', 'claude-3-opus-latest',
     ],
     chatUrl: 'https://api.anthropic.com/v1/messages',
     modelsUrl: 'https://api.anthropic.com/v1/models',
@@ -46,10 +57,26 @@ export const PROVIDERS: Record<ProviderId, ProviderInfo> = {
     keyPlaceholder: 'sk-or-…',
     defaultModel: 'openai/gpt-4o-mini',
     knownModels: [
-      'openai/gpt-5', 'openai/gpt-4o', 'openai/gpt-4o-mini',
-      'anthropic/claude-sonnet-4.5', 'anthropic/claude-opus-4.5', 'anthropic/claude-haiku-4.5',
-      'google/gemini-2.5-pro', 'google/gemini-2.5-flash',
-      'meta-llama/llama-3.3-70b-instruct', 'mistralai/mistral-large',
+      // OpenAI via OpenRouter
+      'openai/gpt-5', 'openai/gpt-5-mini', 'openai/gpt-4.1', 'openai/gpt-4o',
+      'openai/gpt-4o-mini', 'openai/o3', 'openai/o4-mini',
+      // Anthropic
+      'anthropic/claude-opus-4.7', 'anthropic/claude-sonnet-4.6',
+      'anthropic/claude-sonnet-4.5', 'anthropic/claude-opus-4.5',
+      'anthropic/claude-haiku-4.5',
+      // Google
+      'google/gemini-2.5-pro', 'google/gemini-2.5-flash', 'google/gemini-2.0-flash',
+      // Meta
+      'meta-llama/llama-4-maverick', 'meta-llama/llama-4-scout',
+      'meta-llama/llama-3.3-70b-instruct',
+      // Mistral
+      'mistralai/mistral-large', 'mistralai/mistral-small-3',
+      // DeepSeek
+      'deepseek/deepseek-r1', 'deepseek/deepseek-chat', 'deepseek/deepseek-v3',
+      // xAI
+      'x-ai/grok-4', 'x-ai/grok-2',
+      // Alibaba
+      'qwen/qwen-2.5-72b-instruct', 'qwen/qwq-32b-preview',
     ],
     chatUrl: 'https://openrouter.ai/api/v1/chat/completions',
     modelsUrl: 'https://openrouter.ai/api/v1/models',
