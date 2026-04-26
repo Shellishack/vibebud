@@ -169,7 +169,20 @@ export default function Buddy() {
     const setInteractive = (next: boolean) => {
       if (next === interactive) return;
       interactive = next;
+      // Desktop (Electron) IPC.
       v?.setInteractive?.(next);
+      // Android: when running inside the OverlayService's WebView, toggle
+      // FLAG_NOT_TOUCHABLE so taps fall through to apps underneath unless the
+      // cursor is over an interactive element.
+      const native = (window as any).vibemojiNative;
+      if (native && typeof native.setInteractive === 'function') {
+        try { native.setInteractive(next); } catch { /* noop */ }
+      }
+      const cap = (window as any).Capacitor;
+      const overlay = cap?.Plugins?.Overlay;
+      if (overlay && typeof overlay.setInteractive === 'function') {
+        try { overlay.setInteractive({ value: next }); } catch { /* noop */ }
+      }
     };
     type Stage = 'peek' | 'expand';
     const collapseTimers = new Map<string, ReturnType<typeof setTimeout>>();

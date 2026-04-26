@@ -10,6 +10,10 @@
     "desktop-start": "npm --prefix desktop start",
     "desktop-build": "npm --prefix core run build && npm --prefix desktop run build:win",
     "desktop-run": "npm run web-build && npm --prefix desktop run sync-core && npm --prefix desktop start",
-    "install-all": "npm --prefix core install && npm --prefix desktop install"
+    "android-sync": "npm run web-build && npm --prefix android run sync-core && npm --prefix android run sync",
+    "android-dev": "npm --prefix android run dev",
+    "android-open": "npm --prefix android run open",
+    "android-build": "npm run android-sync && npm --prefix android run build",
+    "install-all": "npm --prefix core install && npm --prefix desktop install && npm --prefix android install"
   }
 }

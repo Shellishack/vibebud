@@ -13,7 +13,7 @@ A friendly "code buddy" UI that floats on the user's desktop (or Android device)
 ## Platforms
 
 - **Desktop:** macOS, Linux, Windows — via **Electron**. Currently only Windows is wired up in `desktop/` (`build:win` script + NSIS installer); macOS/Linux targets are planned but not configured.
-- **Mobile:** Android only — via **Capacitor**. Not yet scaffolded.
+- **Mobile:** Android only — via **Capacitor 8**. Renders the buddy as a true system overlay (drawn on top of every app, not just inside the vibemoji activity) via a custom `OverlayService` + Capacitor `Overlay` plugin.
 - **No iOS support.** Don't add scaffolding, build targets, or conditional code for iOS.
 
 ## Repo layout
@@ -34,7 +34,12 @@ A shared core wrapped by per-platform shells. The root is a "loose" monorepo: a 
   - `preload.js` — exposes a small `window.vibemoji` API (`setInteractive`, `setFocusable`, `setBounds`, `getCursorPoint`, `onSpawnBuddy`).
   - `sync-core.js` — copies `core/out/` → `desktop/core-out/` before packaging (excludes the `installers/` dir to avoid recursive bundling).
   - `make-icon.js` — generates the Windows `.ico` from a PNG via `sharp` + `png-to-ico`.
-- `android/` — **not yet scaffolded.** Capacitor shell will go here.
+- `android/` — Capacitor 8 shell. Loads `core/`'s static export (or the dev server at `10.0.2.2:3060`) and adds a native `OverlayService` so the buddy floats above every other app.
+  - `capacitor.config.ts` — `appId: dev.vibemoji.android`, `webDir: www`. Honors `VIBEMOJI_DEV_URL` to point the WebView at the running Next dev server.
+  - `sync-core.js` — copies `core/out/` → `android/www/` (excludes `installers/`, mirroring `desktop/sync-core.js`).
+  - `install-overlay.js` — one-shot patcher run after `npx cap add android`. Drops `OverlayService.java` + `OverlayPlugin.java` into the generated Gradle project, injects the `SYSTEM_ALERT_WINDOW` / `FOREGROUND_SERVICE_SPECIAL_USE` permissions and the `<service>` declaration into `AndroidManifest.xml`, and registers the plugin in `MainActivity`.
+  - `native/OverlayService.java` — foreground service that owns its own transparent `WebView` and adds it to `WindowManager` with `TYPE_APPLICATION_OVERLAY`. Touch-passthrough toggle via `FLAG_NOT_TOUCHABLE`, controlled from JS through a `vibemojiNative.setInteractive(boolean)` bridge. Counterpart to `desktop/main.js`'s `setIgnoreMouseEvents`.
+  - `native/OverlayPlugin.java` — Capacitor plugin exposed as `Capacitor.Plugins.Overlay`: `hasPermission()`, `requestPermission()`, `start({ url? })`, `stop()`, `isRunning()`, `setInteractive({ value })`.
 - `Notify-Terminal.ps1`, `Show-CatToast.ps1` — early Windows toast experiments, kept for reference.
 
 The two shells should be thin — anything that can live in `core/` should live in `core/`.
@@ -62,6 +67,24 @@ npm run desktop-run
 
 # Desktop production installer (Windows NSIS → desktop/dist/vibemoji-desktop-setup.exe)
 npm run desktop-build
+
+# Android — one-time setup after install-all:
+#   cd android && npx cap add android && node install-overlay.js
+# Then dev/build:
+npm run android-dev      # builds debug APK, installs, points at 10.0.2.2:3060
+
+# Quick debug APK — Gradle wrapper handles debug signing automatically.
+# Run from android/android/.
+gradlew.bat assembleDebug
+# → app/build/outputs/apk/debug/app-debug.apk
+
+# Capacitor CLI build — does sync + plugin update + gradle in one shot, but
+# always requires signing creds (no --no-signing flag in Capacitor 8). For a
+# throwaway dev build, generate a debug keystore once via keytool, then:
+npx cap build android --androidreleasetype=APK \
+  --keystorepath debug.keystore --keystorepass android \
+  --keystorealias androiddebugkey --keystorealiaspass android
+# → android/android/app/build/outputs/apk/release/app-release-signed.apk
 ```
 
 Notes:

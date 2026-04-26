@@ -1,5 +1,6 @@
 import Buddy from './components/Buddy';
 import InstallButton from './components/InstallButton';
+import OverlayButton from './components/OverlayButton';
 
 export default function Home() {
   return (
@@ -28,6 +29,7 @@ export default function Home() {
 
         <div className="flex flex-wrap items-center gap-3">
           <InstallButton />
+          <OverlayButton />
           <span className="text-xs text-zinc-500 dark:text-zinc-400">free · ~40&nbsp;MB · auto-detects your OS</span>
         </div>
 

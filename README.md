@@ -28,14 +28,14 @@ Drag two buddies near each other and they form a small team — a pastel "hull" 
 | Web preview (`core/`)              | working                                    |
 | Electron desktop — Windows         | working, NSIS installer builds end-to-end  |
 | Electron desktop — macOS / Linux   | planned, not yet wired up                  |
-| Android (Capacitor)                | planned, not yet scaffolded                |
+| Android (Capacitor 8)              | scaffolded — system overlay floats above all apps via `OverlayService` |
 | iOS                                | out of scope                               |
 
 ## Stack
 
 - **`core/`** — Next.js 16 (App Router) · React 19 · Tailwind v4 · TypeScript 5 · lottie-react. Configured for static export so the desktop shell can serve it from disk.
 - **`desktop/`** — Electron 33 · electron-builder. Transparent always-on-top window covering the full work area, with click-through enabled by default and toggled off per-element while the cursor is over a buddy or chat bubble.
-- **`android/`** — placeholder for the Capacitor shell (not yet present).
+- **`android/`** — Capacitor 8 + a small native module that runs the buddy as a `WindowManager` overlay (`TYPE_APPLICATION_OVERLAY`) from a foreground service, so it floats above the home screen and other apps. Touch-passthrough mirrors the desktop click-through behavior.
 
 ## Layout
 
@@ -70,6 +70,11 @@ npm run desktop-run
 
 # Windows installer → desktop/dist/vibemoji-desktop-setup.exe
 npm run desktop-build
+
+# Android — one-time, after install-all:
+#   cd android && npx cap add android && node install-overlay.js
+npm run android-dev          # debug APK on a connected device/emulator
+npm run android-build        # release APK
 ```
 
 The dev server runs on **port 3060**, not 3000. The desktop window loads the `/buddy` route, which has a transparent background so only the avatar shows through.
