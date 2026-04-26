@@ -112,7 +112,10 @@ export default function BuddyInstance({ state, anchor, canRemove, onChange, onSp
     setSettingsOpen(false);
   };
 
-  const variant = VARIANTS.find((v) => v.id === state.variantId) ?? VARIANTS[0];
+  // Color comes from the personality's colorId, not the variantId directly —
+  // a custom personality has its own variantId (e.g. `custom-abc`) but reuses
+  // one of the 6 built-in color variants for rendering.
+  const variant = VARIANTS.find((v) => v.id === personality.colorId) ?? VARIANTS[0];
   const animation = useMemo(() => buildAnimation(variant, emotion), [variant, emotion]);
 
   const dragRef = useRef<{ startScreenX: number; startScreenY: number; baseX: number; baseY: number; moved: boolean } | null>(null);

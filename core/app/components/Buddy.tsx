@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import BuddyInstance, { type BuddyInstanceState } from './BuddyInstance';
 import BuddyGroup from './BuddyGroup';
 import { VARIANTS } from './avatars';
-import { nextUnusedPersonality, PERSONALITY_BY_VARIANT } from './personalities';
+import { nextUnusedPersonality, PERSONALITY_BY_VARIANT, getPersonality } from './personalities';
 import type { Teammate } from './llm';
 import { usePlatform } from './hooks/usePlatform';
 import type { ElectronAdapter } from '@/lib/platform/electron';
@@ -20,7 +20,12 @@ const rgba = (rgb: [number, number, number], a: number, lighten = 0) => {
 };
 
 const gradientFor = (variantIds: string[]) => {
-  const stops = variantIds.map((vid) => VARIANTS.find((v) => v.id === vid)?.body ?? VARIANTS[0].body);
+  // variantIds may include custom-personality ids; route through getPersonality
+  // so we land on the correct color variant in either case.
+  const stops = variantIds.map((vid) => {
+    const colorId = getPersonality(vid).colorId;
+    return VARIANTS.find((v) => v.id === colorId)?.body ?? VARIANTS[0].body;
+  });
   if (stops.length === 1) {
     const c = rgba(stops[0], HULL_ALPHA, HULL_LIGHTEN);
     return `linear-gradient(90deg, ${c}, ${c})`;
@@ -361,10 +366,28 @@ export default function Buddy() {
     if (isOpen) openSetRef.current.add(id);
     else openSetRef.current.delete(id);
     const wantFocusable = openSetRef.current.size > 0;
-    if (wantFocusable === focusableRef.current) return;
-    focusableRef.current = wantFocusable;
-    adapter.setFocusable(wantFocusable);
+    if (wantFocusable !== focusableRef.current) {
+      focusableRef.current = wantFocusable;
+      adapter.setFocusable(wantFocusable);
+    }
+    // Capacitor: chat-open also forces the overlay window to full screen so
+    // the bottom-anchored sheet isn't clipped to the idle bottom-right box.
+    adapter.setOverlayExpanded(openSetRef.current.size > 0 || hasGroupSpilloutRef.current);
   };
+
+  // Capacitor: a peeked or expanded group overflows the idle window
+  // horizontally (EXPANDED_STRIDE = 132px per buddy), so we have to expand
+  // the overlay window for the duration. ACTION_DOWN on the avatar already
+  // expands natively, so this only matters for hover-driven peek on web —
+  // but the call is cheap and keeps the capacitor adapter in sync.
+  const hasGroupSpilloutRef = useRef(false);
+  useEffect(() => {
+    const anyPeeked = Object.values(peeked).some(Boolean);
+    const anyExpanded = Object.values(expanded).some(Boolean);
+    const want = anyPeeked || anyExpanded;
+    hasGroupSpilloutRef.current = want;
+    adapter.setOverlayExpanded(want || openSetRef.current.size > 0);
+  }, [peeked, expanded, adapter]);
 
   // Eject a member from its group; dissolve group if it would have <2 members.
   const ejectFromGroup = (buddyId: string, groupId: string) => {

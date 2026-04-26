@@ -22,6 +22,7 @@ export class ElectronAdapter implements PlatformAdapter {
   publishInteractiveRects(_rects: InteractiveRect[]): void { /* noop — Electron uses click-through, not regions */ }
   notifyDragStart(_id: string): void { /* noop */ }
   notifyDragEnd(_id: string): void { /* noop */ }
+  setOverlayExpanded(_expanded: boolean): void { /* noop — Electron uses click-through */ }
 
   getCursorPoint(): Promise<{ x: number; y: number }> | null {
     const b = bridge();

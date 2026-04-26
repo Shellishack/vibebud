@@ -13,6 +13,7 @@ export class WebAdapter implements PlatformAdapter {
   publishInteractiveRects(_rects: InteractiveRect[]): void { /* noop */ }
   notifyDragStart(_id: string): void { /* noop */ }
   notifyDragEnd(_id: string): void { /* noop */ }
+  setOverlayExpanded(_expanded: boolean): void { /* noop */ }
 
   getCursorPoint(): Promise<{ x: number; y: number }> | null { return null; }
 

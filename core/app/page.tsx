@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import Buddy from './components/Buddy';
 import InstallButton from './components/InstallButton';
 import OverlayButton from './components/OverlayButton';
@@ -30,6 +31,12 @@ export default function Home() {
         <div className="flex flex-wrap items-center gap-3">
           <InstallButton />
           <OverlayButton />
+          <Link
+            href="/manage"
+            className="rounded-full border border-violet-200 bg-white/70 px-4 py-2 text-sm font-medium text-violet-700 backdrop-blur transition-colors hover:border-violet-300 hover:bg-white dark:border-violet-500/30 dark:bg-zinc-900/60 dark:text-violet-300 dark:hover:border-violet-400/50"
+          >
+            manage avatars
+          </Link>
           <span className="text-xs text-zinc-500 dark:text-zinc-400">free · ~40&nbsp;MB · auto-detects your OS</span>
         </div>
 

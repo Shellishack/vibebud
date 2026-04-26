@@ -3,6 +3,7 @@ import type { InteractiveRect, PlatformAdapter } from './types';
 type VibemojiNative = {
   setTouchableRegion?: (json: string) => void;
   setInteractive?: (v: boolean) => void;
+  setExpanded?: (v: boolean) => void;
 };
 
 const native = (): VibemojiNative | undefined => {
@@ -42,6 +43,10 @@ export class CapacitorAdapter implements PlatformAdapter {
     if (json === this.lastPushedJson) return;
     this.lastPushedJson = json;
     try { native()?.setTouchableRegion?.(json); } catch { /* noop */ }
+  }
+
+  setOverlayExpanded(expanded: boolean): void {
+    try { native()?.setExpanded?.(expanded); } catch { /* noop */ }
   }
 
   getCursorPoint(): Promise<{ x: number; y: number }> | null { return null; }

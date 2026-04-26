@@ -16,6 +16,11 @@ export interface PlatformAdapter {
   notifyDragStart(buddyId: string): void;
   notifyDragEnd(buddyId: string): void;
 
+  // Capacitor-only: tells the native overlay window to grow to full-screen
+  // (true) or shrink back to its idle bottom-right footprint (false). On other
+  // platforms this is a noop.
+  setOverlayExpanded(expanded: boolean): void;
+
   getCursorPoint(): Promise<{ x: number; y: number }> | null;
 
   setFocusable(focusable: boolean): void;
