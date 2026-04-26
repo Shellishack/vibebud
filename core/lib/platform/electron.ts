@@ -33,6 +33,9 @@ export class ElectronAdapter implements PlatformAdapter {
     bridge()?.setFocusable?.(focusable);
   }
 
+  onOutsideTap(_cb: () => void): () => void { return () => {}; }
+  stopOverlay(): void { /* noop */ }
+
   onSpawnRequest(cb: () => void): () => void {
     const off = bridge()?.onSpawnBuddy?.(cb);
     return typeof off === 'function' ? off : () => {};

@@ -4,6 +4,7 @@ type VibemojiNative = {
   setTouchableRegion?: (json: string) => void;
   setInteractive?: (v: boolean) => void;
   setExpanded?: (v: boolean) => void;
+  stopOverlay?: () => void;
 };
 
 const native = (): VibemojiNative | undefined => {
@@ -46,6 +47,11 @@ export class CapacitorAdapter implements PlatformAdapter {
   }
 
   setOverlayExpanded(expanded: boolean): void {
+    // Drives the main overlay window between passthrough (default) and fully
+    // interactive modes. The native bridge also flips the avatar tap-zone in
+    // the opposite direction so popup hits over the avatar's visual area
+    // aren't swallowed by the tap-zone window.
+    try { native()?.setInteractive?.(expanded); } catch { /* noop */ }
     try { native()?.setExpanded?.(expanded); } catch { /* noop */ }
   }
 
@@ -54,4 +60,15 @@ export class CapacitorAdapter implements PlatformAdapter {
   setFocusable(_focusable: boolean): void { /* noop — Capacitor activity handles focus itself */ }
 
   onSpawnRequest(_cb: () => void): () => void { return () => {}; }
+
+  stopOverlay(): void {
+    try { native()?.stopOverlay?.(); } catch { /* noop */ }
+  }
+
+  onOutsideTap(cb: () => void): () => void {
+    if (typeof window === 'undefined') return () => {};
+    const handler = () => cb();
+    window.addEventListener('vibemoji:outsideTap', handler);
+    return () => window.removeEventListener('vibemoji:outsideTap', handler);
+  }
 }

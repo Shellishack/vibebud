@@ -129,6 +129,28 @@ export default function BuddyInstance({ state, anchor, canRemove, onChange, onSp
   const stateRef = useRef(state);
   useEffect(() => { stateRef.current = state; }, [state]);
   useEffect(() => { onOpenChange?.(state.id, open); }, [open, state.id, onOpenChange]);
+
+  // On Android the main WebView window is FLAG_NOT_TOUCHABLE by default so it
+  // doesn't block touches to background apps. While the chat panel is open we
+  // flip it to interactive (and disable the native tap-zone window so it
+  // doesn't shadow popup hits over the avatar's visual area). On close we
+  // restore the passthrough state.
+  useEffect(() => {
+    if (adapter.id !== 'capacitor-android') return;
+    adapter.setOverlayExpanded(open);
+  }, [open, adapter]);
+
+  // Native tap-zone window dispatches `vibemoji:avatarTap` when the user taps
+  // the avatar's visual area. The avatar element itself can't receive pointer
+  // events on Capacitor (its window is FLAG_NOT_TOUCHABLE), so we open the
+  // panel from the window event instead.
+  useEffect(() => {
+    if (adapter.id !== 'capacitor-android') return;
+    if (typeof window === 'undefined') return;
+    const handler = () => setOpen((cur) => !cur);
+    window.addEventListener('vibemoji:avatarTap', handler);
+    return () => window.removeEventListener('vibemoji:avatarTap', handler);
+  }, [adapter]);
   useEffect(() => {
     if (!open) return;
     messagesEndRef.current?.scrollIntoView({ block: 'end', behavior: 'smooth' });
@@ -400,6 +422,15 @@ export default function BuddyInstance({ state, anchor, canRemove, onChange, onSp
                   <p className="text-xs text-emerald-600 dark:text-emerald-400">● {personality.role}</p>
                 </div>
                 <div className="flex items-center gap-1">
+                  {adapter.id === 'capacitor-android' && (
+                    <button
+                      onClick={() => adapter.stopOverlay()}
+                      title="Close the floating overlay"
+                      className="rounded-full bg-rose-100 px-2.5 py-1 text-xs font-semibold text-rose-700 hover:bg-rose-200 dark:bg-rose-500/20 dark:text-rose-300"
+                    >
+                      close overlay
+                    </button>
+                  )}
                   <button
                     onClick={triggerScriptedToast}
                     title="Fire a sample toast"
@@ -639,7 +670,9 @@ export default function BuddyInstance({ state, anchor, canRemove, onChange, onSp
                 justDraggedRef.current = false;
                 return;
               }
-              if (!open) {
+              if (open) {
+                setOpen(false);
+              } else {
                 setOpen(true);
                 feel('love', 1400);
               }

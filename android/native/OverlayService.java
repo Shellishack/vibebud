@@ -10,7 +10,6 @@ import android.content.pm.ServiceInfo;
 import android.graphics.Color;
 import android.graphics.PixelFormat;
 import android.graphics.Rect;
-import android.graphics.Region;
 import android.os.Build;
 import android.os.Handler;
 import android.os.IBinder;
@@ -19,7 +18,6 @@ import android.util.DisplayMetrics;
 import android.view.Gravity;
 import android.view.MotionEvent;
 import android.view.View;
-import android.view.ViewTreeObserver;
 import android.view.WindowManager;
 import android.webkit.JavascriptInterface;
 import android.webkit.WebResourceRequest;
@@ -37,10 +35,6 @@ import org.json.JSONObject;
 
 import java.io.IOException;
 import java.io.InputStream;
-import java.lang.reflect.Field;
-import java.lang.reflect.InvocationHandler;
-import java.lang.reflect.Method;
-import java.lang.reflect.Proxy;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -68,6 +62,8 @@ public class OverlayService extends Service {
     private WindowManager windowManager;
     private WebView webView;
     private WindowManager.LayoutParams params;
+    private View tapZone;
+    private WindowManager.LayoutParams tapZoneParams;
     private final Handler main = new Handler(Looper.getMainLooper());
     private final List<Rect> touchableRects = new ArrayList<>();
     private volatile boolean nativeDragActive = false;
@@ -141,14 +137,26 @@ public class OverlayService extends Service {
                 ? WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
                 : WindowManager.LayoutParams.TYPE_PHONE;
 
-        // The window covers the full screen at all times. Touch fall-through is
-        // handled exclusively by the OnComputeInternalInsetsListener registered
-        // below: when idle it narrows the touchable region to the published
-        // [data-buddy-interactive] rects, and during a gesture (nativeDragActive)
-        // it widens to the full screen so MOVE events keep arriving even when
-        // the finger leaves the avatar. Resizing the window mid-gesture via
-        // updateViewLayout perturbs Chromium's in-flight touch sequence and
-        // cancels drags, so we never do it.
+        // Two-window architecture (single-window touchable-region routing
+        // turned out to require a hidden API — OnComputeInternalInsetsListener
+        // — which is access-restricted on modern Android and silently fails on
+        // many devices, leaving the overlay capturing every touch on screen):
+        //
+        //   1. Main WebView window: full-screen, FLAG_NOT_TOUCHABLE by default
+        //      so it never blocks taps to the apps below. The flag is toggled
+        //      off only while the chat popup is open (NativeBridge#setInteractive
+        //      from JS), making the popup interactive and at the same time
+        //      letting tap-outside-to-dismiss work via a normal click handler.
+        //
+        //   2. Avatar tap-zone window: a tiny transparent native View sized
+        //      to fit just the avatar, with no FLAG_NOT_TOUCHABLE. It captures
+        //      taps over the avatar's visual area and dispatches a JS event
+        //      to open the chat popup. Anywhere outside both windows falls
+        //      through to whatever app is underneath.
+        //
+        // Trade-off: dragging the avatar is disabled in this revision —
+        // re-enabling it requires moving the tap-zone with the gesture and
+        // syncing position back to JS, which we can add later.
         params = new WindowManager.LayoutParams(
                 screenWidth,
                 screenHeight,
@@ -156,10 +164,11 @@ public class OverlayService extends Service {
                 WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
                         | WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS
                         | WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
-                        | WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
+                        | WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL
+                        | WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE,
                 PixelFormat.TRANSLUCENT
         );
-        params.gravity = Gravity.END | Gravity.BOTTOM;
+        params.gravity = Gravity.TOP | Gravity.START;
         params.x = 0;
         params.y = 0;
 
@@ -186,101 +195,82 @@ public class OverlayService extends Service {
         });
         webView.addJavascriptInterface(new NativeBridge(), "vibemojiNative");
 
-        // Native drag-expansion: while a touch gesture is in progress, the
-        // touchable region must cover the entire screen — TOUCHABLE_INSETS_REGION
-        // is checked per event (not per gesture), so once the finger leaves the
-        // static avatar rect Android routes the next MOVE to the launcher and
-        // the gesture is lost. We can't rely on a JS round-trip to flip the
-        // region in time (the bridge call's layout pass is async), so we track
-        // it here on the synchronous touch listener instead.
-        webView.setOnTouchListener((v, ev) -> {
-            int a = ev.getActionMasked();
-            if (a == MotionEvent.ACTION_DOWN) {
-                nativeDragActive = true;
-                v.requestLayout();
-            } else if (a == MotionEvent.ACTION_UP || a == MotionEvent.ACTION_CANCEL) {
-                nativeDragActive = false;
-                v.requestLayout();
-            }
-            return false; // don't consume — let WebView dispatch normally
-        });
-
         webView.loadUrl(url);
 
         windowManager.addView(webView, params);
 
-        // Touch-region routing. The system asks us each layout pass which
-        // sub-rectangle of the window should consume touches; outside that
-        // region, touches fall through to the app underneath. The relevant
-        // APIs (ViewTreeObserver$OnComputeInternalInsetsListener,
-        // ViewTreeObserver$InternalInsetsInfo) are @hide in the SDK stubs but
-        // present at runtime on every Android version, so we wire them up via
-        // reflection. This is the same approach used by Facebook's chat heads
-        // and similar floating-overlay apps.
-        installTouchableRegionListener();
+        addTapZone();
 
         RUNNING = true;
     }
 
-    private void installTouchableRegionListener() {
-        try {
-            final Class<?> infoClass =
-                    Class.forName("android.view.ViewTreeObserver$InternalInsetsInfo");
-            final Class<?> listenerClass =
-                    Class.forName("android.view.ViewTreeObserver$OnComputeInternalInsetsListener");
-            final int TOUCHABLE_INSETS_REGION =
-                    infoClass.getField("TOUCHABLE_INSETS_REGION").getInt(null);
-            final Method setTouchableInsets =
-                    infoClass.getMethod("setTouchableInsets", int.class);
-            final Field touchableRegionField = infoClass.getField("touchableRegion");
+    /**
+     * Adds the small transparent "tap-zone" window that detects taps over the
+     * avatar's visual location and forwards them to the main WebView's JS as a
+     * `vibemoji:avatarTap` event. The main WebView itself is FLAG_NOT_TOUCHABLE
+     * by default so it can't capture taps directly.
+     */
+    private void addTapZone() {
+        float density = getResources().getDisplayMetrics().density;
+        int sizePx = (int) (160 * density);
+        int marginPx = (int) (8 * density);
 
-            InvocationHandler handler = new InvocationHandler() {
-                @Override
-                public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
-                    if ("onComputeInternalInsets".equals(method.getName()) && args != null && args.length == 1) {
-                        Object info = args[0];
-                        setTouchableInsets.invoke(info, TOUCHABLE_INSETS_REGION);
-                        Region region = (Region) touchableRegionField.get(info);
-                        if (region != null) {
-                            region.setEmpty();
-                            if (nativeDragActive && screenWidth > 0 && screenHeight > 0) {
-                                region.union(new Rect(0, 0, screenWidth, screenHeight));
-                            } else {
-                                synchronized (touchableRects) {
-                                    for (Rect r : touchableRects) region.union(r);
-                                }
-                            }
-                        }
-                    }
-                    return null;
-                }
-            };
-            Object listener = Proxy.newProxyInstance(
-                    listenerClass.getClassLoader(),
-                    new Class<?>[]{listenerClass},
-                    handler);
-            ViewTreeObserver vto = webView.getViewTreeObserver();
-            vto.getClass()
-                    .getMethod("addOnComputeInternalInsetsListener", listenerClass)
-                    .invoke(vto, listener);
+        int type = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
+                ? WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+                : WindowManager.LayoutParams.TYPE_PHONE;
+
+        tapZoneParams = new WindowManager.LayoutParams(
+                sizePx,
+                sizePx,
+                type,
+                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
+                        | WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS
+                        | WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
+                        | WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
+                PixelFormat.TRANSLUCENT
+        );
+        tapZoneParams.gravity = Gravity.END | Gravity.BOTTOM;
+        tapZoneParams.x = marginPx;
+        tapZoneParams.y = marginPx;
+
+        tapZone = new View(this);
+        tapZone.setBackgroundColor(Color.TRANSPARENT);
+        tapZone.setOnTouchListener((v, ev) -> {
+            if (ev.getActionMasked() == MotionEvent.ACTION_DOWN && webView != null) {
+                webView.evaluateJavascript(
+                        "window.dispatchEvent(new CustomEvent('vibemoji:avatarTap'))",
+                        null);
+                return true;
+            }
+            return false;
+        });
+        try {
+            windowManager.addView(tapZone, tapZoneParams);
         } catch (Throwable t) {
-            // If reflection fails (e.g. some hardened OEM ROM), the overlay
-            // simply behaves like a fully-touchable window. The buddy still
-            // works; tapping empty space won't fall through. Better than no
-            // overlay at all.
-            android.util.Log.w("vibemoji", "touchable region listener unavailable", t);
+            android.util.Log.w("vibemoji", "tap-zone window add failed", t);
         }
     }
 
     private void stopOverlay() {
-        if (webView != null && windowManager != null) {
-            try {
-                windowManager.removeView(webView);
-            } catch (IllegalArgumentException ignored) {
-                // already detached
+        if (windowManager != null) {
+            if (tapZone != null) {
+                try {
+                    windowManager.removeView(tapZone);
+                } catch (IllegalArgumentException ignored) {
+                    // already detached
+                }
             }
-            webView.destroy();
+            if (webView != null) {
+                try {
+                    windowManager.removeView(webView);
+                } catch (IllegalArgumentException ignored) {
+                    // already detached
+                }
+                webView.destroy();
+            }
         }
+        tapZone = null;
+        tapZoneParams = null;
         webView = null;
         windowManager = null;
         params = null;
@@ -387,22 +377,65 @@ public class OverlayService extends Service {
         @JavascriptInterface
         public void setExpanded(final boolean expanded) { /* no-op */ }
 
+        /**
+         * Failsafe: lets the overlay's own UI tear itself down. Critical if the
+         * touch-region publishing has a bug — without this, a misconfigured
+         * overlay can swallow every touch on screen and the user has no way to
+         * switch apps to kill it. Wired to a "Close overlay" button in the
+         * chat panel.
+         */
+        @JavascriptInterface
+        public void stopOverlay() {
+            main.post(() -> {
+                Intent svc = new Intent(OverlayService.this, OverlayService.class);
+                svc.setAction(ACTION_STOP);
+                startService(svc);
+            });
+        }
+
+        /**
+         * Toggles the main WebView window between passthrough (default) and
+         * fully-interactive modes, and inversely toggles the avatar tap-zone
+         * window so the two never both fight for the same touch:
+         *
+         *   setInteractive(true)  — popup mode: main window receives touches
+         *                           everywhere (so popup UI works); tap-zone
+         *                           is disabled (otherwise it'd shadow popup
+         *                           hits over the avatar's visual area).
+         *
+         *   setInteractive(false) — idle mode: main window is FLAG_NOT_TOUCHABLE
+         *                           so taps fall through to background apps;
+         *                           tap-zone is the only thing capturing
+         *                           taps, used to open the popup.
+         */
         @JavascriptInterface
         public void setInteractive(final boolean interactive) {
             main.post(() -> {
                 if (params == null || windowManager == null || webView == null) return;
-                int flags = params.flags;
+                int mainFlags = params.flags;
                 if (interactive) {
-                    flags &= ~WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE;
+                    mainFlags &= ~WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE;
                 } else {
-                    flags |= WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE;
+                    mainFlags |= WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE;
                 }
-                if (flags != params.flags) {
-                    params.flags = flags;
+                if (mainFlags != params.flags) {
+                    params.flags = mainFlags;
                     try {
                         windowManager.updateViewLayout(webView, params);
-                    } catch (IllegalArgumentException ignored) {
-                        // view detached
+                    } catch (IllegalArgumentException ignored) { /* view detached */ }
+                }
+                if (tapZone != null && tapZoneParams != null) {
+                    int tzFlags = tapZoneParams.flags;
+                    if (interactive) {
+                        tzFlags |= WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE;
+                    } else {
+                        tzFlags &= ~WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE;
+                    }
+                    if (tzFlags != tapZoneParams.flags) {
+                        tapZoneParams.flags = tzFlags;
+                        try {
+                            windowManager.updateViewLayout(tapZone, tapZoneParams);
+                        } catch (IllegalArgumentException ignored) { /* detached */ }
                     }
                 }
             });

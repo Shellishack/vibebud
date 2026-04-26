@@ -26,6 +26,16 @@ export interface PlatformAdapter {
   setFocusable(focusable: boolean): void;
 
   onSpawnRequest(cb: () => void): () => void;
+
+  // Capacitor-only: fires when the user taps outside the published touchable
+  // region (i.e. the touch routed to the background app). Used to dismiss
+  // open popups since the WebView never sees those touches directly.
+  onOutsideTap(cb: () => void): () => void;
+
+  // Capacitor-only failsafe: tears down the floating overlay service. Wired
+  // to a "Close overlay" button so a misbehaving touch-region setup can't
+  // brick the device. No-op on other platforms.
+  stopOverlay(): void;
 }
 
 export interface LayoutAdapter {

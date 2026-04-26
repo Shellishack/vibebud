@@ -20,4 +20,6 @@ export class WebAdapter implements PlatformAdapter {
   setFocusable(_focusable: boolean): void { /* noop */ }
 
   onSpawnRequest(_cb: () => void): () => void { return () => {}; }
+  onOutsideTap(_cb: () => void): () => void { return () => {}; }
+  stopOverlay(): void { /* noop */ }
 }
