@@ -17,25 +17,14 @@ export const VARIANTS: AvatarVariant[] = [
   { id: 'rose',     name: 'Rose',     body: [0.95, 0.42, 0.62], cheek: [0.99, 0.85, 0.90] },
 ];
 
-const BOB_IN  = { x: 0.4, y: 1 };
-const BOB_OUT = { x: 0.6, y: 0 };
 const BOB_INA  = { x: [0.4, 0.4, 0.4], y: [1, 1, 1] };
 const BOB_OUTA = { x: [0.6, 0.6, 0.6], y: [0, 0, 0] };
 
-const bobY = (yLow: number, yHigh: number) => ({
-  a: 1, k: [
-    { t: 0,  s: [200, yLow,  0], i: BOB_IN, o: BOB_OUT },
-    { t: 45, s: [200, yHigh, 0], i: BOB_IN, o: BOB_OUT },
-    { t: 90, s: [200, yLow,  0] },
-  ],
-});
-const bobXY = (x: number, yLow: number, yHigh: number) => ({
-  a: 1, k: [
-    { t: 0,  s: [x, yLow,  0], i: BOB_IN, o: BOB_OUT },
-    { t: 45, s: [x, yHigh, 0], i: BOB_IN, o: BOB_OUT },
-    { t: 90, s: [x, yLow,  0] },
-  ],
-});
+// Bob (vertical bounce) is intentionally NOT animated in Lottie — it lives
+// as a CSS animation on the wrapper so emotion changes (which rebuild this
+// animation) don't reset the bob phase. Positions use the "low" y value.
+const bobY = (yLow: number, _yHigh: number) => ({ a: 0, k: [200, yLow, 0] });
+const bobXY = (x: number, yLow: number, _yHigh: number) => ({ a: 0, k: [x, yLow, 0] });
 const breathe = (lo: number, hi: number) => ({
   a: 1, k: [
     { t: 0,  s: [lo, lo, 100], i: BOB_INA, o: BOB_OUTA },

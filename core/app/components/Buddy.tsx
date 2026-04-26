@@ -485,6 +485,10 @@ export default function Buddy() {
           0% { transform: scale(1); opacity: 0.7; }
           100% { transform: scale(1.45); opacity: 0; }
         }
+        @keyframes buddy-bob {
+          0%, 100% { transform: translateY(0); }
+          50% { transform: translateY(-4%); }
+        }
       `}</style>
     </>
   );

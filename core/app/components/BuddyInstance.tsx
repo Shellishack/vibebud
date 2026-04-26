@@ -132,6 +132,20 @@ export default function BuddyInstance({ state, anchor, canRemove, onChange, onSp
     emotionTimerRef.current = setTimeout(() => setEmotion('idle'), ms);
   };
 
+  useEffect(() => {
+    if (emotion !== 'idle') return;
+    const pool: Emotion[] = [
+      'happy', 'surprised', 'thinking', 'love', 'sad', 'sleepy',
+      'angry', 'excited', 'shy', 'cool', 'wink', 'confused', 'proud', 'sick',
+    ];
+    const delay = 2200 + Math.random() * 2800;
+    const t = setTimeout(() => {
+      const pick = pool[Math.floor(Math.random() * pool.length)];
+      feel(pick, 1400 + Math.random() * 1200);
+    }, delay);
+    return () => clearTimeout(t);
+  }, [emotion]);
+
   const pushToast = (t: Omit<Toast, 'id'>) => {
     const id = toastIdRef.current++;
     setToasts((cur) => [...cur, { ...t, id }]);
@@ -558,7 +572,9 @@ export default function BuddyInstance({ state, anchor, canRemove, onChange, onSp
             }`}
             aria-label={`open ${personality.name}`}
           >
-            <Lottie animationData={animation} loop autoplay />
+            <div className="h-full w-full" style={{ animation: 'buddy-bob 3s ease-in-out infinite' }}>
+              <Lottie animationData={animation} loop autoplay />
+            </div>
           </button>
         </div>
       </div>
