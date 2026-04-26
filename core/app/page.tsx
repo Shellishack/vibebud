@@ -1,4 +1,5 @@
 import Buddy from './components/Buddy';
+import InstallButton from './components/InstallButton';
 
 export default function Home() {
   return (
@@ -24,6 +25,11 @@ export default function Home() {
           doing on your behalf. it talks back in chat bubbles, taps you on the
           shoulder with toasts, and stays out of the way otherwise.
         </p>
+
+        <div className="flex flex-wrap items-center gap-3">
+          <InstallButton />
+          <span className="text-xs text-zinc-500 dark:text-zinc-400">free · ~40&nbsp;MB · auto-detects your OS</span>
+        </div>
 
         <div className="grid w-full max-w-2xl grid-cols-1 gap-3 sm:grid-cols-3">
           <Capability emoji="●" title="floating avatar" body="drag the buddy anywhere on screen. swap the avatar to whatever vibe matches your day." />

@@ -1,0 +1,13 @@
+# dependencies
+node_modules/
+
+# build output
+dist/
+out/
+
+# synced from core/out by sync-core.js — not source
+core-out/
+
+# logs
+*.log
+npm-debug.log*

@@ -76,7 +76,18 @@ const ellipseLayer = (
   ip: 0, op: 90, st: 0, bm: 0,
 });
 
-export function buildAnimation(v: AvatarVariant) {
+export type Emotion = 'idle' | 'happy' | 'surprised' | 'thinking' | 'love';
+
+const EMOTIONS: Record<Emotion, { mouth: [number, number]; eye: [number, number]; mouthY: [number, number] }> = {
+  idle:      { mouth: [44, 18], eye: [22, 30], mouthY: [235, 219] },
+  happy:     { mouth: [64, 26], eye: [22, 10], mouthY: [232, 216] },
+  surprised: { mouth: [26, 26], eye: [28, 34], mouthY: [240, 224] },
+  thinking: { mouth: [22, 8],  eye: [22, 22], mouthY: [238, 222] },
+  love:      { mouth: [54, 24], eye: [18, 8],  mouthY: [232, 216] },
+};
+
+export function buildAnimation(v: AvatarVariant, emotion: Emotion = 'idle') {
+  const e = EMOTIONS[emotion];
   const layers: any[] = [];
   let ind = 1;
 
@@ -85,9 +96,9 @@ export function buildAnimation(v: AvatarVariant) {
     layers.push(ellipseLayer(ind++, 'antennaStem', v.body, [6, 28], bobXY(200, 132, 116)));
   }
 
-  layers.push(ellipseLayer(ind++, 'mouth', [1, 1, 1], [44, 18], bobY(235, 219)));
-  layers.push(ellipseLayer(ind++, 'eyeR', [1, 1, 1], [22, 30], bobXY(225, 195, 179), blink()));
-  layers.push(ellipseLayer(ind++, 'eyeL', [1, 1, 1], [22, 30], bobXY(175, 195, 179), blink()));
+  layers.push(ellipseLayer(ind++, 'mouth', [1, 1, 1], e.mouth, bobY(e.mouthY[0], e.mouthY[1])));
+  layers.push(ellipseLayer(ind++, 'eyeR', [1, 1, 1], e.eye, bobXY(225, 195, 179), blink()));
+  layers.push(ellipseLayer(ind++, 'eyeL', [1, 1, 1], e.eye, bobXY(175, 195, 179), blink()));
 
   if (v.cheek) {
     layers.push(ellipseLayer(ind++, 'cheekR', v.cheek, [22, 14], bobXY(248, 218, 202), undefined, 70));

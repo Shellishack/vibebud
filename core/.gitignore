@@ -36,6 +36,13 @@ yarn-error.log*
 # vercel
 .vercel
 
+# packaged installers (built by desktop/ — too large for git)
+/public/installers/*.exe
+/public/installers/*.dmg
+/public/installers/*.AppImage
+/public/installers/*.apk
+/public/installers/*.zip
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts

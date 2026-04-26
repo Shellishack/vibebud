@@ -1,0 +1,43 @@
+{
+  "name": "vibemoji-desktop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Electron shell for vibemoji — loads core/ as a transparent floating window.",
+  "main": "main.js",
+  "scripts": {
+    "dev": "cross-env VIBEMOJI_DEV_URL=http://localhost:3000 electron .",
+    "start": "electron .",
+    "sync-core": "node sync-core.js",
+    "build:win": "npm run sync-core && electron-builder --win --x64"
+  },
+  "devDependencies": {
+    "cross-env": "^7.0.3",
+    "electron": "^33.0.0",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "dev.vibemoji.desktop",
+    "productName": "vibemoji",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "core-out/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        { "target": "nsis", "arch": ["x64"] }
+      ],
+      "artifactName": "vibemoji-desktop-setup.${ext}"
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": false,
+      "deleteAppDataOnUninstall": false
+    }
+  }
+}

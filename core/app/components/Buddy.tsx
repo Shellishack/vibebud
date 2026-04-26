@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
-import { VARIANTS, buildAnimation, cssColor } from './avatars';
+import { VARIANTS, buildAnimation, cssColor, type Emotion } from './avatars';
 
 const Lottie = dynamic(() => import('lottie-react'), { ssr: false });
 
@@ -31,13 +31,25 @@ export default function Buddy() {
   ]);
   const [input, setInput] = useState('');
   const [pos, setPos] = useState({ x: 0, y: 0 });
+  const [variantId, setVariantId] = useState('violet');
+  const [emotion, setEmotion] = useState<Emotion>('idle');
+  const variant = VARIANTS.find((v) => v.id === variantId) ?? VARIANTS[0];
+  const animation = useMemo(() => buildAnimation(variant, emotion), [variant, emotion]);
   const dragRef = useRef<{ startX: number; startY: number; baseX: number; baseY: number } | null>(null);
   const toastIdRef = useRef(100);
   const msgIdRef = useRef(2);
+  const emotionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const feel = (next: Emotion, ms = 1600) => {
+    if (emotionTimerRef.current) clearTimeout(emotionTimerRef.current);
+    setEmotion(next);
+    emotionTimerRef.current = setTimeout(() => setEmotion('idle'), ms);
+  };
 
   const pushToast = (t: Omit<Toast, 'id'>) => {
     const id = toastIdRef.current++;
     setToasts((cur) => [...cur, { ...t, id }]);
+    feel(t.tone === 'action' ? 'surprised' : t.tone === 'success' ? 'happy' : 'surprised', 1800);
     setTimeout(() => setToasts((cur) => cur.filter((x) => x.id !== id)), 5200);
   };
 
@@ -56,9 +68,11 @@ export default function Buddy() {
     if (!text) return;
     setMessages((m) => [...m, { id: msgIdRef.current++, from: 'you', text }]);
     setInput('');
+    feel('thinking', 600);
     setTimeout(() => {
       const reply = SCRIPTED_REPLIES[Math.floor(Math.random() * SCRIPTED_REPLIES.length)];
       setMessages((m) => [...m, { id: msgIdRef.current++, from: 'buddy', text: reply }]);
+      feel('happy', 1500);
     }, 600);
   };
 
@@ -109,17 +123,36 @@ export default function Buddy() {
             className="pointer-events-auto mb-2 flex w-80 flex-col rounded-3xl border border-zinc-200 bg-white/95 shadow-2xl backdrop-blur-md dark:border-zinc-700 dark:bg-zinc-900/95"
             style={{ height: 380, animation: 'buddy-bubble-in 220ms ease-out' }}
           >
-            <div className="flex items-center justify-between border-b border-zinc-200 px-4 py-3 dark:border-zinc-700">
-              <div>
-                <p className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">buddy</p>
-                <p className="text-xs text-emerald-600 dark:text-emerald-400">● online · watching 3 repos</p>
+            <div className="border-b border-zinc-200 px-4 py-3 dark:border-zinc-700">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">buddy · {variant.name}</p>
+                  <p className="text-xs text-emerald-600 dark:text-emerald-400">● online · watching 3 repos</p>
+                </div>
+                <button
+                  onClick={triggerScriptedToast}
+                  className="rounded-full bg-violet-100 px-2.5 py-1 text-xs font-medium text-violet-700 hover:bg-violet-200 dark:bg-violet-500/20 dark:text-violet-300"
+                >
+                  ping
+                </button>
               </div>
-              <button
-                onClick={triggerScriptedToast}
-                className="rounded-full bg-violet-100 px-2.5 py-1 text-xs font-medium text-violet-700 hover:bg-violet-200 dark:bg-violet-500/20 dark:text-violet-300"
-              >
-                ping
-              </button>
+              <div className="mt-3 flex items-center gap-2">
+                <span className="text-[10px] uppercase tracking-wider text-zinc-500 dark:text-zinc-400">avatar</span>
+                <div className="flex gap-1.5">
+                  {VARIANTS.map((v) => (
+                    <button
+                      key={v.id}
+                      onClick={() => setVariantId(v.id)}
+                      title={v.name}
+                      aria-label={`Use ${v.name} avatar`}
+                      className={`h-5 w-5 rounded-full ring-2 ring-offset-1 transition-transform hover:scale-110 dark:ring-offset-zinc-900 ${
+                        v.id === variantId ? 'ring-zinc-900 dark:ring-white' : 'ring-transparent'
+                      }`}
+                      style={{ background: cssColor(v.body) }}
+                    />
+                  ))}
+                </div>
+              </div>
             </div>
             <div className="flex-1 space-y-2 overflow-y-auto px-4 py-3">
               {messages.map((m) => (
@@ -159,12 +192,16 @@ export default function Buddy() {
           onPointerMove={onPointerMove}
           onPointerUp={onPointerUp}
           onClick={(e) => {
-            if (Math.abs(pos.x - (dragRef.current?.baseX ?? pos.x)) < 4) setOpen((o) => !o);
+            if (Math.abs(pos.x - (dragRef.current?.baseX ?? pos.x)) < 4) {
+              setOpen((o) => !o);
+              feel('love', 1400);
+            }
           }}
+          onPointerEnter={() => feel('happy', 1200)}
           className="pointer-events-auto h-28 w-28 cursor-grab rounded-full transition-transform hover:scale-105 active:cursor-grabbing active:scale-95"
           aria-label="open buddy"
         >
-          <Lottie animationData={buddyAnimation} loop autoplay />
+          <Lottie animationData={animation} loop autoplay />
         </button>
       </div>
 
