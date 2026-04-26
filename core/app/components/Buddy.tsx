@@ -39,6 +39,25 @@ export default function Buddy() {
   const toastIdRef = useRef(100);
   const msgIdRef = useRef(2);
   const emotionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const hoverCountRef = useRef(0);
+
+  const setInteractive = (on: boolean) => {
+    const api = (typeof window !== 'undefined' && (window as any).vibemoji) || null;
+    api?.setInteractive?.(on);
+  };
+  // When the bubble is open or any region is hovered, the OS window must
+  // accept clicks. Otherwise it stays click-through so apps behind us work.
+  useEffect(() => {
+    setInteractive(open);
+  }, [open]);
+  const onRegionEnter = () => {
+    hoverCountRef.current += 1;
+    setInteractive(true);
+  };
+  const onRegionLeave = () => {
+    hoverCountRef.current = Math.max(0, hoverCountRef.current - 1);
+    if (hoverCountRef.current === 0 && !open) setInteractive(false);
+  };
 
   const feel = (next: Emotion, ms = 1600) => {
     if (emotionTimerRef.current) clearTimeout(emotionTimerRef.current);
@@ -94,6 +113,8 @@ export default function Buddy() {
         {toasts.map((t) => (
           <div
             key={t.id}
+            onPointerEnter={onRegionEnter}
+            onPointerLeave={onRegionLeave}
             className={`pointer-events-auto w-80 rounded-2xl border bg-white/95 p-4 shadow-xl backdrop-blur-md transition-all dark:bg-zinc-900/95 ${
               t.tone === 'action' ? 'border-violet-300 dark:border-violet-500/50'
               : t.tone === 'success' ? 'border-emerald-300 dark:border-emerald-500/50'
@@ -120,6 +141,8 @@ export default function Buddy() {
       >
         {open && (
           <div
+            onPointerEnter={onRegionEnter}
+            onPointerLeave={onRegionLeave}
             className="pointer-events-auto mb-2 flex w-80 flex-col rounded-3xl border border-zinc-200 bg-white/95 shadow-2xl backdrop-blur-md dark:border-zinc-700 dark:bg-zinc-900/95"
             style={{ height: 380, animation: 'buddy-bubble-in 220ms ease-out' }}
           >
@@ -197,7 +220,8 @@ export default function Buddy() {
               feel('love', 1400);
             }
           }}
-          onPointerEnter={() => feel('happy', 1200)}
+          onPointerEnter={() => { onRegionEnter(); feel('happy', 1200); }}
+          onPointerLeave={onRegionLeave}
           className="pointer-events-auto h-28 w-28 cursor-grab rounded-full transition-transform hover:scale-105 active:cursor-grabbing active:scale-95"
           aria-label="open buddy"
         >

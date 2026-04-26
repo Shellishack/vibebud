@@ -1,11 +1,9 @@
-const { app, BrowserWindow, screen, Tray, Menu, nativeImage, protocol, net } = require('electron');
+const { app, BrowserWindow, screen, Tray, Menu, nativeImage, protocol, net, ipcMain } = require('electron');
 const path = require('path');
 const url = require('url');
 
 const DEV_URL = process.env.VIBEMOJI_DEV_URL;
 const OUT_DIR = path.join(__dirname, 'core-out');
-const WIN_W = 420;
-const WIN_H = 560;
 
 let win = null;
 let tray = null;
@@ -16,20 +14,22 @@ protocol.registerSchemesAsPrivileged([
 
 function createWindow() {
   const { workArea } = screen.getPrimaryDisplay();
-  const x = workArea.x + workArea.width - WIN_W - 16;
-  const y = workArea.y + workArea.height - WIN_H - 16;
 
   win = new BrowserWindow({
-    width: WIN_W,
-    height: WIN_H,
-    x,
-    y,
+    x: workArea.x,
+    y: workArea.y,
+    width: workArea.width,
+    height: workArea.height,
     frame: false,
     transparent: true,
-    resizable: true,
+    resizable: false,
+    movable: false,
+    minimizable: false,
+    maximizable: false,
+    fullscreenable: false,
     hasShadow: false,
     alwaysOnTop: true,
-    skipTaskbar: false,
+    skipTaskbar: true,
     backgroundColor: '#00000000',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
@@ -38,13 +38,18 @@ function createWindow() {
     },
   });
 
-  win.setAlwaysOnTop(true, 'floating');
+  win.setAlwaysOnTop(true, 'screen-saver');
   win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+  // Click-through by default — clicks pass to apps behind. The renderer toggles
+  // this off via IPC when the cursor is over an interactive element (avatar,
+  // chat bubble, toast). `forward: true` keeps mouse-move events flowing so the
+  // renderer can still detect hover even while ignoring clicks.
+  win.setIgnoreMouseEvents(true, { forward: true });
 
   if (DEV_URL) {
-    win.loadURL(DEV_URL);
+    win.loadURL(`${DEV_URL.replace(/\/$/, '')}/buddy`);
   } else {
-    win.loadURL('app://local/');
+    win.loadURL('app://local/buddy/');
   }
 }
 
@@ -68,6 +73,15 @@ app.whenReady().then(() => {
     if (pathname.endsWith('/')) pathname += 'index.html';
     const filePath = path.join(OUT_DIR, pathname);
     return net.fetch(url.pathToFileURL(filePath).toString());
+  });
+
+  ipcMain.on('set-interactive', (_event, interactive) => {
+    if (!win) return;
+    if (interactive) {
+      win.setIgnoreMouseEvents(false);
+    } else {
+      win.setIgnoreMouseEvents(true, { forward: true });
+    }
   });
 
   createWindow();

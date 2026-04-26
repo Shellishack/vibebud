@@ -8,12 +8,15 @@
     "dev": "cross-env VIBEMOJI_DEV_URL=http://localhost:3000 electron .",
     "start": "electron .",
     "sync-core": "node sync-core.js",
-    "build:win": "npm run sync-core && electron-builder --win --x64"
+    "make-icon": "node make-icon.js",
+    "build:win": "npm run sync-core && npm run make-icon && electron-builder --win --x64"
   },
   "devDependencies": {
     "cross-env": "^7.0.3",
     "electron": "^33.0.0",
-    "electron-builder": "^25.1.8"
+    "electron-builder": "^25.1.8",
+    "png-to-ico": "^2.1.8",
+    "sharp": "^0.33.5"
   },
   "build": {
     "appId": "dev.vibemoji.desktop",
@@ -29,8 +32,14 @@
     ],
     "win": {
       "target": [
-        { "target": "nsis", "arch": ["x64"] }
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
       ],
+      "icon": "build/icon.ico",
       "artifactName": "vibemoji-desktop-setup.${ext}"
     },
     "nsis": {
