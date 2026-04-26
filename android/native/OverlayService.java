@@ -71,17 +71,8 @@ public class OverlayService extends Service {
     private final Handler main = new Handler(Looper.getMainLooper());
     private final List<Rect> touchableRects = new ArrayList<>();
     private volatile boolean nativeDragActive = false;
-    private volatile boolean wantExpanded = false;
     private int screenWidth = 0;
     private int screenHeight = 0;
-    private int idleWidthPx = 0;
-    private int idleHeightPx = 0;
-
-    // Idle-state window size (dp). Sized to wrap the buddy avatar (~112dp) plus
-    // generous drag headroom on every side, so the user can reposition the
-    // buddy within the bottom-right region without the window going full-screen.
-    private static final float IDLE_WIDTH_DP = 320f;
-    private static final float IDLE_HEIGHT_DP = 380f;
 
     @Nullable
     @Override
@@ -145,36 +136,22 @@ public class OverlayService extends Service {
         DisplayMetrics dm = getResources().getDisplayMetrics();
         screenWidth = dm.widthPixels;
         screenHeight = dm.heightPixels;
-        idleWidthPx = (int) Math.ceil(IDLE_WIDTH_DP * dm.density);
-        idleHeightPx = (int) Math.ceil(IDLE_HEIGHT_DP * dm.density);
-        if (idleWidthPx > screenWidth) idleWidthPx = screenWidth;
-        if (idleHeightPx > screenHeight) idleHeightPx = screenHeight;
 
         int type = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
                 ? WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
                 : WindowManager.LayoutParams.TYPE_PHONE;
 
-        // The window is sized to wrap the buddy avatar (anchored bottom-right)
-        // with generous drag headroom — NOT full-screen. This is the primary
-        // mechanism that lets touches outside the buddy area reach whatever
-        // app is underneath: the OS routes touches to the topmost window that
-        // contains the touch point, so anything outside our small window
-        // simply isn't ours. The OnComputeInternalInsetsListener (registered
-        // below) further narrows the touchable region to the published
-        // [data-buddy-interactive] rects within the window, so the empty
-        // space around the avatar inside the window also passes through if
-        // reflection is available; on hardened ROMs where reflection fails,
-        // only the bottom-right idle box captures touches.
-        //
-        // When the user actually grabs the buddy or opens chat / a peeked
-        // group spills outside the idle box, we expand the window to full
-        // screen via applyExpanded(true). Bottom-right gravity keeps the
-        // window's bottom-right edge anchored at screen bottom-right in
-        // both states, so buddies (CSS-anchored right/bottom) don't visually
-        // shift when the window resizes.
+        // The window covers the full screen at all times. Touch fall-through is
+        // handled exclusively by the OnComputeInternalInsetsListener registered
+        // below: when idle it narrows the touchable region to the published
+        // [data-buddy-interactive] rects, and during a gesture (nativeDragActive)
+        // it widens to the full screen so MOVE events keep arriving even when
+        // the finger leaves the avatar. Resizing the window mid-gesture via
+        // updateViewLayout perturbs Chromium's in-flight touch sequence and
+        // cancels drags, so we never do it.
         params = new WindowManager.LayoutParams(
-                idleWidthPx,
-                idleHeightPx,
+                screenWidth,
+                screenHeight,
                 type,
                 WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
                         | WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS
@@ -220,12 +197,9 @@ public class OverlayService extends Service {
             int a = ev.getActionMasked();
             if (a == MotionEvent.ACTION_DOWN) {
                 nativeDragActive = true;
-                applyExpanded(true);
                 v.requestLayout();
             } else if (a == MotionEvent.ACTION_UP || a == MotionEvent.ACTION_CANCEL) {
                 nativeDragActive = false;
-                // Stay expanded if JS still wants it (chat open, peeked group, etc).
-                applyExpanded(wantExpanded);
                 v.requestLayout();
             }
             return false; // don't consume — let WebView dispatch normally
@@ -298,32 +272,6 @@ public class OverlayService extends Service {
         }
     }
 
-    /**
-     * Resizes the overlay window between its idle bottom-right footprint and
-     * full-screen. With gravity = END|BOTTOM and (x,y) = (0,0) the window's
-     * bottom-right edge stays anchored to the screen's bottom-right corner in
-     * both states, so a buddy positioned with CSS right/bottom doesn't visually
-     * shift when the window resizes.
-     *
-     * Always called on the main thread (touch listener, JS bridge handler post).
-     */
-    private boolean currentExpanded = false;
-    private void applyExpanded(boolean expanded) {
-        if (params == null || windowManager == null || webView == null) return;
-        int targetW = expanded ? screenWidth : idleWidthPx;
-        int targetH = expanded ? screenHeight : idleHeightPx;
-        if (targetW <= 0 || targetH <= 0) return;
-        if (currentExpanded == expanded && params.width == targetW && params.height == targetH) return;
-        params.width = targetW;
-        params.height = targetH;
-        currentExpanded = expanded;
-        try {
-            windowManager.updateViewLayout(webView, params);
-        } catch (IllegalArgumentException ignored) {
-            // view detached
-        }
-    }
-
     private void stopOverlay() {
         if (webView != null && windowManager != null) {
             try {
@@ -336,8 +284,6 @@ public class OverlayService extends Service {
         webView = null;
         windowManager = null;
         params = null;
-        currentExpanded = false;
-        wantExpanded = false;
         nativeDragActive = false;
         RUNNING = false;
         stopForeground(STOP_FOREGROUND_REMOVE);
@@ -435,22 +381,11 @@ public class OverlayService extends Service {
             } catch (Exception ignored) { /* malformed JSON */ }
         }
 
-        /**
-         * The web layer asks the overlay window to grow to full-screen (true)
-         * or shrink back to its idle bottom-right footprint (false). Used when
-         * chat opens, a group peeks/expands, or a toast is showing — anything
-         * that needs to render outside the idle box. The native touch listener
-         * also forces expansion on ACTION_DOWN so taps and drags work even
-         * before this signal arrives.
-         */
+        // The window is full-screen at all times now, so JS-driven expansion is
+        // a no-op. Kept as a binding so older bundled JS that still calls this
+        // doesn't throw across the bridge.
         @JavascriptInterface
-        public void setExpanded(final boolean expanded) {
-            main.post(() -> {
-                wantExpanded = expanded;
-                // Don't shrink mid-gesture; ACTION_UP will reconcile.
-                if (!nativeDragActive) applyExpanded(expanded);
-            });
-        }
+        public void setExpanded(final boolean expanded) { /* no-op */ }
 
         @JavascriptInterface
         public void setInteractive(final boolean interactive) {

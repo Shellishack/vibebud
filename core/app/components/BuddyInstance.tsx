@@ -645,7 +645,7 @@ export default function BuddyInstance({ state, anchor, canRemove, onChange, onSp
               }
             }}
             onPointerEnter={() => feel('happy', 1200)}
-            className={`pointer-events-auto relative h-28 w-28 cursor-grab rounded-full transition-transform hover:scale-105 active:cursor-grabbing active:scale-95 ${
+            className={`pointer-events-auto relative h-28 w-28 cursor-grab touch-none rounded-full transition-transform hover:scale-105 active:cursor-grabbing active:scale-95 ${
               magnetState === 'target' ? 'scale-110' : magnetState === 'attractor' ? 'scale-105' : ''
             }`}
             aria-label={`open ${personality.name}`}
