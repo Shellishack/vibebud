@@ -12,12 +12,13 @@ type Props = {
   padTop: number;
   padBottom: number;
   anchor: { right: number; bottom: number };
+  visible: boolean;
   onGroupDragMove: (id: string, pos: { x: number; y: number }) => void;
 };
 
 export default function BuddyGroup({
   groupId, pos, memberCount, stride, avatarSize, padX, padTop, padBottom, anchor,
-  onGroupDragMove,
+  visible, onGroupDragMove,
 }: Props) {
   const width = (memberCount - 1) * stride + avatarSize + padX * 2;
   const height = avatarSize + padTop + padBottom;
@@ -86,7 +87,11 @@ export default function BuddyGroup({
       data-group={groupId}
       onPointerDown={onPointerDown}
       title="Drag to move group"
-      className="pointer-events-auto fixed cursor-grab rounded-[28px] border border-zinc-200 bg-white/55 shadow-xl backdrop-blur-md active:cursor-grabbing dark:border-zinc-700 dark:bg-zinc-900/55"
+      className={`pointer-events-auto fixed cursor-grab rounded-[28px] border active:cursor-grabbing transition-opacity duration-150 ${
+        visible
+          ? 'border-zinc-200 bg-white/55 shadow-xl backdrop-blur-md opacity-100 dark:border-zinc-700 dark:bg-zinc-900/55'
+          : 'border-transparent bg-transparent opacity-0'
+      }`}
       style={{
         right: rightCss,
         bottom: bottomCss,
@@ -95,14 +100,15 @@ export default function BuddyGroup({
         zIndex: 30,
       }}
     >
-      {/* Drag-handle indicator — a visible "grab here" cue at the top of the hull. */}
-      <div
-        aria-hidden
-        className="pointer-events-none absolute left-1/2 -translate-x-1/2"
-        style={{ top: 8, width: 40, height: 4 }}
-      >
-        <div className="h-full w-full rounded-full bg-zinc-400/70 dark:bg-zinc-500/70" />
-      </div>
+      {visible && (
+        <div
+          aria-hidden
+          className="pointer-events-none absolute left-1/2 -translate-x-1/2"
+          style={{ top: 8, width: 40, height: 4 }}
+        >
+          <div className="h-full w-full rounded-full bg-zinc-400/70 dark:bg-zinc-500/70" />
+        </div>
+      )}
     </div>
   );
 }

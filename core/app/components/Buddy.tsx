@@ -328,6 +328,7 @@ export default function Buddy() {
             padTop={HULL_PAD_TOP}
             padBottom={HULL_PAD_BOTTOM}
             anchor={ANCHOR}
+            visible={!!expanded[g.id]}
             onGroupDragMove={onGroupDragMove}
           />
         );
