@@ -22,6 +22,7 @@ export type BuddyInstanceState = {
   variantId: string;
   pos: { x: number; y: number };
   messages: ChatMsg[];
+  groupId?: string;
 };
 
 type Props = {
@@ -32,9 +33,11 @@ type Props = {
   onSpawn: () => void;
   onRemove: () => void;
   onOpenChange?: (id: string, open: boolean) => void;
+  onDragMove?: (id: string, pos: { x: number; y: number }) => void;
+  onDragEnd?: (id: string, pos: { x: number; y: number }, moved: boolean) => void;
 };
 
-export default function BuddyInstance({ state, anchor, canRemove, onChange, onSpawn, onRemove, onOpenChange }: Props) {
+export default function BuddyInstance({ state, anchor, canRemove, onChange, onSpawn, onRemove, onOpenChange, onDragMove, onDragEnd }: Props) {
   const personality: Personality =
     PERSONALITY_BY_VARIANT[state.variantId] ?? PERSONALITY_BY_VARIANT.violet;
 
@@ -123,7 +126,9 @@ export default function BuddyInstance({ state, anchor, canRemove, onChange, onSp
           if (!dragRef.current.moved && Math.abs(dx) + Math.abs(dy) > 4) {
             dragRef.current.moved = true;
           }
-          update({ pos: { x: dragRef.current.baseX + dx, y: dragRef.current.baseY + dy } });
+          const nextPos = { x: dragRef.current.baseX + dx, y: dragRef.current.baseY + dy };
+          update({ pos: nextPos });
+          onDragMove?.(state.id, nextPos);
           raf = requestAnimationFrame(tick);
         });
       };
@@ -133,7 +138,9 @@ export default function BuddyInstance({ state, anchor, canRemove, onChange, onSp
     const stop = () => {
       cancelled = true;
       if (raf) cancelAnimationFrame(raf);
-      justDraggedRef.current = !!dragRef.current?.moved;
+      const moved = !!dragRef.current?.moved;
+      justDraggedRef.current = moved;
+      onDragEnd?.(state.id, stateRef.current.pos, moved);
       dragRef.current = null;
       draggingRef.current = false;
       dragSet.delete(state.id);
@@ -148,6 +155,7 @@ export default function BuddyInstance({ state, anchor, canRemove, onChange, onSp
 
   return (
     <div
+      data-buddy-member
       className="fixed z-50"
       style={{
         right: anchor.right,

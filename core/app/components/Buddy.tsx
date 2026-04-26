@@ -2,42 +2,74 @@
 
 import { useEffect, useRef, useState } from 'react';
 import BuddyInstance, { type BuddyInstanceState } from './BuddyInstance';
+import BuddyGroup from './BuddyGroup';
 import { nextUnusedPersonality } from './personalities';
 
-const STORAGE_KEY = 'vibemoji.buddies.v1';
+const STORAGE_KEY = 'vibemoji.buddies.v2';
+
+const AVATAR_SIZE = 112;
+const HULL_PAD = 8;
+const COLLAPSED_STRIDE = 28;
+const EXPANDED_STRIDE = 132;
+const MERGE_RADIUS = 90;
+const EJECT_RADIUS = 180;
+const ANCHOR = { right: 24, bottom: 24 };
+
+type Group = { id: string; memberIds: string[]; pos: { x: number; y: number } };
+type Persisted = { buddies: BuddyInstanceState[]; groups: Group[] };
 
 const initialBuddies = (): BuddyInstanceState[] => [
   { id: 'buddy-1', variantId: 'violet', pos: { x: 0, y: 0 }, messages: [] },
 ];
 
-function loadFromStorage(): BuddyInstanceState[] | null {
+function loadFromStorage(): Persisted | null {
   if (typeof window === 'undefined') return null;
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return null;
     const parsed = JSON.parse(raw);
-    if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-  } catch {
-    /* noop */
-  }
+    if (parsed && Array.isArray(parsed.buddies) && parsed.buddies.length > 0) {
+      return { buddies: parsed.buddies, groups: Array.isArray(parsed.groups) ? parsed.groups : [] };
+    }
+  } catch { /* noop */ }
   return null;
 }
 
+const slotPos = (group: Group, index: number, stride: number) => ({
+  x: group.pos.x + index * stride,
+  y: group.pos.y,
+});
+
 export default function Buddy() {
   const [buddies, setBuddies] = useState<BuddyInstanceState[]>(initialBuddies);
+  const [groups, setGroups] = useState<Group[]>([]);
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const idRef = useRef(2);
+  const groupIdRef = useRef(1);
   const hydratedRef = useRef(false);
 
-  // Hydrate from localStorage after mount (avoids SSR mismatch).
+  const buddiesRef = useRef(buddies);
+  const groupsRef = useRef(groups);
+  const expandedRef = useRef(expanded);
+  useEffect(() => { buddiesRef.current = buddies; }, [buddies]);
+  useEffect(() => { groupsRef.current = groups; }, [groups]);
+  useEffect(() => { expandedRef.current = expanded; }, [expanded]);
+
   useEffect(() => {
     const stored = loadFromStorage();
     if (stored) {
-      setBuddies(stored);
-      const maxN = stored.reduce((m, b) => {
+      setBuddies(stored.buddies);
+      setGroups(stored.groups);
+      const maxN = stored.buddies.reduce((m, b) => {
         const n = parseInt(b.id.replace(/^buddy-/, ''), 10);
         return Number.isFinite(n) ? Math.max(m, n) : m;
       }, 0);
       idRef.current = maxN + 1;
+      const maxG = stored.groups.reduce((m, g) => {
+        const n = parseInt(g.id.replace(/^group-/, ''), 10);
+        return Number.isFinite(n) ? Math.max(m, n) : m;
+      }, 0);
+      groupIdRef.current = maxG + 1;
     }
     hydratedRef.current = true;
   }, []);
@@ -45,16 +77,32 @@ export default function Buddy() {
   useEffect(() => {
     if (!hydratedRef.current) return;
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(buddies));
-    } catch {
-      /* noop */
-    }
-  }, [buddies]);
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({ buddies, groups }));
+    } catch { /* noop */ }
+  }, [buddies, groups]);
 
-  // (Click-through is no longer toggled per hover — see the resize effect
-  // below. The window is sized to the interactive bounding box so any pixel
-  // inside it is intentionally interactive, and toggling WS_EX_TRANSPARENT is
-  // what caused Chrome below us to evict its hardware video overlay.)
+  // Sync grouped member positions to their slots whenever group/expanded state
+  // changes — except for buddies currently being dragged (their drag owns pos).
+  useEffect(() => {
+    setBuddies((cur) => {
+      const dragging: Set<string> | undefined = (window as any).__vibemojiDragging;
+      let changed = false;
+      const next = cur.map((b) => {
+        if (!b.groupId) return b;
+        const g = groups.find((x) => x.id === b.groupId);
+        if (!g) return b;
+        const i = g.memberIds.indexOf(b.id);
+        if (i < 0) return b;
+        const stride = expanded[g.id] ? EXPANDED_STRIDE : COLLAPSED_STRIDE;
+        const target = slotPos(g, i, stride);
+        if (dragging?.has(b.id)) return b;
+        if (b.pos.x === target.x && b.pos.y === target.y) return b;
+        changed = true;
+        return { ...b, pos: target };
+      });
+      return changed ? next : cur;
+    });
+  }, [groups, expanded]);
 
   const updateBuddy = (id: string, next: BuddyInstanceState) => {
     setBuddies((cur) => cur.map((b) => (b.id === id ? next : b)));
@@ -82,10 +130,6 @@ export default function Buddy() {
     return () => { if (typeof off === 'function') off(); };
   }, []);
 
-  // The OS window covers the full work area and is click-through by default
-  // (setIgnoreMouseEvents in main.js). We toggle interactivity on whenever
-  // the OS-forwarded mousemove lands over an element marked
-  // data-buddy-interactive (or a descendant), and back off otherwise.
   useEffect(() => {
     if (typeof window === 'undefined') return;
     const v = (window as any).vibemoji;
@@ -107,7 +151,19 @@ export default function Buddy() {
   }, []);
 
   const removeBuddy = (id: string) => {
-    setBuddies((cur) => (cur.length <= 1 ? cur : cur.filter((b) => b.id !== id)));
+    setBuddies((cur) => {
+      if (cur.length <= 1) return cur;
+      return cur.filter((b) => b.id !== id);
+    });
+    setGroups((cur) => {
+      const updated = cur
+        .map((g) => ({ ...g, memberIds: g.memberIds.filter((m) => m !== id) }))
+        .filter((g) => g.memberIds.length >= 2);
+      // Clear groupId for any buddies whose group dissolved.
+      const surviving = new Set(updated.map((g) => g.id));
+      setBuddies((bs) => bs.map((b) => (b.groupId && !surviving.has(b.groupId) ? { ...b, groupId: undefined } : b)));
+      return updated;
+    });
   };
 
   const openSetRef = useRef<Set<string>>(new Set());
@@ -121,20 +177,141 @@ export default function Buddy() {
     (window as any).vibemoji?.setFocusable?.(wantFocusable);
   };
 
+  // Eject a member from its group; dissolve group if it would have <2 members.
+  const ejectFromGroup = (buddyId: string, groupId: string) => {
+    const g = groupsRef.current.find((x) => x.id === groupId);
+    if (!g) return;
+    const remaining = g.memberIds.filter((m) => m !== buddyId);
+    if (remaining.length >= 2) {
+      setGroups((cur) => cur.map((x) => (x.id === groupId ? { ...x, memberIds: remaining } : x)));
+      setBuddies((cur) => cur.map((b) => (b.id === buddyId ? { ...b, groupId: undefined } : b)));
+    } else {
+      setGroups((cur) => cur.filter((x) => x.id !== groupId));
+      setBuddies((cur) => cur.map((b) =>
+        (b.id === buddyId || remaining.includes(b.id)) ? { ...b, groupId: undefined } : b
+      ));
+    }
+  };
+
+  const onDragMove = (id: string, pos: { x: number; y: number }) => {
+    const b = buddiesRef.current.find((x) => x.id === id);
+    if (!b?.groupId) return;
+    const g = groupsRef.current.find((x) => x.id === b.groupId);
+    if (!g) return;
+    const i = g.memberIds.indexOf(id);
+    if (i < 0) return;
+    const stride = expandedRef.current[g.id] ? EXPANDED_STRIDE : COLLAPSED_STRIDE;
+    const slot = slotPos(g, i, stride);
+    const dx = pos.x - slot.x;
+    const dy = pos.y - slot.y;
+    if (Math.hypot(dx, dy) > EJECT_RADIUS) {
+      ejectFromGroup(id, g.id);
+    }
+  };
+
+  const onDragEnd = (id: string, pos: { x: number; y: number }, moved: boolean) => {
+    if (!moved) return;
+    const b = buddiesRef.current.find((x) => x.id === id);
+    if (!b) return;
+    if (b.groupId) {
+      const g = groupsRef.current.find((x) => x.id === b.groupId);
+      if (!g) return;
+      const i = g.memberIds.indexOf(id);
+      if (i < 0) return;
+      const stride = expandedRef.current[g.id] ? EXPANDED_STRIDE : COLLAPSED_STRIDE;
+      const target = slotPos(g, i, stride);
+      setBuddies((cur) => cur.map((x) => (x.id === id ? { ...x, pos: target } : x)));
+      return;
+    }
+    let bestG: Group | null = null;
+    let bestDG = MERGE_RADIUS;
+    for (const g of groupsRef.current) {
+      const d = Math.hypot(g.pos.x - pos.x, g.pos.y - pos.y);
+      if (d < bestDG) { bestDG = d; bestG = g; }
+    }
+    if (bestG) {
+      const g = bestG;
+      setGroups((cur) => cur.map((x) => (x.id === g.id ? { ...x, memberIds: [...x.memberIds, id] } : x)));
+      setBuddies((cur) => cur.map((x) => (x.id === id ? { ...x, groupId: g.id } : x)));
+      return;
+    }
+    let bestB: BuddyInstanceState | null = null;
+    let bestDB = MERGE_RADIUS;
+    for (const other of buddiesRef.current) {
+      if (other.id === id || other.groupId) continue;
+      const d = Math.hypot(other.pos.x - pos.x, other.pos.y - pos.y);
+      if (d < bestDB) { bestDB = d; bestB = other; }
+    }
+    if (bestB) {
+      const target = bestB;
+      const newGroupId = `group-${groupIdRef.current++}`;
+      setGroups((cur) => [...cur, { id: newGroupId, memberIds: [target.id, id], pos: target.pos }]);
+      setBuddies((cur) => cur.map((x) => (
+        x.id === target.id || x.id === id ? { ...x, groupId: newGroupId } : x
+      )));
+    }
+  };
+
+  const onGroupDragMove = (gid: string, pos: { x: number; y: number }) => {
+    setGroups((cur) => cur.map((g) => (g.id === gid ? { ...g, pos } : g)));
+  };
+
+  const onExpandChange = (gid: string, isExpanded: boolean) => {
+    setExpanded((cur) => (cur[gid] === isExpanded ? cur : { ...cur, [gid]: isExpanded }));
+  };
+
+  const renderBuddy = (b: BuddyInstanceState) => (
+    <BuddyInstance
+      key={b.id}
+      state={b}
+      anchor={ANCHOR}
+      canRemove={buddies.length > 1}
+      onChange={(next) => updateBuddy(b.id, next)}
+      onSpawn={spawnBuddy}
+      onRemove={() => removeBuddy(b.id)}
+      onOpenChange={onOpenChange}
+      onDragMove={onDragMove}
+      onDragEnd={onDragEnd}
+    />
+  );
+
+  const groupedByGid = new Map<string, BuddyInstanceState[]>();
+  for (const b of buddies) {
+    if (b.groupId) {
+      const arr = groupedByGid.get(b.groupId) ?? [];
+      arr.push(b);
+      groupedByGid.set(b.groupId, arr);
+    }
+  }
+  const freeBuddies = buddies.filter((b) => !b.groupId);
+
   return (
     <>
-      {buddies.map((b, i) => (
-        <BuddyInstance
-          key={b.id}
-          state={b}
-          anchor={{ right: 24 + i * 0, bottom: 24 + i * 0 }}
-          canRemove={buddies.length > 1}
-          onChange={(next) => updateBuddy(b.id, next)}
-          onSpawn={spawnBuddy}
-          onRemove={() => removeBuddy(b.id)}
-          onOpenChange={onOpenChange}
-        />
-      ))}
+      {freeBuddies.map(renderBuddy)}
+
+      {groups.map((g) => {
+        const stride = expanded[g.id] ? EXPANDED_STRIDE : COLLAPSED_STRIDE;
+        const members = g.memberIds
+          .map((mid) => buddies.find((b) => b.id === mid))
+          .filter((b): b is BuddyInstanceState => !!b);
+        if (members.length < 2) return null;
+        return (
+          <BuddyGroup
+            key={g.id}
+            groupId={g.id}
+            pos={g.pos}
+            memberCount={members.length}
+            stride={stride}
+            avatarSize={AVATAR_SIZE}
+            pad={HULL_PAD}
+            anchor={ANCHOR}
+            onExpandChange={onExpandChange}
+            onGroupDragMove={onGroupDragMove}
+          >
+            {members.map(renderBuddy)}
+          </BuddyGroup>
+        );
+      })}
 
       <style jsx global>{`
         @keyframes buddy-toast-in {
