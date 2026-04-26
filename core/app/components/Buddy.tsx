@@ -282,6 +282,74 @@ export default function Buddy() {
     };
   }, []);
 
+  // Android-overlay touch routing: the OverlayService window has no
+  // FLAG_NOT_TOUCHABLE, so by default it would consume every touch on screen.
+  // We continuously report the bounding boxes of all interactive buddy
+  // elements to native, which sets them as the window's touchable region —
+  // touches outside fall through to whatever app is underneath. Replaces the
+  // mouse-hover-driven setInteractive model on touchscreens.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const native = (window as any).vibemojiNative;
+    if (!native || typeof native.setTouchableRegion !== 'function') return;
+
+    let lastJson = '';
+    let raf = 0;
+    const measure = () => {
+      raf = 0;
+      const dpr = window.devicePixelRatio || 1;
+      const els = document.querySelectorAll<HTMLElement>('[data-buddy-interactive]');
+      const rects: { x: number; y: number; w: number; h: number }[] = [];
+      els.forEach((el) => {
+        const r = el.getBoundingClientRect();
+        if (r.width <= 0 || r.height <= 0) return;
+        rects.push({
+          x: Math.floor(r.left * dpr),
+          y: Math.floor(r.top * dpr),
+          w: Math.ceil(r.width * dpr),
+          h: Math.ceil(r.height * dpr),
+        });
+      });
+      const json = JSON.stringify(rects);
+      if (json !== lastJson) {
+        lastJson = json;
+        try { native.setTouchableRegion(json); } catch { /* noop */ }
+      }
+    };
+    const schedule = () => {
+      if (raf) return;
+      raf = requestAnimationFrame(measure);
+    };
+
+    schedule();
+    const ro = new ResizeObserver(schedule);
+    ro.observe(document.documentElement);
+    document.querySelectorAll<HTMLElement>('[data-buddy-interactive]').forEach((el) => ro.observe(el));
+    const mo = new MutationObserver(() => {
+      // Track newly-mounted interactive elements (e.g., chat bubbles, toasts).
+      document.querySelectorAll<HTMLElement>('[data-buddy-interactive]').forEach((el) => ro.observe(el));
+      schedule();
+    });
+    mo.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['style', 'class'] });
+    window.addEventListener('scroll', schedule, true);
+    window.addEventListener('resize', schedule);
+
+    // Buddy positions update via React state every animation frame during
+    // drag — the MutationObserver catches style changes, but a low-rate poll
+    // covers any cases the observer misses.
+    const poll = window.setInterval(schedule, 250);
+
+    return () => {
+      ro.disconnect();
+      mo.disconnect();
+      window.removeEventListener('scroll', schedule, true);
+      window.removeEventListener('resize', schedule);
+      window.clearInterval(poll);
+      if (raf) cancelAnimationFrame(raf);
+      try { native.setTouchableRegion('[]'); } catch { /* noop */ }
+    };
+  }, []);
+
   const removeBuddy = (id: string) => {
     setBuddies((cur) => {
       if (cur.length <= 1) return cur;

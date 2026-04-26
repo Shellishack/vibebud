@@ -9,12 +9,16 @@ import android.content.Intent;
 import android.content.pm.ServiceInfo;
 import android.graphics.Color;
 import android.graphics.PixelFormat;
+import android.graphics.Rect;
+import android.graphics.Region;
 import android.os.Build;
 import android.os.Handler;
 import android.os.IBinder;
 import android.os.Looper;
 import android.util.DisplayMetrics;
 import android.view.Gravity;
+import android.view.View;
+import android.view.ViewTreeObserver;
 import android.view.WindowManager;
 import android.webkit.JavascriptInterface;
 import android.webkit.WebResourceRequest;
@@ -27,8 +31,17 @@ import androidx.annotation.Nullable;
 import androidx.core.app.NotificationCompat;
 import androidx.webkit.WebViewAssetLoader;
 
+import org.json.JSONArray;
+import org.json.JSONObject;
+
 import java.io.IOException;
 import java.io.InputStream;
+import java.lang.reflect.Field;
+import java.lang.reflect.InvocationHandler;
+import java.lang.reflect.Method;
+import java.lang.reflect.Proxy;
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * Foreground service that renders the vibemoji /buddy route as a transparent
@@ -55,6 +68,7 @@ public class OverlayService extends Service {
     private WebView webView;
     private WindowManager.LayoutParams params;
     private final Handler main = new Handler(Looper.getMainLooper());
+    private final List<Rect> touchableRects = new ArrayList<>();
 
     @Nullable
     @Override
@@ -121,6 +135,14 @@ public class OverlayService extends Service {
                 ? WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
                 : WindowManager.LayoutParams.TYPE_PHONE;
 
+        // Note: FLAG_NOT_TOUCHABLE is intentionally absent. On touchscreen
+        // devices there is no hover, so we cannot toggle "interactive" on
+        // mousemove the way the desktop shell does. Instead the web layer
+        // reports the bounding boxes of every [data-buddy-interactive] element
+        // via setTouchableRegion(), and an OnComputeInternalInsetsListener
+        // (registered below) tells Android to deliver touches inside those
+        // rects to this window and pass everything else through to whatever
+        // app is underneath.
         params = new WindowManager.LayoutParams(
                 dm.widthPixels,
                 dm.heightPixels,
@@ -128,8 +150,7 @@ public class OverlayService extends Service {
                 WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
                         | WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS
                         | WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
-                        | WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL
-                        | WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE,
+                        | WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
                 PixelFormat.TRANSLUCENT
         );
         params.gravity = Gravity.START | Gravity.TOP;
@@ -161,7 +182,64 @@ public class OverlayService extends Service {
         webView.loadUrl(url);
 
         windowManager.addView(webView, params);
+
+        // Touch-region routing. The system asks us each layout pass which
+        // sub-rectangle of the window should consume touches; outside that
+        // region, touches fall through to the app underneath. The relevant
+        // APIs (ViewTreeObserver$OnComputeInternalInsetsListener,
+        // ViewTreeObserver$InternalInsetsInfo) are @hide in the SDK stubs but
+        // present at runtime on every Android version, so we wire them up via
+        // reflection. This is the same approach used by Facebook's chat heads
+        // and similar floating-overlay apps.
+        installTouchableRegionListener();
+
         RUNNING = true;
+    }
+
+    private void installTouchableRegionListener() {
+        try {
+            final Class<?> infoClass =
+                    Class.forName("android.view.ViewTreeObserver$InternalInsetsInfo");
+            final Class<?> listenerClass =
+                    Class.forName("android.view.ViewTreeObserver$OnComputeInternalInsetsListener");
+            final int TOUCHABLE_INSETS_REGION =
+                    infoClass.getField("TOUCHABLE_INSETS_REGION").getInt(null);
+            final Method setTouchableInsets =
+                    infoClass.getMethod("setTouchableInsets", int.class);
+            final Field touchableRegionField = infoClass.getField("touchableRegion");
+
+            InvocationHandler handler = new InvocationHandler() {
+                @Override
+                public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
+                    if ("onComputeInternalInsets".equals(method.getName()) && args != null && args.length == 1) {
+                        Object info = args[0];
+                        setTouchableInsets.invoke(info, TOUCHABLE_INSETS_REGION);
+                        Region region = (Region) touchableRegionField.get(info);
+                        if (region != null) {
+                            region.setEmpty();
+                            synchronized (touchableRects) {
+                                for (Rect r : touchableRects) region.union(r);
+                            }
+                        }
+                    }
+                    return null;
+                }
+            };
+            Object listener = Proxy.newProxyInstance(
+                    listenerClass.getClassLoader(),
+                    new Class<?>[]{listenerClass},
+                    handler);
+            ViewTreeObserver vto = webView.getViewTreeObserver();
+            vto.getClass()
+                    .getMethod("addOnComputeInternalInsetsListener", listenerClass)
+                    .invoke(vto, listener);
+        } catch (Throwable t) {
+            // If reflection fails (e.g. some hardened OEM ROM), the overlay
+            // simply behaves like a fully-touchable window. The buddy still
+            // works; tapping empty space won't fall through. Better than no
+            // overlay at all.
+            android.util.Log.w("vibemoji", "touchable region listener unavailable", t);
+        }
     }
 
     private void stopOverlay() {
@@ -237,6 +315,41 @@ public class OverlayService extends Service {
     }
 
     public class NativeBridge {
+        /**
+         * The web layer publishes the bounding rects of every
+         * [data-buddy-interactive] element (in device pixels). We replace the
+         * touchable region with their union; everything outside falls through
+         * to the underlying app.
+         */
+        @JavascriptInterface
+        public void setTouchableRegion(String json) {
+            try {
+                JSONArray arr = new JSONArray(json == null ? "[]" : json);
+                List<Rect> next = new ArrayList<>(arr.length());
+                for (int i = 0; i < arr.length(); i++) {
+                    JSONObject o = arr.getJSONObject(i);
+                    int x = (int) Math.floor(o.getDouble("x"));
+                    int y = (int) Math.floor(o.getDouble("y"));
+                    int w = (int) Math.ceil(o.getDouble("w"));
+                    int h = (int) Math.ceil(o.getDouble("h"));
+                    if (w <= 0 || h <= 0) continue;
+                    next.add(new Rect(x, y, x + w, y + h));
+                }
+                synchronized (touchableRects) {
+                    touchableRects.clear();
+                    touchableRects.addAll(next);
+                }
+                // Force a layout pass so onComputeInternalInsets fires with
+                // the new region. requestLayout alone is unreliable for this.
+                main.post(() -> {
+                    if (windowManager == null || webView == null || params == null) return;
+                    try {
+                        windowManager.updateViewLayout(webView, params);
+                    } catch (IllegalArgumentException ignored) { /* detached */ }
+                });
+            } catch (Exception ignored) { /* malformed JSON */ }
+        }
+
         @JavascriptInterface
         public void setInteractive(final boolean interactive) {
             main.post(() -> {
