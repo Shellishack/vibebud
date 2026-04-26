@@ -5,7 +5,10 @@ const devUrl = process.env.VIBEMOJI_DEV_URL;
 const config: CapacitorConfig = {
   appId: 'dev.vibemoji.android',
   appName: 'vibemoji',
-  webDir: 'www',
+  // Point straight at core's static export — no intermediate copy. Capacitor
+  // happily accepts a webDir outside the project root, so `cap sync` reads
+  // directly from `core/out/` and we don't need a separate `www/` mirror.
+  webDir: '../core/out',
   android: {
     allowMixedContent: true,
     backgroundColor: '#00000000',

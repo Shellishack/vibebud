@@ -4,9 +4,7 @@
   "private": true,
   "description": "Capacitor shell for vibemoji — renders core/ as a system overlay floating on top of all other apps.",
   "scripts": {
-    "sync-core": "node sync-core.js",
     "install-overlay": "node install-overlay.js",
-    "sync": "cap sync android",
     "open": "cap open android",
     "dev": "cross-env VIBEMOJI_DEV_URL=http://10.0.2.2:3060 cap run android --no-sync",
     "build": "cd android && gradlew.bat assembleRelease"

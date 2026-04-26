@@ -35,8 +35,7 @@ A shared core wrapped by per-platform shells. The root is a "loose" monorepo: a 
   - `sync-core.js` — copies `core/out/` → `desktop/core-out/` before packaging (excludes the `installers/` dir to avoid recursive bundling).
   - `make-icon.js` — generates the Windows `.ico` from a PNG via `sharp` + `png-to-ico`.
 - `android/` — Capacitor 8 shell. Loads `core/`'s static export (or the dev server at `10.0.2.2:3060`) and adds a native `OverlayService` so the buddy floats above every other app.
-  - `capacitor.config.ts` — `appId: dev.vibemoji.android`, `webDir: www`. Honors `VIBEMOJI_DEV_URL` to point the WebView at the running Next dev server.
-  - `sync-core.js` — copies `core/out/` → `android/www/` (excludes `installers/`, mirroring `desktop/sync-core.js`).
+  - `capacitor.config.ts` — `appId: dev.vibemoji.android`, `webDir: '../core/out'` (Capacitor reads core's static export directly — no intermediate `www/` mirror). Honors `VIBEMOJI_DEV_URL` to point the WebView at the running Next dev server.
   - `install-overlay.js` — one-shot patcher run after `npx cap add android`. Drops `OverlayService.java` + `OverlayPlugin.java` into the generated Gradle project, injects the `SYSTEM_ALERT_WINDOW` / `FOREGROUND_SERVICE_SPECIAL_USE` permissions and the `<service>` declaration into `AndroidManifest.xml`, and registers the plugin in `MainActivity`.
   - `native/OverlayService.java` — foreground service that owns its own transparent `WebView` and adds it to `WindowManager` with `TYPE_APPLICATION_OVERLAY`. Touch-passthrough toggle via `FLAG_NOT_TOUCHABLE`, controlled from JS through a `vibemojiNative.setInteractive(boolean)` bridge. Counterpart to `desktop/main.js`'s `setIgnoreMouseEvents`.
   - `native/OverlayPlugin.java` — Capacitor plugin exposed as `Capacitor.Plugins.Overlay`: `hasPermission()`, `requestPermission()`, `start({ url? })`, `stop()`, `isRunning()`, `setInteractive({ value })`.
