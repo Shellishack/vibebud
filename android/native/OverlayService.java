@@ -17,6 +17,7 @@ import android.os.IBinder;
 import android.os.Looper;
 import android.util.DisplayMetrics;
 import android.view.Gravity;
+import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewTreeObserver;
 import android.view.WindowManager;
@@ -69,6 +70,9 @@ public class OverlayService extends Service {
     private WindowManager.LayoutParams params;
     private final Handler main = new Handler(Looper.getMainLooper());
     private final List<Rect> touchableRects = new ArrayList<>();
+    private volatile boolean nativeDragActive = false;
+    private int screenWidth = 0;
+    private int screenHeight = 0;
 
     @Nullable
     @Override
@@ -130,6 +134,8 @@ public class OverlayService extends Service {
         }
 
         DisplayMetrics dm = getResources().getDisplayMetrics();
+        screenWidth = dm.widthPixels;
+        screenHeight = dm.heightPixels;
 
         int type = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
                 ? WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
@@ -179,6 +185,26 @@ public class OverlayService extends Service {
             }
         });
         webView.addJavascriptInterface(new NativeBridge(), "vibemojiNative");
+
+        // Native drag-expansion: while a touch gesture is in progress, the
+        // touchable region must cover the entire screen — TOUCHABLE_INSETS_REGION
+        // is checked per event (not per gesture), so once the finger leaves the
+        // static avatar rect Android routes the next MOVE to the launcher and
+        // the gesture is lost. We can't rely on a JS round-trip to flip the
+        // region in time (the bridge call's layout pass is async), so we track
+        // it here on the synchronous touch listener instead.
+        webView.setOnTouchListener((v, ev) -> {
+            int a = ev.getActionMasked();
+            if (a == MotionEvent.ACTION_DOWN) {
+                nativeDragActive = true;
+                v.requestLayout();
+            } else if (a == MotionEvent.ACTION_UP || a == MotionEvent.ACTION_CANCEL) {
+                nativeDragActive = false;
+                v.requestLayout();
+            }
+            return false; // don't consume — let WebView dispatch normally
+        });
+
         webView.loadUrl(url);
 
         windowManager.addView(webView, params);
@@ -217,8 +243,12 @@ public class OverlayService extends Service {
                         Region region = (Region) touchableRegionField.get(info);
                         if (region != null) {
                             region.setEmpty();
-                            synchronized (touchableRects) {
-                                for (Rect r : touchableRects) region.union(r);
+                            if (nativeDragActive && screenWidth > 0 && screenHeight > 0) {
+                                region.union(new Rect(0, 0, screenWidth, screenHeight));
+                            } else {
+                                synchronized (touchableRects) {
+                                    for (Rect r : touchableRects) region.union(r);
+                                }
                             }
                         }
                     }

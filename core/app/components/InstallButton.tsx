@@ -1,6 +1,12 @@
 'use client';
 
+// NOTE: this component still UA-sniffs to choose between Mac/Linux/Windows
+// installers — the platform adapter intentionally doesn't carry desktop-OS
+// granularity (it only distinguishes web/electron/capacitor). UA detection
+// is appropriate here.
+
 import { useEffect, useState } from 'react';
+import { usePlatform } from './hooks/usePlatform';
 
 type Target = { id: string; label: string; file: string; ext: string };
 
@@ -23,13 +29,13 @@ function detectTarget(): Target {
 }
 
 export default function InstallButton() {
+  const adapter = usePlatform();
+  const insideElectron = adapter.id === 'electron';
   const [target, setTarget] = useState<Target>(TARGETS[0]);
   const [open, setOpen] = useState(false);
-  const [insideElectron, setInsideElectron] = useState(false);
 
   useEffect(() => {
     setTarget(detectTarget());
-    setInsideElectron(typeof window !== 'undefined' && Boolean((window as any).vibemoji?.isElectron));
   }, []);
 
   const handleDownload = async (t: Target, e: React.MouseEvent<HTMLAnchorElement>) => {

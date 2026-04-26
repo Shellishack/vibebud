@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Capacitor } from '@capacitor/core';
+import { usePlatform } from './hooks/usePlatform';
 
 type OverlayPlugin = {
   hasPermission: () => Promise<{ granted: boolean }>;
@@ -18,17 +18,16 @@ const getOverlay = (): OverlayPlugin | null => {
 };
 
 export default function OverlayButton() {
-  const [isAndroid, setIsAndroid] = useState(false);
+  const adapter = usePlatform();
   const [running, setRunning] = useState(false);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
-    setIsAndroid(Capacitor.getPlatform() === 'android');
     const overlay = getOverlay();
     overlay?.isRunning().then((r) => setRunning(!!r.running)).catch(() => {});
   }, []);
 
-  if (!isAndroid) return null;
+  if (adapter.id !== 'capacitor-android') return null;
 
   const onClick = async () => {
     const overlay = getOverlay();

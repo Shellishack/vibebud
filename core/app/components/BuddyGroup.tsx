@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef } from 'react';
+import { usePlatform } from './hooks/usePlatform';
 
 type Props = {
   groupId: string;
@@ -22,6 +23,7 @@ export default function BuddyGroup({
   groupId, pos, memberCount, stride, avatarSize, padX, padTop, padBottom, anchor,
   visible, magnetActive, background, onGroupDragMove,
 }: Props) {
+  const adapter = usePlatform();
   const width = (memberCount - 1) * stride + avatarSize + padX * 2;
   const height = avatarSize + padTop + padBottom;
 
@@ -39,11 +41,11 @@ export default function BuddyGroup({
   const onPointerDown = (e: React.PointerEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    const v = (window as any).vibemoji;
     try { (e.currentTarget as Element).setPointerCapture(e.pointerId); } catch { /* noop */ }
     const dragSet: Set<string> = ((window as any).__vibemojiDragging ||= new Set<string>());
     const key = `group:${groupId}`;
     dragSet.add(key);
+    adapter.notifyDragStart(key);
 
     let raf = 0;
     let cancelled = false;
@@ -57,8 +59,9 @@ export default function BuddyGroup({
       });
     };
 
-    if (v?.getCursorPoint) {
-      v.getCursorPoint().then((origin: { x: number; y: number }) => {
+    const cursorPromise = adapter.getCursorPoint();
+    if (cursorPromise) {
+      cursorPromise.then((origin) => {
         if (cancelled) return;
         dragRef.current = {
           startX: origin.x, startY: origin.y,
@@ -66,9 +69,11 @@ export default function BuddyGroup({
         };
         const tick = () => {
           if (!dragRef.current) return;
-          v.getCursorPoint().then((p: { x: number; y: number }) => {
+          const p = adapter.getCursorPoint();
+          if (!p) return;
+          p.then((pt) => {
             if (!dragRef.current) return;
-            apply(p.x - dragRef.current.startX, p.y - dragRef.current.startY);
+            apply(pt.x - dragRef.current.startX, pt.y - dragRef.current.startY);
             raf = requestAnimationFrame(tick);
           });
         };
@@ -90,6 +95,7 @@ export default function BuddyGroup({
       cancelled = true;
       if (raf) cancelAnimationFrame(raf);
       dragRef.current = null;
+      adapter.notifyDragEnd(key);
       dragSet.delete(key);
       if (onPointerMove) document.removeEventListener('pointermove', onPointerMove);
       document.removeEventListener('pointerup', stop);

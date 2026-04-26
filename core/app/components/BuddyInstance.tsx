@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import dynamic from 'next/dynamic';
-import { Capacitor } from '@capacitor/core';
+import { usePlatform, useLayout } from './hooks/usePlatform';
 import { VARIANTS, buildAnimation, cssColor, type Emotion } from './avatars';
 import { PERSONALITY_BY_VARIANT, type Personality } from './personalities';
 import {
@@ -51,22 +51,12 @@ export default function BuddyInstance({ state, anchor, canRemove, onChange, onSp
   const personality: Personality =
     PERSONALITY_BY_VARIANT[state.variantId] ?? PERSONALITY_BY_VARIANT.violet;
 
-  const [open, setOpen] = useState(false);
-  const [isMobile, setIsMobile] = useState(false);
-  const [toasts, setToasts] = useState<Toast[]>([]);
+  const adapter = usePlatform();
+  const layout = useLayout();
+  const isMobile = layout.chatPanelMode === 'sheet';
 
-  useEffect(() => {
-    // Detect mobile-style runtime: Capacitor Android (definitive — that's our
-    // overlay) or any narrow viewport (covers chrome://inspect / web preview).
-    const onResize = () => {
-      const native = Capacitor.getPlatform() !== 'web';
-      const narrow = window.matchMedia('(max-width: 480px)').matches;
-      setIsMobile(native || narrow);
-    };
-    onResize();
-    window.addEventListener('resize', onResize);
-    return () => window.removeEventListener('resize', onResize);
-  }, []);
+  const [open, setOpen] = useState(false);
+  const [toasts, setToasts] = useState<Toast[]>([]);
   const [input, setInput] = useState('');
   const [emotion, setEmotion] = useState<Emotion>('idle');
   const [busy, setBusy] = useState(false);
@@ -239,10 +229,10 @@ export default function BuddyInstance({ state, anchor, canRemove, onChange, onSp
       setIsDragging(false);
       ((window as any).__vibemojiDragging as Set<string> | undefined)?.delete(state.id);
     }
-    const v = (window as any).vibemoji;
     try { (e.currentTarget as Element).setPointerCapture(e.pointerId); } catch { /* noop */ }
     draggingRef.current = true;
     setIsDragging(true);
+    adapter.notifyDragStart(state.id);
     const dragSet: Set<string> = ((window as any).__vibemojiDragging ||= new Set<string>());
     dragSet.add(state.id);
 
@@ -260,10 +250,11 @@ export default function BuddyInstance({ state, anchor, canRemove, onChange, onSp
       onDragMove?.(state.id, nextPos);
     };
 
-    if (v?.getCursorPoint) {
+    const cursorPromise = adapter.getCursorPoint();
+    if (cursorPromise) {
       // Electron path: poll OS cursor each frame so we don't expand the
       // click-through window (which would evict Chromium's video overlay).
-      v.getCursorPoint().then((origin: { x: number; y: number }) => {
+      cursorPromise.then((origin) => {
         if (cancelled) return;
         dragRef.current = {
           startScreenX: origin.x, startScreenY: origin.y,
@@ -272,9 +263,11 @@ export default function BuddyInstance({ state, anchor, canRemove, onChange, onSp
         };
         const tick = () => {
           if (!dragRef.current) return;
-          v.getCursorPoint().then((p: { x: number; y: number }) => {
+          const p = adapter.getCursorPoint();
+          if (!p) return;
+          p.then((pt) => {
             if (!dragRef.current) return;
-            applyDelta(p.x - dragRef.current.startScreenX, p.y - dragRef.current.startScreenY);
+            applyDelta(pt.x - dragRef.current.startScreenX, pt.y - dragRef.current.startScreenY);
             raf = requestAnimationFrame(tick);
           });
         };
@@ -303,6 +296,7 @@ export default function BuddyInstance({ state, anchor, canRemove, onChange, onSp
       dragRef.current = null;
       draggingRef.current = false;
       setIsDragging(false);
+      adapter.notifyDragEnd(state.id);
       dragSet.delete(state.id);
       if (onPointerMove) document.removeEventListener('pointermove', onPointerMove);
       document.removeEventListener('pointerup', stop);

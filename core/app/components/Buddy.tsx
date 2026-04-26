@@ -6,6 +6,8 @@ import BuddyGroup from './BuddyGroup';
 import { VARIANTS } from './avatars';
 import { nextUnusedPersonality, PERSONALITY_BY_VARIANT } from './personalities';
 import type { Teammate } from './llm';
+import { usePlatform } from './hooks/usePlatform';
+import type { ElectronAdapter } from '@/lib/platform/electron';
 
 // Lighten each avatar color toward white so the hull reads as a pastel
 // backdrop and the saturated avatars pop against it.
@@ -69,6 +71,7 @@ const slotPos = (group: Group, index: number, stride: number) => ({
 });
 
 export default function Buddy() {
+  const adapter = usePlatform();
   const [buddies, setBuddies] = useState<BuddyInstanceState[]>(initialBuddies);
   const [groups, setGroups] = useState<Group[]>([]);
   const [peeked, setPeeked] = useState<Record<string, boolean>>({});
@@ -158,31 +161,20 @@ export default function Buddy() {
   };
 
   useEffect(() => {
-    const off = (window as any).vibemoji?.onSpawnBuddy?.(() => spawnBuddy());
-    return () => { if (typeof off === 'function') off(); };
-  }, []);
+    return adapter.onSpawnRequest(() => spawnBuddy());
+  }, [adapter]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
-    const v = (window as any).vibemoji;
+    // Click-through hover detection is desktop-only; Capacitor uses
+    // touchable-region routing instead (handled in the next effect).
+    if (adapter.id !== 'electron') return;
+    const electron = adapter as ElectronAdapter;
     let interactive = false;
     const setInteractive = (next: boolean) => {
       if (next === interactive) return;
       interactive = next;
-      // Desktop (Electron) IPC.
-      v?.setInteractive?.(next);
-      // Android: when running inside the OverlayService's WebView, toggle
-      // FLAG_NOT_TOUCHABLE so taps fall through to apps underneath unless the
-      // cursor is over an interactive element.
-      const native = (window as any).vibemojiNative;
-      if (native && typeof native.setInteractive === 'function') {
-        try { native.setInteractive(next); } catch { /* noop */ }
-      }
-      const cap = (window as any).Capacitor;
-      const overlay = cap?.Plugins?.Overlay;
-      if (overlay && typeof overlay.setInteractive === 'function') {
-        try { overlay.setInteractive({ value: next }); } catch { /* noop */ }
-      }
+      electron.setInteractive(next);
     };
     type Stage = 'peek' | 'expand';
     const collapseTimers = new Map<string, ReturnType<typeof setTimeout>>();
@@ -280,7 +272,7 @@ export default function Buddy() {
       document.removeEventListener('mousemove', onMove);
       for (const t of collapseTimers.values()) clearTimeout(t);
     };
-  }, []);
+  }, [adapter]);
 
   // Android-overlay touch routing: the OverlayService window has no
   // FLAG_NOT_TOUCHABLE, so by default it would consume every touch on screen.
@@ -290,34 +282,21 @@ export default function Buddy() {
   // mouse-hover-driven setInteractive model on touchscreens.
   useEffect(() => {
     if (typeof window === 'undefined') return;
-    const native = (window as any).vibemojiNative;
-    if (!native || typeof native.setTouchableRegion !== 'function') return;
+    if (!adapter.isNative || adapter.id !== 'capacitor-android') return;
 
-    let lastJson = '';
     let raf = 0;
-    let dragActive = false;
 
-    const pushFullWindow = () => {
-      const dpr = window.devicePixelRatio || 1;
-      const rect = [{
-        x: 0,
-        y: 0,
-        w: Math.ceil(window.innerWidth * dpr),
-        h: Math.ceil(window.innerHeight * dpr),
-      }];
-      const json = JSON.stringify(rect);
-      if (json !== lastJson) {
-        lastJson = json;
-        try { native.setTouchableRegion(json); } catch { /* noop */ }
-      }
-    };
-
+    // Drag-time region behavior:
+    //   - Native (OverlayService.setOnTouchListener) flips a full-window
+    //     touchable region on ACTION_DOWN, so input routing keeps working.
+    //   - JS (CapacitorAdapter.notifyDragStart) suspends publishing rects
+    //     entirely while a drag is in progress. Frequent setTouchableRegion
+    //     calls during drag cause webView.requestLayout to fire repeatedly,
+    //     which Chromium's gesture detector treats as scroll-cancel.
+    // This effect only handles idle-state per-element rects; the suspension
+    // contract lives inside the adapter.
     const measure = () => {
       raf = 0;
-      // While a pointer is down on a buddy element, keep the entire window
-      // touchable so the gesture stream survives the finger leaving any
-      // single rect. Per-element rects resume on pointerup/pointercancel.
-      if (dragActive) { pushFullWindow(); return; }
       const dpr = window.devicePixelRatio || 1;
       const els = document.querySelectorAll<HTMLElement>('[data-buddy-interactive]');
       const rects: { x: number; y: number; w: number; h: number }[] = [];
@@ -331,27 +310,11 @@ export default function Buddy() {
           h: Math.ceil(r.height * dpr),
         });
       });
-      const json = JSON.stringify(rects);
-      if (json !== lastJson) {
-        lastJson = json;
-        try { native.setTouchableRegion(json); } catch { /* noop */ }
-      }
+      adapter.publishInteractiveRects(rects);
     };
     const schedule = () => {
       if (raf) return;
       raf = requestAnimationFrame(measure);
-    };
-
-    const onPointerDownCapture = (ev: PointerEvent) => {
-      const t = ev.target as Element | null;
-      if (!t || !t.closest?.('[data-buddy-interactive]')) return;
-      dragActive = true;
-      pushFullWindow();
-    };
-    const onPointerEnd = () => {
-      if (!dragActive) return;
-      dragActive = false;
-      schedule();
     };
 
     schedule();
@@ -359,29 +322,22 @@ export default function Buddy() {
     ro.observe(document.documentElement);
     document.querySelectorAll<HTMLElement>('[data-buddy-interactive]').forEach((el) => ro.observe(el));
     const mo = new MutationObserver(() => {
-      // Track newly-mounted interactive elements (e.g., chat bubbles, toasts).
       document.querySelectorAll<HTMLElement>('[data-buddy-interactive]').forEach((el) => ro.observe(el));
       schedule();
     });
     mo.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['style', 'class'] });
     window.addEventListener('scroll', schedule, true);
     window.addEventListener('resize', schedule);
-    document.addEventListener('pointerdown', onPointerDownCapture, true);
-    document.addEventListener('pointerup', onPointerEnd, true);
-    document.addEventListener('pointercancel', onPointerEnd, true);
 
     return () => {
       ro.disconnect();
       mo.disconnect();
       window.removeEventListener('scroll', schedule, true);
       window.removeEventListener('resize', schedule);
-      document.removeEventListener('pointerdown', onPointerDownCapture, true);
-      document.removeEventListener('pointerup', onPointerEnd, true);
-      document.removeEventListener('pointercancel', onPointerEnd, true);
       if (raf) cancelAnimationFrame(raf);
-      try { native.setTouchableRegion('[]'); } catch { /* noop */ }
+      adapter.publishInteractiveRects([]);
     };
-  }, []);
+  }, [adapter]);
 
   const removeBuddy = (id: string) => {
     setBuddies((cur) => {
@@ -407,7 +363,7 @@ export default function Buddy() {
     const wantFocusable = openSetRef.current.size > 0;
     if (wantFocusable === focusableRef.current) return;
     focusableRef.current = wantFocusable;
-    (window as any).vibemoji?.setFocusable?.(wantFocusable);
+    adapter.setFocusable(wantFocusable);
   };
 
   // Eject a member from its group; dissolve group if it would have <2 members.
