@@ -52,6 +52,7 @@ export default function BuddyInstance({ state, anchor, canRemove, onChange, onSp
 
   const dragRef = useRef<{ startScreenX: number; startScreenY: number; baseX: number; baseY: number; moved: boolean } | null>(null);
   const draggingRef = useRef(false);
+  const [isDragging, setIsDragging] = useState(false);
   const justDraggedRef = useRef(false);
   const toastIdRef = useRef(100);
   const msgIdRef = useRef(state.messages.reduce((m, x) => Math.max(m, x.id), 0) + 1);
@@ -99,6 +100,7 @@ export default function BuddyInstance({ state, anchor, canRemove, onChange, onSp
     const v = (window as any).vibemoji;
     try { (e.currentTarget as Element).setPointerCapture(e.pointerId); } catch { /* noop */ }
     draggingRef.current = true;
+    setIsDragging(true);
     const dragSet: Set<string> = ((window as any).__vibemojiDragging ||= new Set<string>());
     dragSet.add(state.id);
 
@@ -158,6 +160,7 @@ export default function BuddyInstance({ state, anchor, canRemove, onChange, onSp
       onDragEnd?.(state.id, stateRef.current.pos, moved);
       dragRef.current = null;
       draggingRef.current = false;
+      setIsDragging(false);
       dragSet.delete(state.id);
       if (onPointerMove) document.removeEventListener('pointermove', onPointerMove);
       document.removeEventListener('pointerup', stop);
@@ -178,6 +181,7 @@ export default function BuddyInstance({ state, anchor, canRemove, onChange, onSp
         right: anchor.right,
         bottom: anchor.bottom,
         transform: `translate(${state.pos.x}px, ${state.pos.y}px)`,
+        transition: isDragging ? 'none' : 'transform 320ms cubic-bezier(0.34, 1.56, 0.64, 1)',
       }}
     >
       {/* Toast stack — anchored above this buddy. */}

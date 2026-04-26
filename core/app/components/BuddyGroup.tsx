@@ -107,7 +107,7 @@ export default function BuddyGroup({
       data-group={groupId}
       onPointerDown={onPointerDown}
       title="Drag to move group"
-      className={`pointer-events-auto fixed cursor-grab rounded-full border border-white/50 active:cursor-grabbing transition-opacity duration-150 ${
+      className={`pointer-events-auto fixed cursor-grab rounded-full border border-white/50 active:cursor-grabbing ${
         visible || magnetActive ? 'shadow-xl backdrop-blur-md opacity-100' : 'opacity-0 border-transparent'
       } ${magnetActive ? 'ring-4 ring-violet-400/80 shadow-[0_0_36px_8px_rgba(167,139,250,0.55)]' : ''}`}
       style={{
@@ -117,6 +117,12 @@ export default function BuddyGroup({
         height,
         zIndex: 30,
         background: (visible || magnetActive) ? background : 'transparent',
+        transition:
+          'opacity 180ms ease-out, ' +
+          'width 320ms cubic-bezier(0.34, 1.56, 0.64, 1), ' +
+          'right 320ms cubic-bezier(0.34, 1.56, 0.64, 1), ' +
+          'bottom 320ms cubic-bezier(0.34, 1.56, 0.64, 1), ' +
+          'background 220ms ease-out',
         animation: magnetActive ? 'buddy-magnet-pulse 1100ms ease-in-out infinite' : undefined,
       }}
     >
