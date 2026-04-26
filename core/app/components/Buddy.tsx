@@ -93,6 +93,11 @@ export default function Buddy() {
     });
   };
 
+  useEffect(() => {
+    const off = (window as any).vibemoji?.onSpawnBuddy?.(() => spawnBuddy());
+    return () => { if (typeof off === 'function') off(); };
+  }, []);
+
   const removeBuddy = (id: string) => {
     setBuddies((cur) => (cur.length <= 1 ? cur : cur.filter((b) => b.id !== id)));
   };

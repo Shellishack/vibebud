@@ -66,6 +66,16 @@ function createTray() {
     { label: 'Reload', click: () => win?.reload() },
     { label: 'Toggle DevTools', click: () => win?.webContents.toggleDevTools({ mode: 'detach' }) },
     { type: 'separator' },
+    { label: 'Add buddy', click: () => win?.webContents.send('spawn-buddy') },
+    {
+      label: 'Clear local settings',
+      click: async () => {
+        if (!win) return;
+        await win.webContents.session.clearStorageData();
+        win.reload();
+      },
+    },
+    { type: 'separator' },
     { label: 'Quit', click: () => app.quit() },
   ]));
 }

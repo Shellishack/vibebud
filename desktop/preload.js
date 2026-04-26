@@ -5,4 +5,9 @@ contextBridge.exposeInMainWorld('vibemoji', {
   isElectron: true,
   setInteractive: (interactive) => ipcRenderer.send('set-interactive', Boolean(interactive)),
   setFocusable: (focusable) => ipcRenderer.send('set-focusable', Boolean(focusable)),
+  onSpawnBuddy: (cb) => {
+    const handler = () => cb();
+    ipcRenderer.on('spawn-buddy', handler);
+    return () => ipcRenderer.off('spawn-buddy', handler);
+  },
 });
