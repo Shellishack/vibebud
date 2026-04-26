@@ -156,6 +156,7 @@ export default function BuddyInstance({ state, anchor, canRemove, onChange, onSp
   return (
     <div
       data-buddy-member
+      data-group={state.groupId || undefined}
       className="fixed z-50"
       style={{
         right: anchor.right,

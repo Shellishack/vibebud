@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, type ReactNode } from 'react';
+import { useEffect, useRef } from 'react';
 
 type Props = {
   groupId: string;
@@ -8,51 +8,34 @@ type Props = {
   memberCount: number;
   stride: number;
   avatarSize: number;
-  pad: number;
+  padX: number;
+  padTop: number;
+  padBottom: number;
   anchor: { right: number; bottom: number };
-  onExpandChange: (id: string, expanded: boolean) => void;
   onGroupDragMove: (id: string, pos: { x: number; y: number }) => void;
-  children: ReactNode;
 };
 
 export default function BuddyGroup({
-  groupId, pos, memberCount, stride, avatarSize, pad, anchor,
-  onExpandChange, onGroupDragMove, children,
+  groupId, pos, memberCount, stride, avatarSize, padX, padTop, padBottom, anchor,
+  onGroupDragMove,
 }: Props) {
-  const width = (memberCount - 1) * stride + avatarSize + pad * 2;
-  const height = avatarSize + pad * 2;
+  const width = (memberCount - 1) * stride + avatarSize + padX * 2;
+  const height = avatarSize + padTop + padBottom;
 
   // No transform / filter / backdrop-filter on this wrapper — those would
-  // turn it into a containing block for any `position: fixed` descendants
-  // (the BuddyInstance members), breaking their viewport-anchored layout.
-  // The visual hull lives on an inner sibling div.
-  const rightCss = anchor.right - pad - (pos.x + (memberCount - 1) * stride);
-  const bottomCss = anchor.bottom - pad - pos.y;
+  // form a containing block for `position: fixed` descendants. We don't nest
+  // members anymore, but keep the wrapper "neutral" anyway. The visual hull
+  // (with backdrop blur) is an inner sibling.
+  const rightCss = anchor.right - padX - (pos.x + (memberCount - 1) * stride);
+  const bottomCss = anchor.bottom - padBottom - pos.y;
 
-  const leaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const dragRef = useRef<{ startX: number; startY: number; baseX: number; baseY: number } | null>(null);
   const posRef = useRef(pos);
   useEffect(() => { posRef.current = pos; }, [pos]);
 
-  const onEnter = () => {
-    if (leaveTimerRef.current) { clearTimeout(leaveTimerRef.current); leaveTimerRef.current = null; }
-    onExpandChange(groupId, true);
-  };
-  const onLeave = () => {
-    if (leaveTimerRef.current) clearTimeout(leaveTimerRef.current);
-    leaveTimerRef.current = setTimeout(() => {
-      const dragging: Set<string> | undefined = (window as any).__vibemojiDragging;
-      if (dragging && dragging.size > 0) {
-        leaveTimerRef.current = setTimeout(() => onExpandChange(groupId, false), 350);
-        return;
-      }
-      onExpandChange(groupId, false);
-    }, 250);
-  };
-
   const onPointerDown = (e: React.PointerEvent) => {
-    if ((e.target as HTMLElement).closest('[data-buddy-member]')) return;
     e.preventDefault();
+    e.stopPropagation();
     const v = (window as any).vibemoji;
     if (!v?.getCursorPoint) return;
     try { (e.currentTarget as Element).setPointerCapture(e.pointerId); } catch { /* noop */ }
@@ -100,23 +83,26 @@ export default function BuddyGroup({
   return (
     <div
       data-buddy-interactive
-      onPointerEnter={onEnter}
-      onPointerLeave={onLeave}
+      data-group={groupId}
       onPointerDown={onPointerDown}
-      className="pointer-events-auto fixed cursor-grab active:cursor-grabbing"
+      title="Drag to move group"
+      className="pointer-events-auto fixed cursor-grab rounded-[28px] border border-zinc-200 bg-white/55 shadow-xl backdrop-blur-md active:cursor-grabbing dark:border-zinc-700 dark:bg-zinc-900/55"
       style={{
         right: rightCss,
         bottom: bottomCss,
         width,
         height,
-        zIndex: 40,
+        zIndex: 30,
       }}
     >
+      {/* Drag-handle indicator — a visible "grab here" cue at the top of the hull. */}
       <div
         aria-hidden
-        className="absolute inset-0 rounded-[28px] border border-zinc-200 bg-white/60 shadow-xl backdrop-blur-md dark:border-zinc-700 dark:bg-zinc-900/60"
-      />
-      {children}
+        className="pointer-events-none absolute left-1/2 -translate-x-1/2"
+        style={{ top: 8, width: 40, height: 4 }}
+      >
+        <div className="h-full w-full rounded-full bg-zinc-400/70 dark:bg-zinc-500/70" />
+      </div>
     </div>
   );
 }

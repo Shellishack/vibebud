@@ -8,11 +8,14 @@ import { nextUnusedPersonality } from './personalities';
 const STORAGE_KEY = 'vibemoji.buddies.v2';
 
 const AVATAR_SIZE = 112;
-const HULL_PAD = 8;
+const HULL_PAD_X = 10;
+const HULL_PAD_TOP = 22;
+const HULL_PAD_BOTTOM = 8;
 const COLLAPSED_STRIDE = 28;
 const EXPANDED_STRIDE = 132;
 const MERGE_RADIUS = 90;
 const EJECT_RADIUS = 180;
+const HOVER_LEAVE_GRACE_MS = 250;
 const ANCHOR = { right: 24, bottom: 24 };
 
 type Group = { id: string; memberIds: string[]; pos: { x: number; y: number } };
@@ -133,21 +136,54 @@ export default function Buddy() {
   useEffect(() => {
     if (typeof window === 'undefined') return;
     const v = (window as any).vibemoji;
-    if (!v?.setInteractive) return;
     let interactive = false;
     const setInteractive = (next: boolean) => {
       if (next === interactive) return;
       interactive = next;
-      v.setInteractive(next);
+      v?.setInteractive?.(next);
+    };
+    const collapseTimers = new Map<string, ReturnType<typeof setTimeout>>();
+    const scheduleCollapse = (gid: string) => {
+      if (collapseTimers.has(gid)) return;
+      const t = setTimeout(() => {
+        collapseTimers.delete(gid);
+        const dragging: Set<string> | undefined = (window as any).__vibemojiDragging;
+        if (dragging && dragging.size > 0) {
+          // Defer collapse while anything is being dragged.
+          scheduleCollapse(gid);
+          return;
+        }
+        setExpanded((cur) => (cur[gid] ? { ...cur, [gid]: false } : cur));
+      }, HOVER_LEAVE_GRACE_MS);
+      collapseTimers.set(gid, t);
+    };
+    const cancelCollapse = (gid: string) => {
+      const t = collapseTimers.get(gid);
+      if (t) { clearTimeout(t); collapseTimers.delete(gid); }
     };
     const onMove = (ev: MouseEvent) => {
       const dragging: Set<string> | undefined = (window as any).__vibemojiDragging;
-      if (dragging && dragging.size > 0) { setInteractive(true); return; }
       const el = document.elementFromPoint(ev.clientX, ev.clientY) as HTMLElement | null;
-      setInteractive(!!el?.closest('[data-buddy-interactive]'));
+      const interactiveEl = el?.closest('[data-buddy-interactive]');
+      setInteractive(!!interactiveEl || (!!dragging && dragging.size > 0));
+
+      const groupEl = el?.closest('[data-group]') as HTMLElement | null;
+      const hoverGid = groupEl?.getAttribute('data-group') || null;
+      if (hoverGid) {
+        cancelCollapse(hoverGid);
+        setExpanded((cur) => (cur[hoverGid] ? cur : { ...cur, [hoverGid]: true }));
+      }
+      // Schedule collapse for any expanded group not currently hovered.
+      const exp = expandedRef.current;
+      for (const gid of Object.keys(exp)) {
+        if (exp[gid] && gid !== hoverGid) scheduleCollapse(gid);
+      }
     };
     document.addEventListener('mousemove', onMove);
-    return () => document.removeEventListener('mousemove', onMove);
+    return () => {
+      document.removeEventListener('mousemove', onMove);
+      for (const t of collapseTimers.values()) clearTimeout(t);
+    };
   }, []);
 
   const removeBuddy = (id: string) => {
@@ -256,10 +292,6 @@ export default function Buddy() {
     setGroups((cur) => cur.map((g) => (g.id === gid ? { ...g, pos } : g)));
   };
 
-  const onExpandChange = (gid: string, isExpanded: boolean) => {
-    setExpanded((cur) => (cur[gid] === isExpanded ? cur : { ...cur, [gid]: isExpanded }));
-  };
-
   const renderBuddy = (b: BuddyInstanceState) => (
     <BuddyInstance
       key={b.id}
@@ -275,43 +307,33 @@ export default function Buddy() {
     />
   );
 
-  const groupedByGid = new Map<string, BuddyInstanceState[]>();
-  for (const b of buddies) {
-    if (b.groupId) {
-      const arr = groupedByGid.get(b.groupId) ?? [];
-      arr.push(b);
-      groupedByGid.set(b.groupId, arr);
-    }
-  }
-  const freeBuddies = buddies.filter((b) => !b.groupId);
-
   return (
     <>
-      {freeBuddies.map(renderBuddy)}
-
+      {/* Hulls render BEHIND members (lower z-index). Members are always at
+          the top level so they aren't unmounted/remounted when joining or
+          leaving a group. */}
       {groups.map((g) => {
         const stride = expanded[g.id] ? EXPANDED_STRIDE : COLLAPSED_STRIDE;
-        const members = g.memberIds
-          .map((mid) => buddies.find((b) => b.id === mid))
-          .filter((b): b is BuddyInstanceState => !!b);
-        if (members.length < 2) return null;
+        const memberCount = g.memberIds.filter((mid) => buddies.some((b) => b.id === mid)).length;
+        if (memberCount < 2) return null;
         return (
           <BuddyGroup
             key={g.id}
             groupId={g.id}
             pos={g.pos}
-            memberCount={members.length}
+            memberCount={memberCount}
             stride={stride}
             avatarSize={AVATAR_SIZE}
-            pad={HULL_PAD}
+            padX={HULL_PAD_X}
+            padTop={HULL_PAD_TOP}
+            padBottom={HULL_PAD_BOTTOM}
             anchor={ANCHOR}
-            onExpandChange={onExpandChange}
             onGroupDragMove={onGroupDragMove}
-          >
-            {members.map(renderBuddy)}
-          </BuddyGroup>
+          />
         );
       })}
+
+      {buddies.map(renderBuddy)}
 
       <style jsx global>{`
         @keyframes buddy-toast-in {
