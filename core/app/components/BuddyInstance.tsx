@@ -135,7 +135,7 @@ export default function BuddyInstance({ state, anchor, canRemove, onChange, onSp
   const pushToast = (t: Omit<Toast, 'id'>) => {
     const id = toastIdRef.current++;
     setToasts((cur) => [...cur, { ...t, id }]);
-    feel(t.tone === 'action' ? 'surprised' : t.tone === 'success' ? 'happy' : 'surprised', 1800);
+    feel(t.tone === 'action' ? 'surprised' : t.tone === 'success' ? 'excited' : 'surprised', 1800);
     setTimeout(() => setToasts((cur) => cur.filter((x) => x.id !== id)), 5200);
   };
 
@@ -188,7 +188,7 @@ export default function BuddyInstance({ state, anchor, canRemove, onChange, onSp
         ...baseMessages,
         { id: replyId, from: 'buddy', text: acc ? `${acc}\n\n(error: ${msg})` : `(error: ${msg})` },
       ]);
-      feel('surprised', 1500);
+      feel('sad', 1500);
     } finally {
       if (abortRef.current === ac) abortRef.current = null;
       setBusy(false);

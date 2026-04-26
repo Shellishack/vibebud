@@ -76,14 +76,36 @@ const ellipseLayer = (
   ip: 0, op: 90, st: 0, bm: 0,
 });
 
-export type Emotion = 'idle' | 'happy' | 'surprised' | 'thinking' | 'love';
+export type Emotion =
+  | 'idle' | 'happy' | 'surprised' | 'thinking' | 'love'
+  | 'sad' | 'sleepy' | 'angry' | 'excited' | 'shy'
+  | 'cool' | 'wink' | 'confused' | 'proud' | 'sick';
 
-const EMOTIONS: Record<Emotion, { mouth: [number, number]; eye: [number, number]; mouthY: [number, number] }> = {
+type EmotionConfig = {
+  mouth: [number, number];
+  eye: [number, number];
+  mouthY: [number, number];
+  /** Optional per-eye override (defaults to `eye`). */
+  eyeR?: [number, number];
+  eyeL?: [number, number];
+};
+
+const EMOTIONS: Record<Emotion, EmotionConfig> = {
   idle:      { mouth: [44, 18], eye: [22, 30], mouthY: [235, 219] },
   happy:     { mouth: [64, 26], eye: [22, 10], mouthY: [232, 216] },
   surprised: { mouth: [26, 26], eye: [28, 34], mouthY: [240, 224] },
-  thinking: { mouth: [22, 8],  eye: [22, 22], mouthY: [238, 222] },
+  thinking:  { mouth: [22, 8],  eye: [22, 22], mouthY: [238, 222] },
   love:      { mouth: [54, 24], eye: [18, 8],  mouthY: [232, 216] },
+  sad:       { mouth: [22, 10], eye: [20, 18], mouthY: [250, 234] },
+  sleepy:    { mouth: [22, 10], eye: [26, 4],  mouthY: [240, 224] },
+  angry:     { mouth: [22, 6],  eye: [28, 6],  mouthY: [242, 226] },
+  excited:   { mouth: [56, 32], eye: [28, 32], mouthY: [230, 214] },
+  shy:       { mouth: [16, 6],  eye: [18, 14], mouthY: [242, 226] },
+  cool:      { mouth: [50, 18], eye: [24, 10], mouthY: [232, 216] },
+  wink:      { mouth: [54, 22], eye: [22, 12], eyeR: [22, 4], mouthY: [232, 216] },
+  confused:  { mouth: [22, 10], eye: [22, 18], eyeL: [22, 26], eyeR: [20, 14], mouthY: [238, 222] },
+  proud:     { mouth: [48, 22], eye: [22, 8],  mouthY: [230, 214] },
+  sick:      { mouth: [18, 14], eye: [20, 14], mouthY: [244, 228] },
 };
 
 export function buildAnimation(v: AvatarVariant, emotion: Emotion = 'idle') {
@@ -97,8 +119,8 @@ export function buildAnimation(v: AvatarVariant, emotion: Emotion = 'idle') {
   }
 
   layers.push(ellipseLayer(ind++, 'mouth', [1, 1, 1], e.mouth, bobY(e.mouthY[0], e.mouthY[1])));
-  layers.push(ellipseLayer(ind++, 'eyeR', [1, 1, 1], e.eye, bobXY(225, 195, 179), blink()));
-  layers.push(ellipseLayer(ind++, 'eyeL', [1, 1, 1], e.eye, bobXY(175, 195, 179), blink()));
+  layers.push(ellipseLayer(ind++, 'eyeR', [1, 1, 1], e.eyeR ?? e.eye, bobXY(225, 195, 179), blink()));
+  layers.push(ellipseLayer(ind++, 'eyeL', [1, 1, 1], e.eyeL ?? e.eye, bobXY(175, 195, 179), blink()));
 
   if (v.cheek) {
     layers.push(ellipseLayer(ind++, 'cheekR', v.cheek, [22, 14], bobXY(248, 218, 202), undefined, 70));
