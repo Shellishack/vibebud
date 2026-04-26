@@ -119,9 +119,9 @@ export default function BuddyGroup({
         background: (visible || magnetActive) ? background : 'transparent',
         transition:
           'opacity 180ms ease-out, ' +
-          'width 320ms cubic-bezier(0.34, 1.56, 0.64, 1), ' +
-          'right 320ms cubic-bezier(0.34, 1.56, 0.64, 1), ' +
-          'bottom 320ms cubic-bezier(0.34, 1.56, 0.64, 1), ' +
+          'width 280ms cubic-bezier(0.22, 1, 0.36, 1), ' +
+          'right 280ms cubic-bezier(0.22, 1, 0.36, 1), ' +
+          'bottom 280ms cubic-bezier(0.22, 1, 0.36, 1), ' +
           'background 220ms ease-out',
         animation: magnetActive ? 'buddy-magnet-pulse 1100ms ease-in-out infinite' : undefined,
       }}

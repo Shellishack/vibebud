@@ -181,7 +181,7 @@ export default function BuddyInstance({ state, anchor, canRemove, onChange, onSp
         right: anchor.right,
         bottom: anchor.bottom,
         transform: `translate(${state.pos.x}px, ${state.pos.y}px)`,
-        transition: isDragging ? 'none' : 'transform 320ms cubic-bezier(0.34, 1.56, 0.64, 1)',
+        transition: isDragging ? 'none' : 'transform 360ms cubic-bezier(0.22, 1, 0.36, 1)',
       }}
     >
       {/* Toast stack — anchored above this buddy. */}
