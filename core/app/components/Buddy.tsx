@@ -3,7 +3,28 @@
 import { useEffect, useRef, useState } from 'react';
 import BuddyInstance, { type BuddyInstanceState } from './BuddyInstance';
 import BuddyGroup from './BuddyGroup';
+import { VARIANTS } from './avatars';
 import { nextUnusedPersonality } from './personalities';
+
+// Lighten each avatar color toward white so the hull reads as a pastel
+// backdrop and the saturated avatars pop against it.
+const HULL_LIGHTEN = 0.55;
+const HULL_ALPHA = 0.85;
+
+const rgba = (rgb: [number, number, number], a: number, lighten = 0) => {
+  const mix = (c: number) => c + (1 - c) * lighten;
+  return `rgba(${Math.round(mix(rgb[0]) * 255)}, ${Math.round(mix(rgb[1]) * 255)}, ${Math.round(mix(rgb[2]) * 255)}, ${a})`;
+};
+
+const gradientFor = (variantIds: string[]) => {
+  const stops = variantIds.map((vid) => VARIANTS.find((v) => v.id === vid)?.body ?? VARIANTS[0].body);
+  if (stops.length === 1) {
+    const c = rgba(stops[0], HULL_ALPHA, HULL_LIGHTEN);
+    return `linear-gradient(90deg, ${c}, ${c})`;
+  }
+  const parts = stops.map((c, i) => `${rgba(c, HULL_ALPHA, HULL_LIGHTEN)} ${(i / (stops.length - 1)) * 100}%`);
+  return `linear-gradient(90deg, ${parts.join(', ')})`;
+};
 
 const STORAGE_KEY = 'vibemoji.buddies.v2';
 
@@ -354,14 +375,16 @@ export default function Buddy() {
           leaving a group. */}
       {groups.map((g) => {
         const stride = expanded[g.id] ? EXPANDED_STRIDE : COLLAPSED_STRIDE;
-        const memberCount = g.memberIds.filter((mid) => buddies.some((b) => b.id === mid)).length;
-        if (memberCount < 2) return null;
+        const memberVariantIds = g.memberIds
+          .map((mid) => buddies.find((b) => b.id === mid)?.variantId)
+          .filter((v): v is string => !!v);
+        if (memberVariantIds.length < 2) return null;
         return (
           <BuddyGroup
             key={g.id}
             groupId={g.id}
             pos={g.pos}
-            memberCount={memberCount}
+            memberCount={memberVariantIds.length}
             stride={stride}
             avatarSize={AVATAR_SIZE}
             padX={HULL_PAD_X}
@@ -370,6 +393,7 @@ export default function Buddy() {
             anchor={ANCHOR}
             visible={!!expanded[g.id]}
             magnetActive={magnet?.targetType === 'group' && magnet.targetId === g.id}
+            background={gradientFor(memberVariantIds)}
             onGroupDragMove={onGroupDragMove}
           />
         );
