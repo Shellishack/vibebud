@@ -34,6 +34,9 @@ const HULL_PAD_TOP = 22;
 const HULL_PAD_BOTTOM = 8;
 const COLLAPSED_STRIDE = 28;
 const EXPANDED_STRIDE = 132;
+// Inner hit-box for expand: the hull rect inset by this many px on every side.
+// Larger inset = thicker peek-only buffer ring around the hull edge.
+const EXPAND_HIT_INSET = 48;
 const MERGE_RADIUS = 90;
 const EJECT_RADIUS = 180;
 const HOVER_LEAVE_GRACE_MS = 250;
@@ -67,6 +70,7 @@ const slotPos = (group: Group, index: number, stride: number) => ({
 export default function Buddy() {
   const [buddies, setBuddies] = useState<BuddyInstanceState[]>(initialBuddies);
   const [groups, setGroups] = useState<Group[]>([]);
+  const [peeked, setPeeked] = useState<Record<string, boolean>>({});
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [magnet, setMagnet] = useState<{ draggedId: string; targetId: string; targetType: 'buddy' | 'group' } | null>(null);
   const idRef = useRef(2);
@@ -76,9 +80,11 @@ export default function Buddy() {
   const buddiesRef = useRef(buddies);
   const groupsRef = useRef(groups);
   const expandedRef = useRef(expanded);
+  const peekedRef = useRef(peeked);
   useEffect(() => { buddiesRef.current = buddies; }, [buddies]);
   useEffect(() => { groupsRef.current = groups; }, [groups]);
   useEffect(() => { expandedRef.current = expanded; }, [expanded]);
+  useEffect(() => { peekedRef.current = peeked; }, [peeked]);
 
   useEffect(() => {
     const stored = loadFromStorage();
@@ -164,24 +170,31 @@ export default function Buddy() {
       interactive = next;
       v?.setInteractive?.(next);
     };
+    type Stage = 'peek' | 'expand';
     const collapseTimers = new Map<string, ReturnType<typeof setTimeout>>();
-    const scheduleCollapse = (gid: string) => {
-      if (collapseTimers.has(gid)) return;
+    const keyOf = (gid: string, stage: Stage) => `${stage}:${gid}`;
+    const setStage = (gid: string, stage: Stage, on: boolean) => {
+      const setter = stage === 'peek' ? setPeeked : setExpanded;
+      setter((cur) => (!!cur[gid] === on ? cur : { ...cur, [gid]: on }));
+    };
+    const scheduleCollapse = (gid: string, stage: Stage) => {
+      const k = keyOf(gid, stage);
+      if (collapseTimers.has(k)) return;
       const t = setTimeout(() => {
-        collapseTimers.delete(gid);
+        collapseTimers.delete(k);
         const dragging: Set<string> | undefined = (window as any).__vibemojiDragging;
         if (dragging && dragging.size > 0) {
-          // Defer collapse while anything is being dragged.
-          scheduleCollapse(gid);
+          scheduleCollapse(gid, stage);
           return;
         }
-        setExpanded((cur) => (cur[gid] ? { ...cur, [gid]: false } : cur));
+        setStage(gid, stage, false);
       }, HOVER_LEAVE_GRACE_MS);
-      collapseTimers.set(gid, t);
+      collapseTimers.set(k, t);
     };
-    const cancelCollapse = (gid: string) => {
-      const t = collapseTimers.get(gid);
-      if (t) { clearTimeout(t); collapseTimers.delete(gid); }
+    const cancelCollapse = (gid: string, stage: Stage) => {
+      const k = keyOf(gid, stage);
+      const t = collapseTimers.get(k);
+      if (t) { clearTimeout(t); collapseTimers.delete(k); }
     };
     const onMove = (ev: MouseEvent) => {
       const dragging: Set<string> | undefined = (window as any).__vibemojiDragging;
@@ -189,25 +202,63 @@ export default function Buddy() {
       const interactiveEl = el?.closest('[data-buddy-interactive]');
       setInteractive(!!interactiveEl || (!!dragging && dragging.size > 0));
 
+      // The element under the cursor tells us two things:
+      //   - data-group on it (or an ancestor) → cursor is over the hull region.
+      //   - data-buddy-member ancestor with data-group → cursor is over an
+      //     actual member avatar of that group → expand stage.
       const groupEl = el?.closest('[data-group]') as HTMLElement | null;
-      let hoverGid = groupEl?.getAttribute('data-group') || null;
-      // If a buddy/group is being dragged, treat its group as hovered so the
-      // bracket stays visible even when the cursor outpaces the avatar.
-      if (!hoverGid && dragging && dragging.size > 0) {
-        for (const k of dragging) {
-          if (k.startsWith('group:')) { hoverGid = k.slice('group:'.length); break; }
-          const b = buddiesRef.current.find((x) => x.id === k);
-          if (b?.groupId) { hoverGid = b.groupId; break; }
+      let peekGid = groupEl?.getAttribute('data-group') || null;
+      let expandGid: string | null = null;
+      // Expand only while cursor is inside the hull rect inset by
+      // EXPAND_HIT_INSET on every side. Outer ring acts as a peek-only buffer.
+      if (peekGid) {
+        const hullEl = document.querySelector(
+          `[data-group="${peekGid}"][data-buddy-interactive]`
+        ) as HTMLElement | null;
+        if (hullEl) {
+          const r = hullEl.getBoundingClientRect();
+          const inset = EXPAND_HIT_INSET;
+          if (
+            ev.clientX >= r.left + inset &&
+            ev.clientX <= r.right - inset &&
+            ev.clientY >= r.top + inset &&
+            ev.clientY <= r.bottom - inset
+          ) {
+            expandGid = peekGid;
+          }
         }
       }
-      if (hoverGid) {
-        cancelCollapse(hoverGid);
-        setExpanded((cur) => (cur[hoverGid] ? cur : { ...cur, [hoverGid]: true }));
+
+      // While dragging, keep the dragged buddy's group both peeked and expanded.
+      if (dragging && dragging.size > 0) {
+        for (const k of dragging) {
+          let gid: string | null = null;
+          if (k.startsWith('group:')) gid = k.slice('group:'.length);
+          else {
+            const b = buddiesRef.current.find((x) => x.id === k);
+            if (b?.groupId) gid = b.groupId;
+          }
+          if (gid) {
+            if (!peekGid) peekGid = gid;
+            if (!expandGid) expandGid = gid;
+            break;
+          }
+        }
       }
-      // Schedule collapse for any expanded group not currently hovered.
-      const exp = expandedRef.current;
-      for (const gid of Object.keys(exp)) {
-        if (exp[gid] && gid !== hoverGid) scheduleCollapse(gid);
+
+      if (peekGid) {
+        cancelCollapse(peekGid, 'peek');
+        setStage(peekGid, 'peek', true);
+      }
+      if (expandGid) {
+        cancelCollapse(expandGid, 'expand');
+        setStage(expandGid, 'expand', true);
+      }
+      for (const gid of Object.keys(peekedRef.current)) {
+        if (peekedRef.current[gid] && gid !== peekGid) scheduleCollapse(gid, 'peek');
+      }
+      for (const gid of Object.keys(expandedRef.current)) {
+        if (expandedRef.current[gid] && gid !== expandGid) scheduleCollapse(gid, 'expand');
       }
     };
     document.addEventListener('mousemove', onMove);
@@ -391,7 +442,7 @@ export default function Buddy() {
             padTop={HULL_PAD_TOP}
             padBottom={HULL_PAD_BOTTOM}
             anchor={ANCHOR}
-            visible={!!expanded[g.id]}
+            visible={!!peeked[g.id] || !!expanded[g.id]}
             magnetActive={magnet?.targetType === 'group' && magnet.targetId === g.id}
             background={gradientFor(memberVariantIds)}
             onGroupDragMove={onGroupDragMove}
