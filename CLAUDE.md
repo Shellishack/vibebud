@@ -34,11 +34,10 @@ A shared core wrapped by per-platform shells. The root is a "loose" monorepo: a 
   - `preload.js` — exposes a small `window.vibemoji` API (`setInteractive`, `setFocusable`, `setBounds`, `getCursorPoint`, `onSpawnBuddy`).
   - `sync-core.js` — copies `core/out/` → `desktop/core-out/` before packaging (excludes the `installers/` dir to avoid recursive bundling).
   - `make-icon.js` — generates the Windows `.ico` from a PNG via `sharp` + `png-to-ico`.
-- `android/` — Capacitor 8 shell. Loads `core/`'s static export (or the dev server at `10.0.2.2:3060`) and adds a native `OverlayService` so the buddy floats above every other app.
+- `mobile/` — Capacitor 8 shell. Loads `core/`'s static export (or the dev server at `10.0.2.2:3060`) and adds a native `OverlayService` so the buddy floats above every other app. The generated Capacitor Android project lives in `mobile/android/` and is checked into git — overlay sources, manifest entries, MainActivity registration, and the `androidx.webkit` dependency are all part of the committed tree (no patcher step).
   - `capacitor.config.ts` — `appId: dev.vibemoji.android`, `webDir: '../core/out'` (Capacitor reads core's static export directly — no intermediate `www/` mirror). Honors `VIBEMOJI_DEV_URL` to point the WebView at the running Next dev server.
-  - `install-overlay.js` — one-shot patcher run after `npx cap add android`. Drops `OverlayService.java` + `OverlayPlugin.java` into the generated Gradle project, injects the `SYSTEM_ALERT_WINDOW` / `FOREGROUND_SERVICE_SPECIAL_USE` permissions and the `<service>` declaration into `AndroidManifest.xml`, and registers the plugin in `MainActivity`.
-  - `native/OverlayService.java` — foreground service that owns its own transparent `WebView` and adds it to `WindowManager` with `TYPE_APPLICATION_OVERLAY`. Touch-passthrough toggle via `FLAG_NOT_TOUCHABLE`, controlled from JS through a `vibemojiNative.setInteractive(boolean)` bridge. Counterpart to `desktop/main.js`'s `setIgnoreMouseEvents`.
-  - `native/OverlayPlugin.java` — Capacitor plugin exposed as `Capacitor.Plugins.Overlay`: `hasPermission()`, `requestPermission()`, `start({ url? })`, `stop()`, `isRunning()`, `setInteractive({ value })`.
+  - `android/app/src/main/java/dev/vibemoji/android/OverlayService.java` — foreground service that owns its own transparent `WebView` and adds it to `WindowManager` with `TYPE_APPLICATION_OVERLAY`. Touch-passthrough toggle via `FLAG_NOT_TOUCHABLE`, controlled from JS through a `vibemojiNative.setInteractive(boolean)` bridge. Counterpart to `desktop/main.js`'s `setIgnoreMouseEvents`.
+  - `android/app/src/main/java/dev/vibemoji/android/OverlayPlugin.java` — Capacitor plugin exposed as `Capacitor.Plugins.Overlay`: `hasPermission()`, `requestPermission()`, `start({ url? })`, `stop()`, `isRunning()`, `setInteractive({ value })`.
   - **Touch model**: the overlay has no `FLAG_NOT_TOUCHABLE` (touch has no hover, so the desktop's mousemove-driven flag toggle isn't viable). Instead `OverlayService` registers an `OnComputeInternalInsetsListener` (via reflection — the API is `@hide`) that publishes `TOUCHABLE_INSETS_REGION` rects. `Buddy.tsx` walks every `[data-buddy-interactive]` element, multiplies `getBoundingClientRect` by `devicePixelRatio`, and posts the union via `vibemojiNative.setTouchableRegion(json)`. Touches inside any rect reach the WebView; touches outside fall through to whatever app is underneath. **`TOUCHABLE_INSETS_REGION` is checked per touch event, not per gesture** — so once a finger leaves the static avatar rect mid-drag, Android routes the next `MOVE` to the launcher and the gesture is lost. To handle this, the WebView's `OnTouchListener` flips a native `nativeDragActive` flag on `ACTION_DOWN` and back on `UP`/`CANCEL`; while it's set, the inset listener publishes a single full-window rect instead of the per-element list. This runs synchronously inside the gesture, so MOVE events stay routed to the WebView. The JS bridge handles only idle-state region updates. Native uses `webView.requestLayout()` (not `windowManager.updateViewLayout(...)`) to nudge the inset listener.
   - **Mobile layout**: decided by `LayoutAdapter.chatPanelMode === 'sheet'` (Capacitor and Web Mobile only). The sheet is portal'd to `document.body` to escape the buddy wrapper's `transform`'d containing block — otherwise `position: fixed` would resolve relative to the buddy, not the viewport.
 
@@ -83,13 +82,11 @@ npm run desktop-run
 # Desktop production installer (Windows NSIS → desktop/dist/vibemoji-desktop-setup.exe)
 npm run desktop-build
 
-# Android — one-time setup after install-all:
-#   cd android && npx cap add android && node install-overlay.js
-# Then dev/build:
+# Android — `mobile/android/` is checked in, so no scaffolding step is needed.
 npm run android-dev      # builds debug APK, installs, points at 10.0.2.2:3060
 
 # Quick debug APK — Gradle wrapper handles debug signing automatically.
-# Run from android/android/.
+# Run from mobile/android/.
 gradlew.bat assembleDebug
 # → app/build/outputs/apk/debug/app-debug.apk
 
@@ -99,7 +96,7 @@ gradlew.bat assembleDebug
 npx cap build android --androidreleasetype=APK \
   --keystorepath debug.keystore --keystorepass android \
   --keystorealias androiddebugkey --keystorealiaspass android
-# → android/android/app/build/outputs/apk/release/app-release-signed.apk
+# → mobile/android/app/build/outputs/apk/release/app-release-signed.apk
 ```
 
 Notes:

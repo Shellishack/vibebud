@@ -1,5 +1,0 @@
-// Patches applied by install-overlay.js to MainActivity.java.
-//
-// 1. Inside the existing onCreate body (after super.onCreate(...)), register the plugin:
-
-registerPlugin(OverlayPlugin.class);

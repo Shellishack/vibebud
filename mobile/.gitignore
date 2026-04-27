@@ -1,7 +1,11 @@
 node_modules/
 www/
-android/
 .gradle/
 *.log
 *.keystore
 *.jks
+android/.gradle/
+android/build/
+android/app/build/
+android/capacitor-cordova-android-plugins/build/
+android/local.properties

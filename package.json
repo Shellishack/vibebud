@@ -10,7 +10,7 @@
     "desktop-start": "npm --prefix desktop start",
     "desktop-build": "npm --prefix core run build && npm --prefix desktop run build:win",
     "desktop-run": "npm run web-build && npm --prefix desktop run sync-core && npm --prefix desktop start",
-    "android-sync": "npm run web-build && npm --prefix mobile exec -- cap sync android && node -e \"require('fs').rmSync('android/android/app/src/main/assets/public/installers', { recursive: true, force: true })\"",
+    "android-sync": "npm run web-build && npm --prefix mobile exec -- cap sync android && node -e \"require('fs').rmSync('mobile/android/app/src/main/assets/public/installers', { recursive: true, force: true })\"",
     "android-dev": "npm --prefix mobile run dev",
     "android-open": "npm --prefix mobile run open",
     "android-build": "npm run android-sync && npm --prefix mobile run build",

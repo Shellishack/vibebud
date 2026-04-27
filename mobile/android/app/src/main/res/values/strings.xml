@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">vibemoji</string>
+    <string name="title_activity_main">vibemoji</string>
+    <string name="package_name">dev.vibemoji.android</string>
+    <string name="custom_url_scheme">dev.vibemoji.android</string>
+</resources>
