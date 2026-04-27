@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { usePlatform } from './hooks/usePlatform';
 import { getNotifyMethod, setNotifyMethod, type NotifyMethod } from './llm';
@@ -15,20 +15,42 @@ export default function AppSettings({ open, onClose }: Props) {
 function AppSettingsBody({ onClose }: { onClose: () => void }) {
   const adapter = usePlatform();
   const [method, setMethod] = useState<NotifyMethod>(() => getNotifyMethod());
-  const [permDenied, setPermDenied] = useState(false);
+  const [permGranted, setPermGranted] = useState<boolean>(() => adapter.hasNotificationPermission());
 
-  const choose = async (next: NotifyMethod) => {
-    if (next === 'native') {
-      const ok = await adapter.requestNotificationPermission();
-      if (!ok) {
-        setPermDenied(true);
-        return;
-      }
-    }
-    setPermDenied(false);
+  // Selecting Native is no longer gated on the permission. The user picks
+  // freely; if the OS hasn't granted POST_NOTIFICATIONS, a hint banner
+  // surfaces with a one-tap shortcut to the system permission dialog (or,
+  // on permanently-denied, App Settings). This avoids the dead-end where
+  // the option became unselectable on devices that silently refuse the
+  // runtime permission dialog.
+  const choose = (next: NotifyMethod) => {
     setMethod(next);
     setNotifyMethod(next);
+    if (next === 'native') {
+      // Best-effort: kick the OS prompt in case the user hasn't granted yet.
+      // Fire-and-forget — the result is reflected by the live status read
+      // from the adapter, not by this promise.
+      void adapter.requestNotificationPermission().then((ok) => setPermGranted(ok));
+    }
   };
+
+  // Re-poll permission state whenever the user returns to the app (e.g.
+  // came back from the system Settings activity). Cheap, runs every 1s
+  // while the panel is open, plus on visibility/focus.
+  useEffect(() => {
+    const recheck = () => setPermGranted(adapter.hasNotificationPermission());
+    recheck();
+    const t = setInterval(recheck, 1000);
+    document.addEventListener('visibilitychange', recheck);
+    window.addEventListener('focus', recheck);
+    return () => {
+      clearInterval(t);
+      document.removeEventListener('visibilitychange', recheck);
+      window.removeEventListener('focus', recheck);
+    };
+  }, [adapter]);
+
+  const showPermHint = method === 'native' && !permGranted;
 
   return createPortal(
     <div
@@ -65,7 +87,7 @@ function AppSettingsBody({ onClose }: { onClose: () => void }) {
               selected={method === 'in-app'}
               label="In-app toast (default)"
               desc="Card slides up next to the buddy. Only visible while the buddy window is on screen."
-              onClick={() => void choose('in-app')}
+              onClick={() => choose('in-app')}
             />
             <Option
               selected={method === 'native'}
@@ -75,14 +97,30 @@ function AppSettingsBody({ onClose }: { onClose: () => void }) {
                 : adapter.id === 'capacitor-android' ? 'Android system notification tray.'
                 : 'Browser notification banner.'
               }
-              onClick={() => void choose('native')}
+              onClick={() => choose('native')}
+              status={
+                method === 'native'
+                  ? permGranted
+                    ? { tone: 'ok', text: 'Allowed' }
+                    : { tone: 'warn', text: 'Permission needed' }
+                  : null
+              }
             />
           </div>
-          {permDenied && (
-            <p className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:bg-amber-500/10 dark:text-amber-300">
-              Notification permission isn&apos;t granted. Enable it in your{' '}
-              {adapter.id === 'capacitor-android' ? 'Android app settings' : 'browser/OS settings'} and try again.
-            </p>
+          {showPermHint && (
+            <div className="mt-3 flex flex-col gap-2 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:bg-amber-500/10 dark:text-amber-300">
+              <p>
+                {adapter.id === 'capacitor-android'
+                  ? 'Android hasn’t granted notification permission yet. Tap below to open the permission prompt or app settings.'
+                  : 'Notification permission isn’t granted by your browser/OS.'}
+              </p>
+              <button
+                onClick={() => void adapter.requestNotificationPermission().then((ok) => setPermGranted(ok))}
+                className="self-start rounded-full bg-amber-600 px-3 py-1 text-[11px] font-semibold text-white hover:bg-amber-700 dark:bg-amber-500 dark:hover:bg-amber-400"
+              >
+                Open permission settings
+              </button>
+            </div>
           )}
         </section>
       </div>
@@ -91,7 +129,13 @@ function AppSettingsBody({ onClose }: { onClose: () => void }) {
   );
 }
 
-function Option({ selected, label, desc, onClick }: { selected: boolean; label: string; desc: string; onClick: () => void }) {
+function Option({ selected, label, desc, onClick, status }: {
+  selected: boolean;
+  label: string;
+  desc: string;
+  onClick: () => void;
+  status?: { tone: 'ok' | 'warn'; text: string } | null;
+}) {
   return (
     <button
       onClick={onClick}
@@ -101,13 +145,24 @@ function Option({ selected, label, desc, onClick }: { selected: boolean; label: 
           : 'border-zinc-200 bg-white hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:hover:bg-zinc-800'
       }`}
     >
-      <span className="flex w-full items-center justify-between">
+      <span className="flex w-full items-center justify-between gap-2">
         <span className="text-sm font-medium text-zinc-900 dark:text-zinc-50">{label}</span>
-        {selected && (
-          <span className="rounded-full bg-violet-600 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-white">
-            on
-          </span>
-        )}
+        <span className="flex items-center gap-1.5">
+          {status && (
+            <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider ${
+              status.tone === 'ok'
+                ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-300'
+                : 'bg-amber-100 text-amber-800 dark:bg-amber-500/20 dark:text-amber-300'
+            }`}>
+              {status.text}
+            </span>
+          )}
+          {selected && (
+            <span className="rounded-full bg-violet-600 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-white">
+              on
+            </span>
+          )}
+        </span>
       </span>
       <span className="text-xs text-zinc-500 dark:text-zinc-400">{desc}</span>
     </button>

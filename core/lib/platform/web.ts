@@ -40,4 +40,9 @@ export class WebAdapter implements PlatformAdapter {
       return r === 'granted';
     } catch { return false; }
   }
+
+  hasNotificationPermission(): boolean {
+    if (typeof window === 'undefined' || typeof Notification === 'undefined') return false;
+    return Notification.permission === 'granted';
+  }
 }

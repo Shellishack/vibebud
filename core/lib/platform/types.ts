@@ -65,6 +65,10 @@ export interface PlatformAdapter {
   // (always granted); on Web triggers Notification.requestPermission(); on
   // Android opens the system permission dialog (Android 13+).
   requestNotificationPermission(): Promise<boolean>;
+
+  // Synchronous query for current permission state, without prompting. Used
+  // to re-check after the user returns from system settings.
+  hasNotificationPermission(): boolean;
 }
 
 export type NotificationPayload = {

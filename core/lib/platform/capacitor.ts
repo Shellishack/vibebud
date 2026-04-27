@@ -18,6 +18,27 @@ const native = (): VibemojiNative | undefined => {
   return (window as unknown as { vibemojiNative?: VibemojiNative }).vibemojiNative;
 };
 
+// Capacitor LocalNotifications plugin — only present in the BridgeActivity
+// WebView (MainActivity), where Capacitor injects `Capacitor.Plugins.*`.
+// In the overlay's hand-rolled WebView this is undefined and we fall back
+// to the vibemojiNative bridge.
+type LocalNotificationsPlugin = {
+  checkPermissions: () => Promise<{ display: 'granted' | 'denied' | 'prompt' | 'prompt-with-rationale' }>;
+  requestPermissions: () => Promise<{ display: 'granted' | 'denied' | 'prompt' | 'prompt-with-rationale' }>;
+  schedule: (opts: { notifications: { id: number; title: string; body: string }[] }) => Promise<unknown>;
+};
+type CapacitorRuntime = {
+  isNativePlatform?: () => boolean;
+  Plugins?: { LocalNotifications?: LocalNotificationsPlugin };
+};
+const localNotifications = (): LocalNotificationsPlugin | undefined => {
+  if (typeof window === 'undefined') return undefined;
+  const cap = (window as unknown as { Capacitor?: CapacitorRuntime }).Capacitor;
+  return cap?.Plugins?.LocalNotifications;
+};
+
+let lastPluginPerm = false;
+
 export class CapacitorAdapter implements PlatformAdapter {
   readonly id = 'capacitor-android' as const;
   readonly isMobile = true;
@@ -120,36 +141,94 @@ export class CapacitorAdapter implements PlatformAdapter {
   }
 
   showNotification(payload: NotificationPayload): void {
+    // Prefer the Capacitor LocalNotifications plugin when available — that's
+    // the supported path inside the MainActivity (BridgeActivity) WebView,
+    // and it correctly handles channels + Android 14+ delivery rules. The
+    // overlay's hand-rolled WebView falls back to vibemojiNative.
+    const ln = localNotifications();
+    if (ln) {
+      try {
+        void ln.schedule({ notifications: [{
+          id: Math.floor(Math.random() * 2_147_483_647),
+          title: payload.title,
+          body: payload.body,
+        }]});
+        return;
+      } catch { /* fall through */ }
+    }
     try { native()?.showNotification?.(JSON.stringify(payload)); } catch { /* noop */ }
   }
 
   async requestNotificationPermission(): Promise<boolean> {
+    // Capacitor plugin path — used inside MainActivity. The plugin properly
+    // surfaces the Android-13+ runtime permission dialog and handles all the
+    // OEM edge cases for us. We only fall back to the overlay native bridge
+    // when the plugin isn't loaded (i.e. inside the overlay WebView).
+    const ln = localNotifications();
+    if (ln) {
+      try {
+        const cur = await ln.checkPermissions();
+        if (cur?.display === 'granted') return true;
+        const next = await ln.requestPermissions();
+        return next?.display === 'granted';
+      } catch { return false; }
+    }
+
     const n = native();
     if (!n) return false;
     try {
-      // Best-effort: if native exposes a synchronous query, use it; otherwise
-      // just trigger the request and assume the user will handle the dialog.
-      if (typeof n.hasNotificationPermission === 'function') {
-        const cur = n.hasNotificationPermission();
-        if (cur === 'granted') return true;
-      }
-      n.requestNotificationPermission?.();
+      const cur = n.hasNotificationPermission?.();
+      if (cur === 'granted') return true;
     } catch { /* noop */ }
-    // Re-query after a short delay so the caller gets a useful boolean once
-    // the dialog returns. Android dispatches the result asynchronously.
+    try { n.requestNotificationPermission?.(); } catch { /* noop */ }
     return new Promise((resolve) => {
       const start = Date.now();
-      const tick = () => {
+      let settled = false;
+      const finish = (v: boolean) => {
+        if (settled) return;
+        settled = true;
+        document.removeEventListener('visibilitychange', onVisible);
+        window.removeEventListener('focus', onVisible);
+        resolve(v);
+      };
+      const check = (): boolean | null => {
         try {
           const v = n.hasNotificationPermission?.();
-          if (v === 'granted') return resolve(true);
-          if (v === 'denied') return resolve(false);
+          if (v === 'granted') return true;
+          if (v === 'denied') return false;
         } catch { /* noop */ }
-        if (Date.now() - start > 30_000) return resolve(false);
+        return null;
+      };
+      const onVisible = () => {
+        if (document.visibilityState !== 'visible') return;
+        const r = check();
+        if (r === true) finish(true);
+      };
+      const tick = () => {
+        if (settled) return;
+        const r = check();
+        if (r === true) return finish(true);
+        if (r === false && Date.now() - start > 5_000) return finish(false);
+        if (Date.now() - start > 120_000) return finish(false);
         setTimeout(tick, 500);
       };
+      document.addEventListener('visibilitychange', onVisible);
+      window.addEventListener('focus', onVisible);
       setTimeout(tick, 500);
     });
+  }
+
+  hasNotificationPermission(): boolean {
+    // Synchronous answer. Cache last known plugin result, refresh in the
+    // background — required because `LocalNotifications.checkPermissions` is
+    // async but callers (status badges) need a value right now.
+    const ln = localNotifications();
+    if (ln) {
+      void ln.checkPermissions().then((r) => { lastPluginPerm = r?.display === 'granted'; }).catch(() => {});
+      return lastPluginPerm;
+    }
+    try { return native()?.hasNotificationPermission?.() === 'granted'; }
+    catch { return false; }
   }
 
   onOutsideTap(cb: () => void): () => void {

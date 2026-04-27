@@ -62,6 +62,8 @@ export class ElectronAdapter implements PlatformAdapter {
     return true;
   }
 
+  hasNotificationPermission(): boolean { return true; }
+
   onOpenSettings(cb: () => void): () => void {
     const off = bridge()?.onOpenSettings?.(cb);
     return typeof off === 'function' ? off : () => {};

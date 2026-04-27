@@ -27,6 +27,7 @@ import android.webkit.WebResourceResponse;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
+import android.widget.Toast;
 
 import androidx.annotation.Nullable;
 import androidx.core.app.NotificationCompat;
@@ -784,24 +785,43 @@ public class OverlayService extends Service {
 
         @JavascriptInterface
         public String hasNotificationPermission() {
-            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return "granted";
-            int r = androidx.core.content.ContextCompat.checkSelfPermission(
-                    OverlayService.this, android.Manifest.permission.POST_NOTIFICATIONS);
-            return r == android.content.pm.PackageManager.PERMISSION_GRANTED ? "granted" : "denied";
+            // Use NotificationManagerCompat instead of a raw permission check.
+            // It returns the effective state — taking into account both the
+            // POST_NOTIFICATIONS runtime permission (Android 13+) AND the
+            // user-facing "Allow notifications" toggle. Some OEM ROMs keep
+            // those two states out of sync; the Compat method is the source
+            // of truth for whether `nm.notify` will actually surface a post.
+            try {
+                boolean ok = androidx.core.app.NotificationManagerCompat.from(OverlayService.this)
+                        .areNotificationsEnabled();
+                return ok ? "granted" : "denied";
+            } catch (Throwable ignored) {
+                return "denied";
+            }
         }
 
         @JavascriptInterface
         public void requestNotificationPermission() {
-            // The overlay service doesn't have an Activity context to drive
-            // the runtime permission dialog. Best we can do is open the app's
-            // notification settings page so the user can flip the toggle.
+            // Runtime permission requests on Android 13+ require an Activity
+            // context, which the foreground service doesn't have. Bounce
+            // through MainActivity (singleTask) — it sees the extra and
+            // invokes ActivityCompat.requestPermissions, which surfaces the
+            // standard system dialog. Pre-13 falls back to the app's
+            // notification settings page (the toggle controls everything
+            // there).
             main.post(() -> {
+                Toast.makeText(OverlayService.this,
+                        "Bridge → asking notification permission",
+                        Toast.LENGTH_SHORT).show();
                 try {
-                    Intent i = new Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS);
-                    i.putExtra(Settings.EXTRA_APP_PACKAGE, getPackageName());
+                    Intent i = new Intent(OverlayService.this, PermissionRequestActivity.class);
                     i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
                     startActivity(i);
-                } catch (Throwable ignored) { /* fall through */ }
+                } catch (Throwable t) {
+                    Toast.makeText(OverlayService.this,
+                            "Couldn't launch permission activity: " + t.getMessage(),
+                            Toast.LENGTH_LONG).show();
+                }
             });
         }
 
