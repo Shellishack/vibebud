@@ -3,6 +3,7 @@ import type { InteractiveRect, PlatformAdapter } from './types';
 type VibemojiNative = {
   setTouchableRegion?: (json: string) => void;
   setInteractive?: (v: boolean) => void;
+  setSpilledOut?: (v: boolean) => void;
   setExpanded?: (v: boolean) => void;
   stopOverlay?: () => void;
   setAvatarRects?: (json: string) => void;
@@ -89,6 +90,15 @@ export class CapacitorAdapter implements PlatformAdapter {
     // aren't swallowed by the tap-zone window.
     try { native()?.setInteractive?.(expanded); } catch { /* noop */ }
     try { native()?.setExpanded?.(expanded); } catch { /* noop */ }
+  }
+
+  setOverlaySpilledOut(spilled: boolean): void {
+    // Group spillout: WebView accepts touches in empty areas (so
+    // tap-outside-to-dismiss works), but avatar/group tap-zones stay
+    // touchable so member drag/tap continue going through the dedicated
+    // native gesture path instead of through React pointer events on a
+    // fullscreen transparent WebView.
+    try { native()?.setSpilledOut?.(spilled); } catch { /* noop */ }
   }
 
   getCursorPoint(): Promise<{ x: number; y: number }> | null { return null; }

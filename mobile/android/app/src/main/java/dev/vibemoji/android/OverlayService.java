@@ -724,5 +724,32 @@ public class OverlayService extends Service {
                 }
             });
         }
+
+        /**
+         * Like {@link #setInteractive} but ONLY toggles the main WebView's
+         * touchable flag — does NOT disable avatar/group tap-zones. Used when
+         * a group is expanded/peeked: we want outside-tap-dismiss to work
+         * (which requires the WebView to receive empty-area touches), but we
+         * also need per-avatar tap-zones to keep capturing member taps and
+         * drags. Tap-zones sit above the WebView in z-order, so they still
+         * win over the WebView for touches inside their bounds.
+         */
+        @JavascriptInterface
+        public void setSpilledOut(final boolean spilled) {
+            main.post(() -> {
+                if (params == null || windowManager == null || webView == null) return;
+                int mainFlags = params.flags;
+                if (spilled) {
+                    mainFlags &= ~WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE;
+                } else {
+                    mainFlags |= WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE;
+                }
+                if (mainFlags != params.flags) {
+                    params.flags = mainFlags;
+                    try { windowManager.updateViewLayout(webView, params); }
+                    catch (IllegalArgumentException ignored) { /* detached */ }
+                }
+            });
+        }
     }
 }

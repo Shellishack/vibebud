@@ -47,7 +47,12 @@ const EXPANDED_STRIDE = 96;
 // Larger inset = thicker peek-only buffer ring around the hull edge.
 const EXPAND_HIT_INSET = 48;
 const MERGE_RADIUS = 90;
-const EJECT_RADIUS = 180;
+// Eject thresholds. Members are laid out horizontally, so a vertical pull is
+// the clearest "I want to leave the group" signal — trigger on a smaller dy
+// than dx. The horizontal threshold is kept under one full EXPANDED_STRIDE
+// so the user doesn't have to drag past a neighbor's slot before escaping.
+const EJECT_DY = 36;
+const EJECT_DX = 80;
 const HOVER_LEAVE_GRACE_MS = 250;
 // Anchor offset from screen corner. Tighter on mobile/capacitor so the
 // floating buddy hugs the corner — there's far less screen real estate to
@@ -679,11 +684,11 @@ export default function Buddy() {
   // Tap-outside-to-dismiss: while any group is peeked/expanded, a tap that
   // misses the group/avatar/popup regions collapses every group. Replaces
   // the previous time-based auto-collapse on mobile.
-  // - Capacitor: setOverlayExpanded(true) (driven by hasGroupSpilloutRef
-  //   below) makes the main WebView fully touchable, so the document sees
-  //   pointerdowns landing on empty areas. Avatar/group tap-zones sit above
-  //   the WebView and consume their own taps, so this listener only fires
-  //   for true "outside" taps.
+  // - Capacitor: setOverlaySpilledOut(true) (when any group is peeked or
+  //   expanded) makes the main WebView touchable on empty areas while
+  //   keeping avatar/group tap-zones live. Tap-zones consume their own
+  //   region's taps, so this document listener only sees true "outside"
+  //   pointerdowns and uses them to collapse the group.
   // - Web/web-mobile: same idea, just pointer events on the page directly.
   // - Electron: the existing hover-driven HOVER_LEAVE_GRACE_MS path already
   //   handles dismissal naturally; no need for a click handler that would
@@ -929,7 +934,7 @@ export default function Buddy() {
     }
     // Capacitor: chat-open also forces the overlay window to full screen so
     // the bottom-anchored sheet isn't clipped to the idle bottom-right box.
-    adapter.setOverlayExpanded(openSetRef.current.size > 0 || hasGroupSpilloutRef.current);
+    adapter.setOverlayExpanded(openSetRef.current.size > 0);
   };
 
   // Capacitor: a peeked or expanded group overflows the idle window
@@ -937,13 +942,18 @@ export default function Buddy() {
   // the overlay window for the duration. ACTION_DOWN on the avatar already
   // expands natively, so this only matters for hover-driven peek on web —
   // but the call is cheap and keeps the capacitor adapter in sync.
-  const hasGroupSpilloutRef = useRef(false);
   useEffect(() => {
     const anyPeeked = Object.values(peeked).some(Boolean);
     const anyExpanded = Object.values(expanded).some(Boolean);
     const want = anyPeeked || anyExpanded;
-    hasGroupSpilloutRef.current = want;
-    adapter.setOverlayExpanded(want || openSetRef.current.size > 0);
+    // setOverlayExpanded (popup mode) only turns on for actual popups: it
+    // disables avatar tap-zones, which makes member drags hard to trigger
+    // via React pointer events on a fullscreen transparent WebView.
+    // setOverlaySpilledOut keeps the WebView touchable for empty-area taps
+    // (so outside-tap-dismiss still collapses an expanded group) WITHOUT
+    // killing the per-avatar/per-group native tap-zones.
+    adapter.setOverlayExpanded(openSetRef.current.size > 0);
+    adapter.setOverlaySpilledOut?.(want);
   }, [peeked, expanded, adapter]);
 
   // Eject a member from its group; dissolve group if it would have <2 members.
@@ -974,7 +984,7 @@ export default function Buddy() {
       const slot = slotPos(g, i, stride);
       const dx = pos.x - slot.x;
       const dy = pos.y - slot.y;
-      if (Math.hypot(dx, dy) > EJECT_RADIUS) {
+      if (Math.abs(dy) > EJECT_DY || Math.abs(dx) > EJECT_DX) {
         ejectFromGroup(id, g.id);
       }
       return;

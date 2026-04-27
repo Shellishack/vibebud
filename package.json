@@ -14,6 +14,7 @@
     "android-dev": "npm --prefix mobile run dev",
     "android-open": "npm --prefix mobile run open",
     "android-build": "npm run android-sync && npm --prefix mobile run build",
+    "android-run": "npm run web-build && cd mobile && npx cap sync && npx cap run android",
     "install-all": "npm --prefix core install && npm --prefix desktop install && npm --prefix mobile install"
   }
 }

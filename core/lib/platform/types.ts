@@ -31,6 +31,12 @@ export interface PlatformAdapter {
   // platforms this is a noop.
   setOverlayExpanded(expanded: boolean): void;
 
+  // Capacitor-only: makes the WebView touchable on empty areas (so outside-tap
+  // dismissal works for an expanded/peeked group) WITHOUT disabling avatar or
+  // group tap-zones. Different from setOverlayExpanded, which turns off
+  // tap-zones for popup mode. No-op elsewhere.
+  setOverlaySpilledOut?(spilled: boolean): void;
+
   getCursorPoint(): Promise<{ x: number; y: number }> | null;
 
   setFocusable(focusable: boolean): void;
