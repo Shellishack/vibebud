@@ -203,6 +203,13 @@ export default function BuddyGroup({
         // pointer-down here always starts a group drag — never an
         // individual buddy drag. The pill is the visual affordance.
         <div
+          // data-buddy-interactive is required for Electron click-through:
+          // the window only becomes interactive (i.e. accepts pointerdowns)
+          // while the cursor is over an element with this attribute. Without
+          // it, mouse events pass through the transparent overlay to apps
+          // below and the drag never starts.
+          data-buddy-interactive
+          data-group={groupId}
           onPointerDown={onPointerDown}
           title="Drag to move group"
           className="group/handle pointer-events-auto absolute left-0 right-0 top-0 cursor-grab active:cursor-grabbing"

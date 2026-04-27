@@ -3,7 +3,11 @@ import type { PlatformId } from './types';
 
 const isElectron = (): boolean => {
   if (typeof window === 'undefined') return false;
-  const w = window as unknown as { process?: { versions?: { electron?: string } } };
+  const w = window as unknown as {
+    process?: { versions?: { electron?: string } };
+    vibemoji?: { isElectron?: boolean };
+  };
+  if (w.vibemoji?.isElectron) return true;
   return typeof w.process?.versions?.electron === 'string';
 };
 
