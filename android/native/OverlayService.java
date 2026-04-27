@@ -320,7 +320,15 @@ public class OverlayService extends Service {
 
     private void dispatchGroupEvent(String name, String gid, float dx, float dy) {
         if (webView == null) return;
-        String safe = gid.replace("\\", "\\\\").replace("'", "\\'");
+        // The JS layer publishes mode-tagged ids ("group-1:cluster",
+        // "group-1:strip") so a transition between handle-strip and cluster
+        // tap-zones turns into a clean remove+create at the WindowManager level
+        // instead of an updateViewLayout on a window whose touch-dispatch state
+        // can get stuck on the previous bounds. Strip the suffix here so
+        // listeners on the JS side just see the original gid.
+        int colon = gid.indexOf(':');
+        String pureGid = colon >= 0 ? gid.substring(0, colon) : gid;
+        String safe = pureGid.replace("\\", "\\\\").replace("'", "\\'");
         String js = "window.dispatchEvent(new CustomEvent('" + name +
                 "',{detail:{id:'" + safe + "',dx:" + dx + ",dy:" + dy + "}}))";
         webView.evaluateJavascript(js, null);

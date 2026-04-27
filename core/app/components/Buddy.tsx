@@ -384,6 +384,10 @@ export default function Buddy() {
     return () => document.removeEventListener('pointerdown', onDown, true);
   }, [adapter, expanded, peeked]);
 
+  // Exposed by the publishing effect below so other effects (e.g. settle
+  // re-measures after a CSS transition) can request a fresh rect publish.
+  const triggerRemeasureRef = useRef<(() => void) | null>(null);
+
   useEffect(() => {
     if (typeof window === 'undefined') return;
     if (!adapter.isNative || adapter.id !== 'capacitor-android') return;
@@ -482,6 +486,14 @@ export default function Buddy() {
       // Expanded groups: shrink the group zone to the top "handle" strip of
       // the hull so it doesn't overlap member avatar zones. Source rect from
       // the visible hull element.
+      // Mode-tagged ids: the handle-strip zone for an expanded group and the
+      // cluster zone for a collapsed group are PUBLISHED AS DIFFERENT WINDOWS
+      // ("<gid>:strip" vs "<gid>:cluster"). Sharing the same id and just
+      // updating bounds via WindowManager.updateViewLayout occasionally leaves
+      // the OS touch-dispatch region stuck on the previous mode's bounds, so
+      // after dismissing the expanded view the cluster never receives taps.
+      // Native strips the suffix before dispatching, so JS still sees the bare
+      // gid in vibemoji:groupTap / Drag* events.
       const hullEls = document.querySelectorAll<HTMLElement>('[data-group][data-buddy-interactive]');
       hullEls.forEach((el) => {
         const id = el.getAttribute('data-group');
@@ -491,7 +503,7 @@ export default function Buddy() {
         const r = el.getBoundingClientRect();
         if (r.width <= 0 || r.height <= 0) return;
         groupRects.push({
-          id,
+          id: `${id}:strip`,
           x: Math.floor(r.left * dpr),
           y: Math.floor(r.top * dpr),
           w: Math.ceil(r.width * dpr),
@@ -512,7 +524,7 @@ export default function Buddy() {
         }
         if (!isFinite(l) || rgt <= l || btm <= t) continue;
         groupRects.push({
-          id: gid,
+          id: `${gid}:cluster`,
           x: Math.floor(l * dpr),
           y: Math.floor(t * dpr),
           w: Math.ceil((rgt - l) * dpr),
@@ -525,6 +537,7 @@ export default function Buddy() {
       if (raf) return;
       raf = requestAnimationFrame(measure);
     };
+    triggerRemeasureRef.current = schedule;
 
     schedule();
     const ro = new ResizeObserver(schedule);
@@ -544,11 +557,26 @@ export default function Buddy() {
       window.removeEventListener('scroll', schedule, true);
       window.removeEventListener('resize', schedule);
       if (raf) cancelAnimationFrame(raf);
+      triggerRemeasureRef.current = null;
       adapter.publishInteractiveRects([]);
       adapter.publishAvatarRects([]);
       adapter.publishGroupRects([]);
     };
   }, [adapter]);
+
+  // CSS transitions on the buddy/hull transforms (~360ms) animate getBoundingClientRect
+  // values continuously, but transitions don't fire MutationObserver events.
+  // Without follow-up measures, the cluster tap-zone for a just-collapsed
+  // group ends up at an intermediate position and misses the actual settled
+  // cluster — the group becomes untappable. Re-measure a few times across
+  // the transition window to publish the final rects.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (adapter.id !== 'capacitor-android') return;
+    const trigger = () => triggerRemeasureRef.current?.();
+    const timers = [80, 200, 380, 560].map((ms) => setTimeout(trigger, ms));
+    return () => { for (const t of timers) clearTimeout(t); };
+  }, [adapter, expanded, peeked, groups]);
 
   const removeBuddy = (id: string) => {
     setBuddies((cur) => {

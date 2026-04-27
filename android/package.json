@@ -6,8 +6,8 @@
   "scripts": {
     "install-overlay": "node install-overlay.js",
     "open": "cap open android",
-    "dev": "cross-env VIBEMOJI_DEV_URL=http://10.0.2.2:3060 cap run android --no-sync",
-    "build": "cd android && gradlew.bat assembleRelease"
+    "dev": "node install-overlay.js && cross-env VIBEMOJI_DEV_URL=http://10.0.2.2:3060 cap run android --no-sync",
+    "build": "node install-overlay.js && cd android && gradlew.bat assembleRelease"
   },
   "dependencies": {
     "@capacitor/android": "^8.3.1",
