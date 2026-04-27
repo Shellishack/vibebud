@@ -59,7 +59,9 @@ const ANCHOR = (() => {
 
 // --- Minimize-to-edge ---
 // Drag-end edge proximity (px) below which a buddy/group snaps to the edge.
-const SNAP_THRESHOLD = 24;
+// Generous so the snap feels reliable; the live edge-magnet cue (see
+// edgeMagnetRef wiring) shows the user when they're in the snap zone.
+const SNAP_THRESHOLD = 64;
 // Tight inter-member stride used while a group is minimized — members read
 // as a stack (vs. COLLAPSED_STRIDE 28).
 const STACK_STRIDE = 6;
@@ -264,6 +266,10 @@ export default function Buddy() {
   const [peeked, setPeeked] = useState<Record<string, boolean>>({});
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [magnet, setMagnet] = useState<{ draggedId: string; targetId: string; targetType: 'buddy' | 'group' } | null>(null);
+  // Live edge-magnet cue: which buddy/group is currently within the
+  // SNAP_THRESHOLD of which edge (set during drag, cleared on drag end).
+  // Renderers show a glow/scale to signal the snap zone.
+  const [edgeMagnet, setEdgeMagnet] = useState<{ kind: 'buddy' | 'group'; id: string; edge: Edge } | null>(null);
   const idRef = useRef(2);
   const groupIdRef = useRef(1);
   const hydratedRef = useRef(false);
@@ -890,10 +896,26 @@ export default function Buddy() {
       if (cur && cur.draggedId === id && cur.targetId === bestId && cur.targetType === bestType) return cur;
       return { draggedId: id, targetId: bestId, targetType: bestType };
     });
+
+    // Live edge-magnet preview. If buddy is in the magnet zone (and no
+    // merge target — merge wins), publish the edge to the renderer for a
+    // visual cue. Cleared on drag end.
+    if (!bestId) {
+      const near = nearestEdgeForBuddy(pos);
+      const inZone = near.d < SNAP_THRESHOLD;
+      setEdgeMagnet((cur) => {
+        if (!inZone) return cur ? null : cur;
+        if (cur && cur.kind === 'buddy' && cur.id === id && cur.edge === near.edge) return cur;
+        return { kind: 'buddy', id, edge: near.edge };
+      });
+    } else {
+      setEdgeMagnet((cur) => (cur ? null : cur));
+    }
   };
 
   const onDragEnd = (id: string, pos: { x: number; y: number }, moved: boolean) => {
     setMagnet(null);
+    setEdgeMagnet(null);
     if (!moved) return;
     const b = buddiesRef.current.find((x) => x.id === id);
     if (!b) return;
@@ -970,6 +992,7 @@ export default function Buddy() {
   // grouped-members sync effect). If the user dragged a minimized group
   // AWAY from any edge, un-minimize and clamp it back into bounds.
   const onGroupDragEnd = (gid: string, pos: { x: number; y: number }) => {
+    setEdgeMagnet(null);
     const g = groupsRef.current.find((x) => x.id === gid);
     if (!g) return;
     const near = nearestEdgeForGroup(pos, g.memberIds.length);
@@ -1002,6 +1025,15 @@ export default function Buddy() {
     // to move freely off-screen; onGroupDragEnd handles re-snap or eject.
     if (!groupRef?.minimized) pos = clampGroupPos(pos, memberCount);
     setGroups((cur) => cur.map((g) => (g.id === gid ? { ...g, pos } : g)));
+
+    // Live edge-magnet preview for the group.
+    const near = nearestEdgeForGroup(pos, memberCount);
+    const inZone = near.d < SNAP_THRESHOLD;
+    setEdgeMagnet((cur) => {
+      if (!inZone) return cur && cur.kind === 'group' && cur.id === gid ? null : cur;
+      if (cur && cur.kind === 'group' && cur.id === gid && cur.edge === near.edge) return cur;
+      return { kind: 'group', id: gid, edge: near.edge };
+    });
     setBuddies((cur) => {
       const g = groupsRef.current.find((x) => x.id === gid);
       if (!g) return cur;
@@ -1053,6 +1085,7 @@ export default function Buddy() {
         onDragMove={onDragMove}
         onDragEnd={onDragEnd}
         magnetState={magnetState}
+        edgeMagnet={edgeMagnet?.kind === 'buddy' && edgeMagnet.id === b.id ? edgeMagnet.edge : null}
         teammates={teammatesFor(b)}
         isGroupExpanded={!!(b.groupId && expanded[b.groupId])}
         isGroupMinimized={!!(b.groupId && groups.find((g) => g.id === b.groupId)?.minimized)}
@@ -1091,6 +1124,7 @@ export default function Buddy() {
             // Hull only shows on peek/expand, never on a minimized stack.
             visible={!g.minimized && (!!peeked[g.id] || !!expanded[g.id])}
             magnetActive={magnet?.targetType === 'group' && magnet.targetId === g.id}
+            edgeMagnetActive={edgeMagnet?.kind === 'group' && edgeMagnet.id === g.id}
             background={gradientFor(memberVariantIds)}
             onGroupDragMove={onGroupDragMove}
             onGroupDragEnd={onGroupDragEnd}

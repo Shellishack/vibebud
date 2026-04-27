@@ -48,6 +48,10 @@ type Props = {
   onDragMove?: (id: string, pos: { x: number; y: number }) => void;
   onDragEnd?: (id: string, pos: { x: number; y: number }, moved: boolean) => void;
   magnetState?: 'attractor' | 'target' | null;
+  // Live edge-magnet hint while dragging — set to the edge the buddy will
+  // snap to on release. Used to render a glow as a "you're in the snap
+  // zone" cue.
+  edgeMagnet?: 'left' | 'right' | 'top' | 'bottom' | null;
   teammates?: Teammate[];
   isGroupExpanded?: boolean;
   isGroupMinimized?: boolean;
@@ -56,7 +60,7 @@ type Props = {
   onGroupRestore?: (gid: string) => void;
 };
 
-export default function BuddyInstance({ state, anchor, canRemove, onChange, onSpawn, onRemove, onOpenChange, onDragMove, onDragEnd, magnetState, teammates, isGroupExpanded, isGroupMinimized, onGroupTap, onRestore, onGroupRestore }: Props) {
+export default function BuddyInstance({ state, anchor, canRemove, onChange, onSpawn, onRemove, onOpenChange, onDragMove, onDragEnd, magnetState, edgeMagnet, teammates, isGroupExpanded, isGroupMinimized, onGroupTap, onRestore, onGroupRestore }: Props) {
   const personality: Personality =
     PERSONALITY_BY_VARIANT[state.variantId] ?? PERSONALITY_BY_VARIANT.violet;
 
@@ -766,6 +770,24 @@ export default function BuddyInstance({ state, anchor, canRemove, onChange, onSp
                   magnetState === 'target' ? 'ring-2 ring-violet-300/70' : 'ring-2 ring-emerald-300/70'
                 }`}
                 style={{ animation: 'buddy-magnet-ping 1100ms ease-out infinite' }}
+              />
+            </>
+          )}
+          {edgeMagnet && !magnetState && (
+            // Edge-snap magnetic-zone cue: a soft sky-blue glow + pulsing
+            // ring tells the user "release here to dock". Distinct color
+            // from merge-magnet (violet/emerald) so the two cues don't
+            // confuse each other.
+            <>
+              <span
+                aria-hidden
+                className="pointer-events-none absolute inset-0 rounded-full ring-4 ring-sky-400/80 shadow-[0_0_30px_8px_rgba(56,189,248,0.55)]"
+                style={{ animation: 'buddy-magnet-pulse 900ms ease-in-out infinite' }}
+              />
+              <span
+                aria-hidden
+                className="pointer-events-none absolute inset-0 rounded-full ring-2 ring-sky-300/70"
+                style={{ animation: 'buddy-magnet-ping 900ms ease-out infinite' }}
               />
             </>
           )}

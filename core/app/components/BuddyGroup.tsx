@@ -15,6 +15,7 @@ type Props = {
   anchor: { right: number; bottom: number };
   visible: boolean;
   magnetActive?: boolean;
+  edgeMagnetActive?: boolean;
   background?: string;
   onGroupDragMove: (id: string, pos: { x: number; y: number }) => void;
   onGroupDragEnd?: (id: string, pos: { x: number; y: number }) => void;
@@ -22,7 +23,7 @@ type Props = {
 
 export default function BuddyGroup({
   groupId, pos, memberCount, stride, avatarSize, padX, padTop, padBottom, anchor,
-  visible, magnetActive, background, onGroupDragMove, onGroupDragEnd,
+  visible, magnetActive, edgeMagnetActive, background, onGroupDragMove, onGroupDragEnd,
 }: Props) {
   const adapter = usePlatform();
   const width = (memberCount - 1) * stride + avatarSize + padX * 2;
@@ -174,8 +175,10 @@ export default function BuddyGroup({
       className={`fixed rounded-full border border-white/50 ${
         isCapacitor ? '' : 'pointer-events-auto cursor-grab active:cursor-grabbing'
       } ${
-        visible || magnetActive ? 'shadow-xl backdrop-blur-md opacity-100' : 'opacity-0 border-transparent'
-      } ${magnetActive ? 'ring-4 ring-violet-400/80 shadow-[0_0_36px_8px_rgba(167,139,250,0.55)]' : ''}`}
+        visible || magnetActive || edgeMagnetActive ? 'shadow-xl backdrop-blur-md opacity-100' : 'opacity-0 border-transparent'
+      } ${magnetActive ? 'ring-4 ring-violet-400/80 shadow-[0_0_36px_8px_rgba(167,139,250,0.55)]' : ''} ${
+        edgeMagnetActive && !magnetActive ? 'ring-4 ring-sky-400/80 shadow-[0_0_36px_8px_rgba(56,189,248,0.55)]' : ''
+      }`}
       style={{
         right: rightCss,
         bottom: bottomCss,
@@ -193,13 +196,23 @@ export default function BuddyGroup({
         animation: magnetActive ? 'buddy-magnet-pulse 1100ms ease-in-out infinite' : undefined,
       }}
     >
-      {visible && (
+      {visible && !isCapacitor && (
+        // Functional drag handle on web/desktop. Sits in the hull's empty
+        // top-padding strip (above the avatars, which start at padTop=22),
+        // and is positioned with z-index ABOVE the buddy avatars (z-50) so
+        // pointer-down here always starts a group drag — never an
+        // individual buddy drag. The pill is the visual affordance.
         <div
-          aria-hidden
-          className="pointer-events-none absolute left-1/2 -translate-x-1/2"
-          style={{ top: 8, width: 40, height: 4 }}
+          onPointerDown={onPointerDown}
+          title="Drag to move group"
+          className="group/handle pointer-events-auto absolute left-0 right-0 top-0 cursor-grab active:cursor-grabbing"
+          style={{ height: padTop, zIndex: 60 }}
         >
-          <div className="h-full w-full rounded-full bg-zinc-400/70 dark:bg-zinc-500/70" />
+          <div
+            aria-hidden
+            className="absolute left-1/2 -translate-x-1/2 rounded-full bg-zinc-500/80 transition-all group-hover/handle:bg-zinc-700 group-hover/handle:scale-110 dark:bg-zinc-400/80 dark:group-hover/handle:bg-zinc-200"
+            style={{ top: 6, width: 56, height: 6 }}
+          />
         </div>
       )}
     </div>
