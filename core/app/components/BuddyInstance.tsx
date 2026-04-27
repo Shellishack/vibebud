@@ -128,6 +128,14 @@ export default function BuddyInstance({ state, anchor, canRemove, onChange, onSp
 
   const stateRef = useRef(state);
   useEffect(() => { stateRef.current = state; }, [state]);
+
+  // Capacitor drag plumbing: keep callbacks and the drag base in refs so the
+  // event-listener effect doesn't re-subscribe on every parent re-render
+  // (which would happen on each onChange fired mid-drag, resetting the base
+  // to 0 and snapping the avatar to its anchor).
+  const dragBaseRef = useRef<{ x: number; y: number } | null>(null);
+  const callbacksRef = useRef({ onChange, onDragMove, onDragEnd });
+  useEffect(() => { callbacksRef.current = { onChange, onDragMove, onDragEnd }; });
   useEffect(() => { onOpenChange?.(state.id, open); }, [open, state.id, onOpenChange]);
 
   // On Android the main WebView window is FLAG_NOT_TOUCHABLE by default so it
@@ -147,6 +155,10 @@ export default function BuddyInstance({ state, anchor, canRemove, onChange, onSp
   useEffect(() => {
     if (adapter.id !== 'capacitor-android') return;
     if (typeof window === 'undefined') return;
+    // Persist drag base across re-renders. If we used a `let` here, every
+    // parent re-render (which happens on each onChange we fire) would
+    // resubscribe and reset the base to 0, snapping the avatar to anchor
+    // plus the cumulative delta — i.e. the bottom-right corner.
     type Detail = { id?: string; dx?: number; dy?: number };
     const matches = (e: Event) => {
       const id = (e as CustomEvent<Detail>).detail?.id;
@@ -157,31 +169,31 @@ export default function BuddyInstance({ state, anchor, canRemove, onChange, onSp
       if (justDraggedRef.current) { justDraggedRef.current = false; return; }
       setOpen((cur) => !cur);
     };
-    let baseX = 0, baseY = 0;
     const onDragStart = (e: Event) => {
       if (!matches(e)) return;
-      baseX = stateRef.current.pos.x;
-      baseY = stateRef.current.pos.y;
+      dragBaseRef.current = { x: stateRef.current.pos.x, y: stateRef.current.pos.y };
       draggingRef.current = true;
       setIsDragging(true);
       adapter.notifyDragStart(state.id);
-      onDragMove?.(state.id, { x: baseX, y: baseY });
+      callbacksRef.current.onDragMove?.(state.id, dragBaseRef.current);
     };
     const onDragMoveEvt = (e: Event) => {
-      if (!matches(e) || !draggingRef.current) return;
+      if (!matches(e) || !draggingRef.current || !dragBaseRef.current) return;
       const detail = (e as CustomEvent<Detail>).detail || {};
-      const next = { x: baseX + (detail.dx ?? 0), y: baseY + (detail.dy ?? 0) };
-      onChange({ ...stateRef.current, pos: next });
-      onDragMove?.(state.id, next);
+      const next = { x: dragBaseRef.current.x + (detail.dx ?? 0), y: dragBaseRef.current.y + (detail.dy ?? 0) };
+      callbacksRef.current.onChange({ ...stateRef.current, pos: next });
+      callbacksRef.current.onDragMove?.(state.id, next);
     };
     const onDragEndEvt = (e: Event) => {
       if (!matches(e) || !draggingRef.current) return;
-      const moved = stateRef.current.pos.x !== baseX || stateRef.current.pos.y !== baseY;
+      const base = dragBaseRef.current;
+      const moved = !!base && (stateRef.current.pos.x !== base.x || stateRef.current.pos.y !== base.y);
       justDraggedRef.current = moved;
       draggingRef.current = false;
       setIsDragging(false);
-      onDragEnd?.(state.id, stateRef.current.pos, moved);
+      callbacksRef.current.onDragEnd?.(state.id, stateRef.current.pos, moved);
       adapter.notifyDragEnd(state.id);
+      dragBaseRef.current = null;
     };
     window.addEventListener('vibemoji:avatarTap', onTap);
     window.addEventListener('vibemoji:avatarDragStart', onDragStart);
@@ -193,7 +205,7 @@ export default function BuddyInstance({ state, anchor, canRemove, onChange, onSp
       window.removeEventListener('vibemoji:avatarDragMove', onDragMoveEvt);
       window.removeEventListener('vibemoji:avatarDragEnd', onDragEndEvt);
     };
-  }, [adapter, state.id, onChange, onDragMove, onDragEnd]);
+  }, [adapter, state.id]);
   useEffect(() => {
     if (!open) return;
     messagesEndRef.current?.scrollIntoView({ block: 'end', behavior: 'smooth' });
