@@ -7,6 +7,7 @@ import { VARIANTS } from './avatars';
 import { nextUnusedPersonality, PERSONALITY_BY_VARIANT, getPersonality } from './personalities';
 import type { Teammate } from './llm';
 import { usePlatform } from './hooks/usePlatform';
+import { isMobile } from '@/lib/platform/detect';
 import type { ElectronAdapter } from '@/lib/platform/electron';
 
 // Lighten each avatar color toward white so the hull reads as a pastel
@@ -48,7 +49,13 @@ const EXPAND_HIT_INSET = 48;
 const MERGE_RADIUS = 90;
 const EJECT_RADIUS = 180;
 const HOVER_LEAVE_GRACE_MS = 250;
-const ANCHOR = { right: 24, bottom: 24 };
+// Anchor offset from screen corner. Tighter on mobile/capacitor so the
+// floating buddy hugs the corner — there's far less screen real estate to
+// burn on whitespace than on desktop.
+const ANCHOR = (() => {
+  const pad = typeof window !== 'undefined' && isMobile() ? 12 : 24;
+  return { right: pad, bottom: pad };
+})();
 
 type Group = { id: string; memberIds: string[]; pos: { x: number; y: number } };
 type Persisted = { buddies: BuddyInstanceState[]; groups: Group[] };
@@ -94,7 +101,11 @@ const clampBuddyPos = (candidate: { x: number; y: number }) => {
   const viewportW = vv?.width ?? window.innerWidth;
   const viewportH = vv?.height ?? window.innerHeight;
   // Extra safety pad (status bar / nav bar / rounded corners on some devices).
-  const PAD = 4;
+  // Negative pad: the Lottie SVG has ~16px of transparent padding inside
+  // the 112px button bbox (the body ellipse is centered with empty space
+  // around it). Letting the button extend past the screen edge lets the
+  // *visible* avatar art touch the edge instead of the invisible bbox.
+  const PAD = -16;
   const minX = -(viewportW - ANCHOR.right - AVATAR_SIZE - PAD);
   const maxX = ANCHOR.right - PAD;
   const minY = -(viewportH - ANCHOR.bottom - AVATAR_SIZE - PAD);
@@ -114,7 +125,9 @@ const clampGroupPos = (
   const viewportW = window.innerWidth;
   // Edge gap (distance from screen edge to nearest avatar edge). Same on
   // both sides so the group's clamp window is symmetric.
-  const EDGE_GAP = 4;
+  // Same negative-gap reasoning as clampBuddyPos: the Lottie has internal
+  // padding inside each member's 112px bbox.
+  const EDGE_GAP = -16;
   // Leftmost member's left edge sits at viewport_w - anchor.right - avatar + pos.x.
   // Clamp so that left edge >= EDGE_GAP.
   const minX = -(viewportW - ANCHOR.right - AVATAR_SIZE - EDGE_GAP);
