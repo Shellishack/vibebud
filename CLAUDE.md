@@ -54,6 +54,8 @@ All host-bridge access goes through this module — no component reaches `window
 The two pieces work together: native handles OS-level routing (so `MOVE` events keep arriving), JS handles bridge churn (so `webView.requestLayout` doesn't fire mid-gesture and trigger Chromium's scroll-cancel). Either alone is insufficient.
 
 Convention: when adding a new platform-aware behavior, extend `PlatformAdapter` / `LayoutAdapter` rather than feature-detecting in components.
+
+**Editing Android native code:** the canonical Android sources live under `mobile/android/app/src/main/java/dev/vibemoji/android/` (this directory is checked in — there is no separate Java-only repo to sync to). When a problem is rooted in OS-level overlay behavior — `WindowManager` flags, `TYPE_APPLICATION_OVERLAY`, `FLAG_NOT_TOUCHABLE`, `TOUCHABLE_INSETS_REGION`, tap-zone `OnTouchListener` gesture routing, foreground service lifecycle, permission flow — fix it in the Java sources rather than working around it in `core/`. JS-side workarounds for native input routing tend to fight the OS and produce brittle gestures (lost MOVE events, stuck touch regions, scroll-cancel). The overlay is a native feature; treat the Java side as a first-class place to make changes, not a black box.
 - `Notify-Terminal.ps1`, `Show-CatToast.ps1` — early Windows toast experiments, kept for reference.
 
 The two shells should be thin — anything that can live in `core/` should live in `core/`.
