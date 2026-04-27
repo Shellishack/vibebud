@@ -105,14 +105,24 @@ const clampBuddyPos = (candidate: { x: number; y: number }) => {
   };
 };
 
-const clampGroupPos = (candidate: { x: number; y: number }, memberCount: number) => {
+const clampGroupPos = (
+  candidate: { x: number; y: number },
+  memberCount: number,
+  stride: number = EXPANDED_STRIDE,
+) => {
   if (typeof window === 'undefined') return candidate;
-  const maxX = (ANCHOR.right - HULL_PAD_X) - (memberCount - 1) * EXPANDED_STRIDE;
   const viewportW = window.innerWidth;
   // Don't push so far left that the leftmost member is off the left edge:
   // member 0's left edge is at viewport_w - anchor.right - avatar + pos.x.
   // Clamp pos.x >= -(viewport_w - anchor.right - avatar - 8).
   const minX = -(viewportW - ANCHOR.right - AVATAR_SIZE - 8);
+  // Rightmost-member-fits-anchor bound. For wide groups on narrow screens,
+  // this can be MORE negative than minX, in which case the group cannot
+  // fully fit when expanded — fall back to minX so we don't clamp to a
+  // value that's already off the left edge (the expanded view will spill
+  // to the right, which the overlay-spillout mechanism handles).
+  const maxXRaw = (ANCHOR.right - HULL_PAD_X) - (memberCount - 1) * stride;
+  const maxX = Math.max(minX, maxXRaw);
   const x = Math.min(maxX, Math.max(minX, candidate.x));
   // Y: keep at most a reasonable distance from the bottom anchor.
   const viewportH = window.innerHeight;
@@ -180,8 +190,24 @@ export default function Buddy() {
     if (stored) {
       // Reclamp persisted positions in case they were saved off-screen by an
       // earlier build that didn't clamp, or if the viewport has shrunk.
-      setBuddies(stored.buddies.map((b) => ({ ...b, pos: clampBuddyPos(b.pos) })));
-      setGroups(stored.groups);
+      const clampedGroups = stored.groups.map((g) => ({
+        ...g,
+        pos: clampGroupPos(g.pos, g.memberIds.length),
+      }));
+      // Member buddies' stored pos may also be off-screen — re-derive them
+      // from the (now-clamped) group pos so the hull and members align.
+      const groupById = new Map(clampedGroups.map((g) => [g.id, g]));
+      setBuddies(stored.buddies.map((b) => {
+        if (b.groupId && groupById.has(b.groupId)) {
+          const g = groupById.get(b.groupId)!;
+          const i = g.memberIds.indexOf(b.id);
+          if (i >= 0) {
+            return { ...b, pos: { x: g.pos.x + i * COLLAPSED_STRIDE, y: g.pos.y } };
+          }
+        }
+        return { ...b, pos: clampBuddyPos(b.pos) };
+      }));
+      setGroups(clampedGroups);
       const maxN = stored.buddies.reduce((m, b) => {
         const n = parseInt(b.id.replace(/^buddy-/, ''), 10);
         return Number.isFinite(n) ? Math.max(m, n) : m;
@@ -737,10 +763,13 @@ export default function Buddy() {
     }
     if (bestG) {
       const g = bestG;
-      const newCount = g.memberIds.length + 1;
+      // Keep the group's existing position — re-clamping on every merge
+      // would cause a visible leftward jump each time the user adds a
+      // buddy. Drag-time clamping (in onGroupDragMove) keeps the group on
+      // screen if it gets dragged out of bounds.
       setGroups((cur) => cur.map((x) => (
         x.id === g.id
-          ? { ...x, memberIds: [...x.memberIds, id], pos: clampGroupPos(x.pos, newCount) }
+          ? { ...x, memberIds: [...x.memberIds, id] }
           : x
       )));
       setBuddies((cur) => cur.map((x) => (x.id === id ? { ...x, groupId: g.id } : x)));
