@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import dynamic from 'next/dynamic';
 import { usePlatform, useLayout } from './hooks/usePlatform';
-import { VARIANTS, buildAnimation, cssColor, type Emotion } from './avatars';
+import { VARIANTS, buildAnimation, cssColor, getNotoCodepoint, NOTO_GROUPS, type Emotion, type NotoGroup } from './avatars';
 import { PERSONALITY_BY_VARIANT, type Personality } from './personalities';
 import {
   buildSystemPrompt, streamChat, trimHistory, fetchModels,
@@ -12,6 +12,8 @@ import {
   PROVIDERS,
   type ChatTurn, type Teammate, type ProviderId,
 } from './llm';
+import { routePing } from './notify';
+import { getCachedLottie, loadLottie } from '../../lib/notoEmoji';
 
 const Lottie = dynamic(() => import('lottie-react'), { ssr: false });
 
@@ -35,6 +37,12 @@ export type BuddyInstanceState = {
   // half on-screen. lastFreePos remembers where to slide back on restore.
   minimized?: { edge: 'left' | 'right' | 'top' | 'bottom' };
   lastFreePos?: { x: number; y: number };
+  // Custom avatar family. When set to `noto`, the procedurally-built
+  // color-variant Lottie is replaced by a Noto Animated Emoji from the
+  // chosen group; codepoint within the group is picked per current
+  // emotion. The variantId is still used for personality/persona
+  // resolution and the group hull color.
+  avatar?: { kind: 'noto'; group: NotoGroup };
 };
 
 type Props = {
@@ -84,6 +92,8 @@ export default function BuddyInstance({ state, anchor, canRemove, onChange, onSp
   const [emotion, setEmotion] = useState<Emotion>('idle');
   const [busy, setBusy] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [notoFetched, setNotoFetched] = useState<Record<string, unknown>>({});
+  const [familyMenu, setFamilyMenu] = useState<'buddy' | 'noto' | null>(null);
   const [providerDraft, setProviderDraft] = useState<ProviderId>('openai');
   const [keyDraft, setKeyDraft] = useState('');
   const [modelDraft, setModelDraft] = useState('');
@@ -139,7 +149,22 @@ export default function BuddyInstance({ state, anchor, canRemove, onChange, onSp
   // a custom personality has its own variantId (e.g. `custom-abc`) but reuses
   // one of the 6 built-in color variants for rendering.
   const variant = VARIANTS.find((v) => v.id === personality.colorId) ?? VARIANTS[0];
-  const animation = useMemo(() => buildAnimation(variant, emotion), [variant, emotion]);
+  const variantAnim = useMemo(() => buildAnimation(variant, emotion), [variant, emotion]);
+  const notoCp = state.avatar?.kind === 'noto' ? getNotoCodepoint(state.avatar.group, emotion) : null;
+  const notoData = notoCp ? (notoFetched[notoCp] ?? getCachedLottie(notoCp)) : null;
+  const animation = notoData ? (notoData as object) : variantAnim;
+
+  // Lazy-load Noto Lottie JSON when the buddy uses an emoji avatar but neither
+  // the in-memory disk cache nor the per-buddy fetched map has it yet (cold
+  // reload, picker pre-warm failed, etc.).
+  useEffect(() => {
+    if (!notoCp || notoData) return;
+    let cancelled = false;
+    loadLottie(notoCp)
+      .then((d) => { if (!cancelled) setNotoFetched((cur) => ({ ...cur, [notoCp]: d })); })
+      .catch(() => { /* fall back to variant */ });
+    return () => { cancelled = true; };
+  }, [notoCp, notoData]);
 
   const dragRef = useRef<{ startScreenX: number; startScreenY: number; baseX: number; baseY: number; moved: boolean } | null>(null);
   const draggingRef = useRef(false);
@@ -296,7 +321,8 @@ export default function BuddyInstance({ state, anchor, canRemove, onChange, onSp
   };
 
   const triggerScriptedToast = () => {
-    pushToast(SCRIPTED_TOASTS[Math.floor(Math.random() * SCRIPTED_TOASTS.length)]);
+    const t = SCRIPTED_TOASTS[Math.floor(Math.random() * SCRIPTED_TOASTS.length)];
+    routePing(adapter, { title: t.title, body: t.body, tone: t.tone }, () => pushToast(t));
   };
 
   const writeMessages = (msgs: ChatMsg[]) => {
@@ -633,22 +659,71 @@ export default function BuddyInstance({ state, anchor, canRemove, onChange, onSp
                   </button>
                 </div>
               </div>
-              <div className="mt-3 flex items-center gap-2">
-                <span className="text-[10px] uppercase tracking-wider text-zinc-500 dark:text-zinc-400">avatar</span>
-                <div className="flex gap-1.5">
-                  {VARIANTS.map((v) => (
-                    <button
-                      key={v.id}
-                      onClick={() => update({ variantId: v.id })}
-                      title={v.name}
-                      aria-label={`Use ${v.name} avatar`}
-                      className={`h-5 w-5 rounded-full ring-2 ring-offset-1 transition-transform hover:scale-110 dark:ring-offset-zinc-900 ${
-                        v.id === state.variantId ? 'ring-zinc-900 dark:ring-white' : 'ring-transparent'
-                      }`}
-                      style={{ background: cssColor(v.body) }}
+              <div className="mt-3">
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] uppercase tracking-wider text-zinc-500 dark:text-zinc-400">avatar</span>
+                  <div className="flex gap-1">
+                    <FamilyPill
+                      label="Buddy"
+                      active={!state.avatar}
+                      open={familyMenu === 'buddy'}
+                      onClick={() => setFamilyMenu((m) => (m === 'buddy' ? null : 'buddy'))}
                     />
-                  ))}
+                    <FamilyPill
+                      label="Noto"
+                      active={state.avatar?.kind === 'noto'}
+                      open={familyMenu === 'noto'}
+                      onClick={() => setFamilyMenu((m) => (m === 'noto' ? null : 'noto'))}
+                    />
+                  </div>
                 </div>
+                {familyMenu === 'buddy' && (
+                  <div className="mt-2 flex flex-wrap items-center gap-1.5 rounded-2xl bg-zinc-50 px-2.5 py-2 dark:bg-zinc-800/60">
+                    {VARIANTS.map((v) => (
+                      <button
+                        key={v.id}
+                        onClick={() => {
+                          update({ variantId: v.id, avatar: undefined });
+                          setFamilyMenu(null);
+                        }}
+                        title={v.name}
+                        aria-label={`Use ${v.name} buddy avatar`}
+                        className={`h-6 w-6 rounded-full ring-2 ring-offset-1 transition-transform hover:scale-110 dark:ring-offset-zinc-800 ${
+                          v.id === state.variantId && !state.avatar ? 'ring-zinc-900 dark:ring-white' : 'ring-transparent'
+                        }`}
+                        style={{ background: cssColor(v.body) }}
+                      />
+                    ))}
+                  </div>
+                )}
+                {familyMenu === 'noto' && (
+                  <div className="mt-2 flex flex-wrap items-center gap-1.5 rounded-2xl bg-zinc-50 px-2.5 py-2 dark:bg-zinc-800/60">
+                    {(Object.keys(NOTO_GROUPS) as NotoGroup[]).map((g) => {
+                      const cfg = NOTO_GROUPS[g];
+                      const selected = state.avatar?.kind === 'noto' && state.avatar.group === g;
+                      return (
+                        <button
+                          key={g}
+                          onClick={() => {
+                            void loadLottie(cfg.default).catch(() => {});
+                            update({ avatar: { kind: 'noto', group: g } });
+                            setFamilyMenu(null);
+                          }}
+                          title={cfg.label}
+                          aria-label={`Use ${cfg.label} emoji family`}
+                          className={`flex items-center gap-1.5 rounded-full px-2 py-1 text-[11px] font-medium transition-colors ${
+                            selected
+                              ? 'bg-violet-600 text-white'
+                              : 'bg-white text-zinc-700 ring-1 ring-zinc-200 hover:bg-zinc-100 dark:bg-zinc-900 dark:text-zinc-200 dark:ring-zinc-700 dark:hover:bg-zinc-800'
+                          }`}
+                        >
+                          <span className="text-base leading-none" aria-hidden>{cpToGlyph(cfg.preview)}</span>
+                          <span>{cfg.label}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             </div>
             {settingsOpen && (
@@ -882,4 +957,24 @@ export default function BuddyInstance({ state, anchor, canRemove, onChange, onSp
       </div>
     </div>
   );
+}
+
+function FamilyPill({ label, active, open, onClick }: { label: string; active: boolean; open: boolean; onClick: () => void }) {
+  const base = 'rounded-full px-2.5 py-0.5 text-[11px] font-medium transition-colors';
+  const cls = active
+    ? 'bg-violet-600 text-white'
+    : open
+      ? 'bg-zinc-200 text-zinc-900 dark:bg-zinc-700 dark:text-zinc-50'
+      : 'bg-zinc-100 text-zinc-700 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700';
+  return (
+    <button onClick={onClick} aria-pressed={active} className={`${base} ${cls}`}>
+      {label}
+    </button>
+  );
+}
+
+function cpToGlyph(cp: string): string {
+  try {
+    return cp.split('_').map((p) => String.fromCodePoint(parseInt(p, 16))).join('');
+  } catch { return ''; }
 }

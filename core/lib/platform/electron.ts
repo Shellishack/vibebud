@@ -1,4 +1,4 @@
-import type { InteractiveRect, PlatformAdapter } from './types';
+import type { InteractiveRect, NotificationPayload, PlatformAdapter } from './types';
 
 type VibemojiBridge = {
   setInteractive?: (v: boolean) => void;
@@ -6,6 +6,8 @@ type VibemojiBridge = {
   setBounds?: (b: { width: number; height: number }) => void;
   getCursorPoint?: () => Promise<{ x: number; y: number }>;
   onSpawnBuddy?: (cb: () => void) => () => void;
+  showNotification?: (payload: NotificationPayload) => void;
+  onOpenSettings?: (cb: () => void) => () => void;
   isElectron?: boolean;
 };
 
@@ -47,5 +49,21 @@ export class ElectronAdapter implements PlatformAdapter {
   // Buddy.tsx still calls this directly via the bridge — exposed here for symmetry.
   setInteractive(interactive: boolean): void {
     bridge()?.setInteractive?.(interactive);
+  }
+
+  showNotification(payload: NotificationPayload): void {
+    bridge()?.showNotification?.(payload);
+  }
+
+  async requestNotificationPermission(): Promise<boolean> {
+    // Electron's Notification ctor requires no runtime grant on Windows; macOS
+    // surfaces a one-time system prompt automatically the first time .show()
+    // is called. We always report granted.
+    return true;
+  }
+
+  onOpenSettings(cb: () => void): () => void {
+    const off = bridge()?.onOpenSettings?.(cb);
+    return typeof off === 'function' ? off : () => {};
   }
 }

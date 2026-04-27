@@ -1,4 +1,4 @@
-import type { InteractiveRect, PlatformAdapter } from './types';
+import type { InteractiveRect, NotificationPayload, PlatformAdapter } from './types';
 
 type VibemojiNative = {
   setTouchableRegion?: (json: string) => void;
@@ -8,6 +8,9 @@ type VibemojiNative = {
   stopOverlay?: () => void;
   setAvatarRects?: (json: string) => void;
   setGroupRects?: (json: string) => void;
+  showNotification?: (json: string) => void;
+  requestNotificationPermission?: () => void;
+  hasNotificationPermission?: () => string;
 };
 
 const native = (): VibemojiNative | undefined => {
@@ -114,6 +117,39 @@ export class CapacitorAdapter implements PlatformAdapter {
 
   stopOverlay(): void {
     try { native()?.stopOverlay?.(); } catch { /* noop */ }
+  }
+
+  showNotification(payload: NotificationPayload): void {
+    try { native()?.showNotification?.(JSON.stringify(payload)); } catch { /* noop */ }
+  }
+
+  async requestNotificationPermission(): Promise<boolean> {
+    const n = native();
+    if (!n) return false;
+    try {
+      // Best-effort: if native exposes a synchronous query, use it; otherwise
+      // just trigger the request and assume the user will handle the dialog.
+      if (typeof n.hasNotificationPermission === 'function') {
+        const cur = n.hasNotificationPermission();
+        if (cur === 'granted') return true;
+      }
+      n.requestNotificationPermission?.();
+    } catch { /* noop */ }
+    // Re-query after a short delay so the caller gets a useful boolean once
+    // the dialog returns. Android dispatches the result asynchronously.
+    return new Promise((resolve) => {
+      const start = Date.now();
+      const tick = () => {
+        try {
+          const v = n.hasNotificationPermission?.();
+          if (v === 'granted') return resolve(true);
+          if (v === 'denied') return resolve(false);
+        } catch { /* noop */ }
+        if (Date.now() - start > 30_000) return resolve(false);
+        setTimeout(tick, 500);
+      };
+      setTimeout(tick, 500);
+    });
   }
 
   onOutsideTap(cb: () => void): () => void {

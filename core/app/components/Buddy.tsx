@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import BuddyInstance, { type BuddyInstanceState } from './BuddyInstance';
 import BuddyGroup from './BuddyGroup';
+import AppSettings from './AppSettings';
 import { VARIANTS } from './avatars';
 import { nextUnusedPersonality, PERSONALITY_BY_VARIANT, getPersonality } from './personalities';
 import type { Teammate } from './llm';
@@ -313,6 +314,7 @@ export default function Buddy() {
   // (fully visible at the edge) but the underlying state.minimized stays
   // set — releasing without a drag re-docks; starting a drag commits.
   const [peekedDock, setPeekedDock] = useState<Record<string, boolean>>({});
+  const [appSettingsOpen, setAppSettingsOpen] = useState(false);
   const idRef = useRef(2);
   const groupIdRef = useRef(1);
   const hydratedRef = useRef(false);
@@ -518,6 +520,13 @@ export default function Buddy() {
 
   useEffect(() => {
     return adapter.onSpawnRequest(() => spawnBuddy());
+  }, [adapter]);
+
+  // Desktop tray "Settings…" menu item → open the app-wide settings modal.
+  useEffect(() => {
+    if (adapter.id !== 'electron') return;
+    const electron = adapter as ElectronAdapter & { onOpenSettings?: (cb: () => void) => () => void };
+    return electron.onOpenSettings?.(() => setAppSettingsOpen(true));
   }, [adapter]);
 
   useEffect(() => {
@@ -1281,6 +1290,28 @@ export default function Buddy() {
       })}
 
       {buddies.map(renderBuddy)}
+
+      {/* Web / Capacitor: a small gear in the top-right opens app-wide
+          settings (notification method, future global prefs). On Electron
+          the same modal is opened from the tray "Settings…" item, so we
+          skip rendering the gear there to keep the always-on-top window
+          uncluttered. */}
+      {adapter.id !== 'electron' && (
+        <button
+          data-buddy-interactive
+          onClick={() => setAppSettingsOpen(true)}
+          aria-label="App settings"
+          title="App settings"
+          className="fixed right-3 top-3 z-[70] grid h-9 w-9 place-items-center rounded-full bg-white/85 text-zinc-600 shadow-md ring-1 ring-zinc-200 backdrop-blur-md hover:bg-white hover:text-zinc-900 dark:bg-zinc-900/85 dark:text-zinc-300 dark:ring-zinc-700 dark:hover:bg-zinc-800 dark:hover:text-zinc-50"
+        >
+          <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="12" cy="12" r="3" />
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9c.36.16.66.42.87.74A1.65 1.65 0 0 0 21 10h.09a2 2 0 1 1 0 4H21a1.65 1.65 0 0 0-1.51 1z" />
+          </svg>
+        </button>
+      )}
+
+      <AppSettings open={appSettingsOpen} onClose={() => setAppSettingsOpen(false)} />
 
       <style jsx global>{`
         @keyframes buddy-toast-in {

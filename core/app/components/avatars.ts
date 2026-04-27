@@ -70,6 +70,107 @@ export type Emotion =
   | 'sad' | 'sleepy' | 'angry' | 'excited' | 'shy'
   | 'cool' | 'wink' | 'confused' | 'proud' | 'sick';
 
+// A `noto` avatar family is a named group of Noto Animated Emoji where the
+// rendered codepoint changes with the buddy's current emotion. Each group
+// has a fallback `default` and an `emotions` map of per-emotion overrides.
+export type NotoGroup = 'faces' | 'cats' | 'animals' | 'food';
+
+type NotoGroupConfig = {
+  label: string;
+  /** Codepoint used for the swatch in the family picker. */
+  preview: string;
+  default: string;
+  emotions: Partial<Record<Emotion, string>>;
+};
+
+export const NOTO_GROUPS: Record<NotoGroup, NotoGroupConfig> = {
+  faces: {
+    label: 'Faces',
+    preview: '1f600',
+    default: '1f642',
+    emotions: {
+      idle:      '1f642',
+      happy:     '1f600',
+      surprised: '1f62e',
+      thinking:  '1f914',
+      love:      '1f60d',
+      sad:       '1f622',
+      sleepy:    '1f634',
+      angry:     '1f620',
+      excited:   '1f929',
+      shy:       '1f60a',
+      cool:      '1f60e',
+      wink:      '1f609',
+      confused: '1f615',
+      proud:     '1f60c',
+      sick:      '1f912',
+    },
+  },
+  cats: {
+    label: 'Cats',
+    preview: '1f63a',
+    default: '1f431',
+    emotions: {
+      idle:      '1f431',
+      happy:     '1f63a',
+      surprised: '1f640',
+      love:      '1f63b',
+      sad:       '1f63f',
+      angry:     '1f63e',
+      excited:   '1f63c',
+      shy:       '1f63d',
+      wink:      '1f63d',
+      confused:  '1f640',
+      sleepy:    '1f640',
+      sick:      '1f640',
+    },
+  },
+  animals: {
+    label: 'Animals',
+    preview: '1f436',
+    default: '1f436',
+    emotions: {
+      idle:      '1f436',
+      happy:     '1f981',
+      surprised: '1f435',
+      thinking:  '1f98a',
+      love:      '1f43c',
+      sad:       '1f43c',
+      sleepy:    '1f428',
+      angry:     '1f981',
+      excited:   '1f435',
+      shy:       '1f43c',
+      cool:      '1f981',
+      proud:     '1f981',
+      sick:      '1f428',
+    },
+  },
+  food: {
+    label: 'Food',
+    preview: '1f354',
+    default: '1f354',
+    emotions: {
+      idle:      '1f354',
+      happy:     '1f355',
+      surprised: '1f370',
+      thinking:  '1f36b',
+      love:      '1f370',
+      sad:       '1f368',
+      sleepy:    '1f367',
+      angry:     '1f336',
+      excited:   '1f389',
+      cool:      '1f366',
+      sick:      '1f922',
+      proud:     '1f382',
+    },
+  },
+};
+
+export function getNotoCodepoint(group: NotoGroup, emotion: Emotion): string {
+  const g = NOTO_GROUPS[group];
+  return g.emotions[emotion] ?? g.default;
+}
+
 type EmotionConfig = {
   mouth: [number, number];
   eye: [number, number];

@@ -12,4 +12,10 @@ contextBridge.exposeInMainWorld('vibemoji', {
     ipcRenderer.on('spawn-buddy', handler);
     return () => ipcRenderer.off('spawn-buddy', handler);
   },
+  showNotification: (payload) => ipcRenderer.send('vibemoji:notify', payload),
+  onOpenSettings: (cb) => {
+    const handler = () => cb();
+    ipcRenderer.on('vibemoji:open-settings', handler);
+    return () => ipcRenderer.off('vibemoji:open-settings', handler);
+  },
 });

@@ -52,7 +52,26 @@ export interface PlatformAdapter {
   // to a "Close overlay" button so a misbehaving touch-region setup can't
   // brick the device. No-op on other platforms.
   stopOverlay(): void;
+
+  // Routes a "ping" to the OS-native notification channel. On Electron this
+  // hits Windows Action Center / macOS Notification Center via Electron's
+  // built-in Notification API; on Capacitor it posts an Android system
+  // notification; on Web it uses the browser Notification API (if granted).
+  // Caller is responsible for deciding whether to use this vs an in-app toast.
+  showNotification(payload: NotificationPayload): void;
+
+  // Asks the host for permission to post system notifications. Resolves with
+  // whether permission is currently granted. On Electron this is a no-op
+  // (always granted); on Web triggers Notification.requestPermission(); on
+  // Android opens the system permission dialog (Android 13+).
+  requestNotificationPermission(): Promise<boolean>;
 }
+
+export type NotificationPayload = {
+  title: string;
+  body: string;
+  tone?: 'info' | 'action' | 'success';
+};
 
 export interface LayoutAdapter {
   readonly chatPanelMode: 'anchored' | 'sheet';

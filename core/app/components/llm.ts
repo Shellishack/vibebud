@@ -114,6 +114,14 @@ export const getModel = (p: ProviderId = getProvider()): string => {
 };
 export const setModel = (p: ProviderId, m: string) => lsSet(MODEL_STORAGE(p), m);
 
+export type NotifyMethod = 'in-app' | 'native';
+const NOTIFY_METHOD_STORAGE = 'vibemoji.notifyMethod.v1';
+export const getNotifyMethod = (): NotifyMethod => {
+  const v = lsGet(NOTIFY_METHOD_STORAGE);
+  return v === 'native' ? 'native' : 'in-app';
+};
+export const setNotifyMethod = (m: NotifyMethod) => lsSet(NOTIFY_METHOD_STORAGE, m);
+
 export function buildSystemPrompt(p: Personality, teammates: Teammate[]): string {
   let s = p.systemPrompt;
   if (teammates.length > 0) {

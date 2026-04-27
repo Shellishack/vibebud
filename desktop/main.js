@@ -1,4 +1,4 @@
-const { app, BrowserWindow, screen, Tray, Menu, nativeImage, protocol, net, ipcMain } = require('electron');
+const { app, BrowserWindow, Notification, screen, Tray, Menu, nativeImage, protocol, net, ipcMain } = require('electron');
 const path = require('path');
 const url = require('url');
 
@@ -66,6 +66,7 @@ function createTray() {
     { label: 'Toggle DevTools', click: () => win?.webContents.toggleDevTools({ mode: 'detach' }) },
     { type: 'separator' },
     { label: 'Add buddy', click: () => win?.webContents.send('spawn-buddy') },
+    { label: 'Settings…', click: () => win?.webContents.send('vibemoji:open-settings') },
     {
       label: 'Clear local settings',
       click: async () => {
@@ -114,6 +115,19 @@ app.whenReady().then(() => {
   });
 
   ipcMain.handle('get-cursor-point', () => screen.getCursorScreenPoint());
+
+  ipcMain.on('vibemoji:notify', (_event, payload) => {
+    if (!payload || typeof payload !== 'object') return;
+    const title = String(payload.title || 'vibemoji');
+    const body = String(payload.body || '');
+    if (!Notification.isSupported()) return;
+    try {
+      const iconPath = path.join(__dirname, 'build', 'tray.png');
+      const icon = nativeImage.createFromPath(iconPath);
+      const n = new Notification({ title, body, icon: icon.isEmpty() ? undefined : icon, silent: false });
+      n.show();
+    } catch { /* noop */ }
+  });
 
   ipcMain.on('set-focusable', (_event, focusable) => {
     if (!win) return;

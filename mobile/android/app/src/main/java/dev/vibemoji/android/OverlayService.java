@@ -14,6 +14,7 @@ import android.os.Build;
 import android.os.Handler;
 import android.os.IBinder;
 import android.os.Looper;
+import android.provider.Settings;
 import android.util.DisplayMetrics;
 import android.view.Gravity;
 import android.view.KeyEvent;
@@ -57,6 +58,9 @@ public class OverlayService extends Service {
 
     private static final int NOTIFICATION_ID = 4242;
     private static final String CHANNEL_ID = "vibemoji-overlay";
+    private static final String PING_CHANNEL_ID = "vibemoji-pings";
+    private static final java.util.concurrent.atomic.AtomicInteger PING_ID =
+            new java.util.concurrent.atomic.AtomicInteger(5000);
 
     public static volatile boolean RUNNING = false;
 
@@ -468,6 +472,40 @@ public class OverlayService extends Service {
         }
     }
 
+    /**
+     * Posts a one-shot system notification on the "vibemoji-pings" channel.
+     * Called from the JS bridge when the user has chosen "native" as their
+     * notification method (vs the default in-overlay toast). Channel is
+     * created lazily on first call.
+     */
+    public static void showSystemNotification(Context ctx, String title, String body) {
+        NotificationManager nm = (NotificationManager) ctx.getSystemService(Context.NOTIFICATION_SERVICE);
+        if (nm == null) return;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            NotificationChannel ch = new NotificationChannel(
+                    PING_CHANNEL_ID,
+                    "vibemoji pings",
+                    NotificationManager.IMPORTANCE_DEFAULT
+            );
+            ch.setDescription("Agent activity, PR updates, and other buddy pings.");
+            nm.createNotificationChannel(ch);
+        }
+        Notification n = new NotificationCompat.Builder(ctx, PING_CHANNEL_ID)
+                .setContentTitle(title == null ? "vibemoji" : title)
+                .setContentText(body == null ? "" : body)
+                .setStyle(new NotificationCompat.BigTextStyle().bigText(body == null ? "" : body))
+                .setSmallIcon(android.R.drawable.ic_dialog_info)
+                .setAutoCancel(true)
+                .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+                .build();
+        try {
+            nm.notify(PING_ID.incrementAndGet(), n);
+        } catch (SecurityException ignored) {
+            // POST_NOTIFICATIONS not granted on Android 13+; caller should
+            // have requested permission first.
+        }
+    }
+
     public class NativeBridge {
         /**
          * The web layer publishes the bounding rects of every
@@ -734,6 +772,39 @@ public class OverlayService extends Service {
          * drags. Tap-zones sit above the WebView in z-order, so they still
          * win over the WebView for touches inside their bounds.
          */
+        @JavascriptInterface
+        public void showNotification(final String json) {
+            try {
+                JSONObject o = new JSONObject(json == null ? "{}" : json);
+                final String title = o.optString("title", "vibemoji");
+                final String body = o.optString("body", "");
+                main.post(() -> showSystemNotification(OverlayService.this, title, body));
+            } catch (Exception ignored) { /* malformed JSON */ }
+        }
+
+        @JavascriptInterface
+        public String hasNotificationPermission() {
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return "granted";
+            int r = androidx.core.content.ContextCompat.checkSelfPermission(
+                    OverlayService.this, android.Manifest.permission.POST_NOTIFICATIONS);
+            return r == android.content.pm.PackageManager.PERMISSION_GRANTED ? "granted" : "denied";
+        }
+
+        @JavascriptInterface
+        public void requestNotificationPermission() {
+            // The overlay service doesn't have an Activity context to drive
+            // the runtime permission dialog. Best we can do is open the app's
+            // notification settings page so the user can flip the toggle.
+            main.post(() -> {
+                try {
+                    Intent i = new Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS);
+                    i.putExtra(Settings.EXTRA_APP_PACKAGE, getPackageName());
+                    i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                    startActivity(i);
+                } catch (Throwable ignored) { /* fall through */ }
+            });
+        }
+
         @JavascriptInterface
         public void setSpilledOut(final boolean spilled) {
             main.post(() -> {

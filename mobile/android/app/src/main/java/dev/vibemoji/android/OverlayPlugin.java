@@ -1,10 +1,14 @@
 package dev.vibemoji.android;
 
+import android.Manifest;
+import android.app.Activity;
 import android.content.Intent;
+import android.content.pm.PackageManager;
 import android.net.Uri;
 import android.os.Build;
 import android.provider.Settings;
 
+import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
 
 import com.getcapacitor.JSObject;
@@ -102,5 +106,56 @@ public class OverlayPlugin extends Plugin {
         // No-op from the host activity — the overlay's own WebView owns the
         // flag toggle via its NativeBridge. Kept for API symmetry.
         call.resolve();
+    }
+
+    @PluginMethod
+    public void showNotification(PluginCall call) {
+        String title = call.getString("title", "vibemoji");
+        String body = call.getString("body", "");
+        OverlayService.showSystemNotification(getContext(), title, body);
+        call.resolve();
+    }
+
+    @PluginMethod
+    public void hasNotificationPermission(PluginCall call) {
+        boolean granted = Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU
+                || ContextCompat.checkSelfPermission(getContext(), Manifest.permission.POST_NOTIFICATIONS)
+                        == PackageManager.PERMISSION_GRANTED;
+        JSObject ret = new JSObject();
+        ret.put("granted", granted);
+        call.resolve(ret);
+    }
+
+    @PluginMethod
+    public void requestNotificationPermission(PluginCall call) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
+            JSObject ret = new JSObject();
+            ret.put("granted", true);
+            call.resolve(ret);
+            return;
+        }
+        Activity activity = getActivity();
+        if (activity == null) {
+            JSObject ret = new JSObject();
+            ret.put("granted", false);
+            call.resolve(ret);
+            return;
+        }
+        if (ContextCompat.checkSelfPermission(getContext(), Manifest.permission.POST_NOTIFICATIONS)
+                == PackageManager.PERMISSION_GRANTED) {
+            JSObject ret = new JSObject();
+            ret.put("granted", true);
+            call.resolve(ret);
+            return;
+        }
+        ActivityCompat.requestPermissions(
+                activity,
+                new String[] { Manifest.permission.POST_NOTIFICATIONS },
+                4243
+        );
+        JSObject ret = new JSObject();
+        ret.put("granted", false);
+        ret.put("requested", true);
+        call.resolve(ret);
     }
 }
