@@ -20,6 +20,7 @@ export class ElectronAdapter implements PlatformAdapter {
   readonly isNative = true;
 
   publishInteractiveRects(_rects: InteractiveRect[]): void { /* noop — Electron uses click-through, not regions */ }
+  publishAvatarRects(_rects: { id: string; x: number; y: number; w: number; h: number }[]): void { /* noop */ }
   notifyDragStart(_id: string): void { /* noop */ }
   notifyDragEnd(_id: string): void { /* noop */ }
   setOverlayExpanded(_expanded: boolean): void { /* noop — Electron uses click-through */ }

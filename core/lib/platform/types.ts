@@ -13,6 +13,11 @@ export interface PlatformAdapter {
   readonly isNative: boolean;
 
   publishInteractiveRects(rects: InteractiveRect[]): void;
+
+  // Capacitor-only: publishes the bounding box of each avatar in device
+  // pixels, keyed by buddy id, so native can maintain one tap-zone window
+  // per avatar and forward the tapped buddy's id to JS. Pass [] to hide all.
+  publishAvatarRects(rects: { id: string; x: number; y: number; w: number; h: number }[]): void;
   notifyDragStart(buddyId: string): void;
   notifyDragEnd(buddyId: string): void;
 

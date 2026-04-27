@@ -62,8 +62,9 @@ public class OverlayService extends Service {
     private WindowManager windowManager;
     private WebView webView;
     private WindowManager.LayoutParams params;
-    private View tapZone;
-    private WindowManager.LayoutParams tapZoneParams;
+    private final java.util.Map<String, View> tapZones = new java.util.HashMap<>();
+    private final java.util.Map<String, WindowManager.LayoutParams> tapZoneParams = new java.util.HashMap<>();
+    private boolean tapZonesInteractive = true;
     private final Handler main = new Handler(Looper.getMainLooper());
     private final List<Rect> touchableRects = new ArrayList<>();
     private volatile boolean nativeDragActive = false;
@@ -199,66 +200,51 @@ public class OverlayService extends Service {
 
         windowManager.addView(webView, params);
 
-        addTapZone();
-
         RUNNING = true;
     }
 
     /**
-     * Adds the small transparent "tap-zone" window that detects taps over the
-     * avatar's visual location and forwards them to the main WebView's JS as a
-     * `vibemoji:avatarTap` event. The main WebView itself is FLAG_NOT_TOUCHABLE
-     * by default so it can't capture taps directly.
+     * Creates a transparent tap-zone window for one avatar. On ACTION_DOWN it
+     * dispatches `vibemoji:avatarTap` with the buddy's id so only that buddy's
+     * popup opens.
      */
-    private void addTapZone() {
-        float density = getResources().getDisplayMetrics().density;
-        int sizePx = (int) (160 * density);
-        int marginPx = (int) (8 * density);
-
-        int type = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
-                ? WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
-                : WindowManager.LayoutParams.TYPE_PHONE;
-
-        tapZoneParams = new WindowManager.LayoutParams(
-                sizePx,
-                sizePx,
-                type,
-                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
-                        | WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS
-                        | WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
-                        | WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
-                PixelFormat.TRANSLUCENT
-        );
-        tapZoneParams.gravity = Gravity.END | Gravity.BOTTOM;
-        tapZoneParams.x = marginPx;
-        tapZoneParams.y = marginPx;
-
-        tapZone = new View(this);
-        tapZone.setBackgroundColor(Color.TRANSPARENT);
-        tapZone.setOnTouchListener((v, ev) -> {
+    private View createTapZoneView(final String id) {
+        View v = new View(this);
+        v.setBackgroundColor(Color.TRANSPARENT);
+        v.setOnTouchListener((view, ev) -> {
             if (ev.getActionMasked() == MotionEvent.ACTION_DOWN && webView != null) {
+                String safe = id.replace("\\", "\\\\").replace("'", "\\'");
                 webView.evaluateJavascript(
-                        "window.dispatchEvent(new CustomEvent('vibemoji:avatarTap'))",
+                        "window.dispatchEvent(new CustomEvent('vibemoji:avatarTap',{detail:{id:'" + safe + "'}}))",
                         null);
                 return true;
             }
             return false;
         });
-        try {
-            windowManager.addView(tapZone, tapZoneParams);
-        } catch (Throwable t) {
-            android.util.Log.w("vibemoji", "tap-zone window add failed", t);
-        }
+        return v;
+    }
+
+    private WindowManager.LayoutParams newTapZoneParams(int x, int y, int w, int h) {
+        int type = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
+                ? WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+                : WindowManager.LayoutParams.TYPE_PHONE;
+        int flags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
+                | WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS
+                | WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
+                | WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL;
+        if (!tapZonesInteractive) flags |= WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE;
+        WindowManager.LayoutParams p = new WindowManager.LayoutParams(w, h, type, flags, PixelFormat.TRANSLUCENT);
+        p.gravity = Gravity.TOP | Gravity.START;
+        p.x = x;
+        p.y = y;
+        return p;
     }
 
     private void stopOverlay() {
         if (windowManager != null) {
-            if (tapZone != null) {
-                try {
-                    windowManager.removeView(tapZone);
-                } catch (IllegalArgumentException ignored) {
-                    // already detached
-                }
+            for (View v : tapZones.values()) {
+                try { windowManager.removeView(v); }
+                catch (IllegalArgumentException ignored) { /* detached */ }
             }
             if (webView != null) {
                 try {
@@ -269,8 +255,8 @@ public class OverlayService extends Service {
                 webView.destroy();
             }
         }
-        tapZone = null;
-        tapZoneParams = null;
+        tapZones.clear();
+        tapZoneParams.clear();
         webView = null;
         windowManager = null;
         params = null;
@@ -378,6 +364,68 @@ public class OverlayService extends Service {
         public void setExpanded(final boolean expanded) { /* no-op */ }
 
         /**
+         * Synchronizes the per-buddy tap-zone windows with a JSON array of
+         * `{id, x, y, w, h}` (device pixels, screen-origin top-left). Adds new
+         * ids, repositions existing ones, removes ids that are no longer in
+         * the list. Each tap-zone forwards its id when tapped so only that
+         * buddy's popup opens.
+         */
+        @JavascriptInterface
+        public void setAvatarRects(final String json) {
+            main.post(() -> {
+                if (windowManager == null) return;
+                JSONArray arr;
+                try { arr = new JSONArray(json == null ? "[]" : json); }
+                catch (Exception e) { return; }
+
+                java.util.Set<String> seen = new java.util.HashSet<>();
+                for (int i = 0; i < arr.length(); i++) {
+                    JSONObject o = arr.optJSONObject(i);
+                    if (o == null) continue;
+                    String id = o.optString("id", null);
+                    if (id == null) continue;
+                    int x = (int) Math.floor(o.optDouble("x", 0));
+                    int y = (int) Math.floor(o.optDouble("y", 0));
+                    int w = (int) Math.ceil(o.optDouble("w", 0));
+                    int h = (int) Math.ceil(o.optDouble("h", 0));
+                    if (w <= 0 || h <= 0) continue;
+                    seen.add(id);
+
+                    View v = tapZones.get(id);
+                    WindowManager.LayoutParams p = tapZoneParams.get(id);
+                    if (v == null) {
+                        v = createTapZoneView(id);
+                        p = newTapZoneParams(x, y, w, h);
+                        try {
+                            windowManager.addView(v, p);
+                            tapZones.put(id, v);
+                            tapZoneParams.put(id, p);
+                        } catch (Throwable t) {
+                            android.util.Log.w("vibemoji", "tap-zone add failed for " + id, t);
+                        }
+                    } else if (p != null) {
+                        if (p.x != x || p.y != y || p.width != w || p.height != h) {
+                            p.x = x; p.y = y; p.width = w; p.height = h;
+                            try { windowManager.updateViewLayout(v, p); }
+                            catch (IllegalArgumentException ignored) { /* detached */ }
+                        }
+                    }
+                }
+
+                // Remove tap-zones whose ids dropped out.
+                java.util.Iterator<java.util.Map.Entry<String, View>> it = tapZones.entrySet().iterator();
+                while (it.hasNext()) {
+                    java.util.Map.Entry<String, View> entry = it.next();
+                    if (seen.contains(entry.getKey())) continue;
+                    try { windowManager.removeView(entry.getValue()); }
+                    catch (IllegalArgumentException ignored) { /* detached */ }
+                    tapZoneParams.remove(entry.getKey());
+                    it.remove();
+                }
+            });
+        }
+
+        /**
          * Failsafe: lets the overlay's own UI tear itself down. Critical if the
          * touch-region publishing has a bug — without this, a misconfigured
          * overlay can swallow every touch on screen and the user has no way to
@@ -424,18 +472,20 @@ public class OverlayService extends Service {
                         windowManager.updateViewLayout(webView, params);
                     } catch (IllegalArgumentException ignored) { /* view detached */ }
                 }
-                if (tapZone != null && tapZoneParams != null) {
-                    int tzFlags = tapZoneParams.flags;
+                tapZonesInteractive = !interactive;
+                for (java.util.Map.Entry<String, View> entry : tapZones.entrySet()) {
+                    WindowManager.LayoutParams tzp = tapZoneParams.get(entry.getKey());
+                    if (tzp == null) continue;
+                    int tzFlags = tzp.flags;
                     if (interactive) {
                         tzFlags |= WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE;
                     } else {
                         tzFlags &= ~WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE;
                     }
-                    if (tzFlags != tapZoneParams.flags) {
-                        tapZoneParams.flags = tzFlags;
-                        try {
-                            windowManager.updateViewLayout(tapZone, tapZoneParams);
-                        } catch (IllegalArgumentException ignored) { /* detached */ }
+                    if (tzFlags != tzp.flags) {
+                        tzp.flags = tzFlags;
+                        try { windowManager.updateViewLayout(entry.getValue(), tzp); }
+                        catch (IllegalArgumentException ignored) { /* detached */ }
                     }
                 }
             });

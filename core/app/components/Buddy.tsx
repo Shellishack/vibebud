@@ -316,6 +316,28 @@ export default function Buddy() {
         });
       });
       adapter.publishInteractiveRects(rects);
+
+      // Per-buddy tap-zones: native maintains one transparent overlay
+      // window per avatar id, sized exactly to that avatar's screen rect.
+      // Tapping zone N forwards N's buddy id to JS so only that buddy's
+      // popup toggles. Main WebView is full-screen at top-left so viewport
+      // coords == screen coords (CSS px; multiply by dpr for device px).
+      const avatars = document.querySelectorAll<HTMLElement>('[data-buddy-avatar]');
+      const avatarRects: { id: string; x: number; y: number; w: number; h: number }[] = [];
+      avatars.forEach((el) => {
+        const id = el.getAttribute('data-buddy-id');
+        if (!id) return;
+        const r = el.getBoundingClientRect();
+        if (r.width <= 0 || r.height <= 0) return;
+        avatarRects.push({
+          id,
+          x: Math.floor(r.left * dpr),
+          y: Math.floor(r.top * dpr),
+          w: Math.ceil(r.width * dpr),
+          h: Math.ceil(r.height * dpr),
+        });
+      });
+      adapter.publishAvatarRects(avatarRects);
     };
     const schedule = () => {
       if (raf) return;
@@ -341,6 +363,7 @@ export default function Buddy() {
       window.removeEventListener('resize', schedule);
       if (raf) cancelAnimationFrame(raf);
       adapter.publishInteractiveRects([]);
+      adapter.publishAvatarRects([]);
     };
   }, [adapter]);
 

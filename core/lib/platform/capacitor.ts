@@ -5,6 +5,7 @@ type VibemojiNative = {
   setInteractive?: (v: boolean) => void;
   setExpanded?: (v: boolean) => void;
   stopOverlay?: () => void;
+  setAvatarRects?: (json: string) => void;
 };
 
 const native = (): VibemojiNative | undefined => {
@@ -24,6 +25,14 @@ export class CapacitorAdapter implements PlatformAdapter {
   publishInteractiveRects(rects: InteractiveRect[]): void {
     this.pendingRects = rects;
     if (this.dragHolders.size === 0) this.flush();
+  }
+
+  private lastAvatarJson = '';
+  publishAvatarRects(rects: { id: string; x: number; y: number; w: number; h: number }[]): void {
+    const json = JSON.stringify(rects);
+    if (json === this.lastAvatarJson) return;
+    this.lastAvatarJson = json;
+    try { native()?.setAvatarRects?.(json); } catch { /* noop */ }
   }
 
   notifyDragStart(id: string): void {

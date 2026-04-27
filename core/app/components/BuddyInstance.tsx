@@ -147,10 +147,14 @@ export default function BuddyInstance({ state, anchor, canRemove, onChange, onSp
   useEffect(() => {
     if (adapter.id !== 'capacitor-android') return;
     if (typeof window === 'undefined') return;
-    const handler = () => setOpen((cur) => !cur);
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent<{ id?: string }>).detail;
+      if (detail?.id && detail.id !== state.id) return;
+      setOpen((cur) => !cur);
+    };
     window.addEventListener('vibemoji:avatarTap', handler);
     return () => window.removeEventListener('vibemoji:avatarTap', handler);
-  }, [adapter]);
+  }, [adapter, state.id]);
   useEffect(() => {
     if (!open) return;
     messagesEndRef.current?.scrollIntoView({ block: 'end', behavior: 'smooth' });
@@ -664,6 +668,8 @@ export default function BuddyInstance({ state, anchor, canRemove, onChange, onSp
           )}
           <button
             data-buddy-interactive
+            data-buddy-avatar
+            data-buddy-id={state.id}
             onPointerDown={onPointerDown}
             onClick={() => {
               if (justDraggedRef.current) {
