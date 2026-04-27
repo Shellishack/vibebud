@@ -147,14 +147,53 @@ export default function BuddyInstance({ state, anchor, canRemove, onChange, onSp
   useEffect(() => {
     if (adapter.id !== 'capacitor-android') return;
     if (typeof window === 'undefined') return;
-    const handler = (e: Event) => {
-      const detail = (e as CustomEvent<{ id?: string }>).detail;
-      if (detail?.id && detail.id !== state.id) return;
+    type Detail = { id?: string; dx?: number; dy?: number };
+    const matches = (e: Event) => {
+      const id = (e as CustomEvent<Detail>).detail?.id;
+      return !id || id === state.id;
+    };
+    const onTap = (e: Event) => {
+      if (!matches(e)) return;
+      if (justDraggedRef.current) { justDraggedRef.current = false; return; }
       setOpen((cur) => !cur);
     };
-    window.addEventListener('vibemoji:avatarTap', handler);
-    return () => window.removeEventListener('vibemoji:avatarTap', handler);
-  }, [adapter, state.id]);
+    let baseX = 0, baseY = 0;
+    const onDragStart = (e: Event) => {
+      if (!matches(e)) return;
+      baseX = stateRef.current.pos.x;
+      baseY = stateRef.current.pos.y;
+      draggingRef.current = true;
+      setIsDragging(true);
+      adapter.notifyDragStart(state.id);
+      onDragMove?.(state.id, { x: baseX, y: baseY });
+    };
+    const onDragMoveEvt = (e: Event) => {
+      if (!matches(e) || !draggingRef.current) return;
+      const detail = (e as CustomEvent<Detail>).detail || {};
+      const next = { x: baseX + (detail.dx ?? 0), y: baseY + (detail.dy ?? 0) };
+      onChange({ ...stateRef.current, pos: next });
+      onDragMove?.(state.id, next);
+    };
+    const onDragEndEvt = (e: Event) => {
+      if (!matches(e) || !draggingRef.current) return;
+      const moved = stateRef.current.pos.x !== baseX || stateRef.current.pos.y !== baseY;
+      justDraggedRef.current = moved;
+      draggingRef.current = false;
+      setIsDragging(false);
+      onDragEnd?.(state.id, stateRef.current.pos, moved);
+      adapter.notifyDragEnd(state.id);
+    };
+    window.addEventListener('vibemoji:avatarTap', onTap);
+    window.addEventListener('vibemoji:avatarDragStart', onDragStart);
+    window.addEventListener('vibemoji:avatarDragMove', onDragMoveEvt);
+    window.addEventListener('vibemoji:avatarDragEnd', onDragEndEvt);
+    return () => {
+      window.removeEventListener('vibemoji:avatarTap', onTap);
+      window.removeEventListener('vibemoji:avatarDragStart', onDragStart);
+      window.removeEventListener('vibemoji:avatarDragMove', onDragMoveEvt);
+      window.removeEventListener('vibemoji:avatarDragEnd', onDragEndEvt);
+    };
+  }, [adapter, state.id, onChange, onDragMove, onDragEnd]);
   useEffect(() => {
     if (!open) return;
     messagesEndRef.current?.scrollIntoView({ block: 'end', behavior: 'smooth' });

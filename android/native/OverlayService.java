@@ -204,24 +204,65 @@ public class OverlayService extends Service {
     }
 
     /**
-     * Creates a transparent tap-zone window for one avatar. On ACTION_DOWN it
-     * dispatches `vibemoji:avatarTap` with the buddy's id so only that buddy's
-     * popup opens.
+     * Creates a transparent tap-zone window for one avatar. The OnTouchListener
+     * tracks the gesture and forwards bridged events to JS keyed by the buddy's
+     * id:
+     *   - `vibemoji:avatarTap`        — UP without exceeding the drag threshold
+     *   - `vibemoji:avatarDragStart`  — first MOVE past the threshold
+     *   - `vibemoji:avatarDragMove`   — subsequent MOVEs (dx, dy in CSS px)
+     *   - `vibemoji:avatarDragEnd`    — UP / CANCEL after a drag
+     *
+     * Once Android delivers ACTION_DOWN to a window, the rest of the gesture
+     * (MOVE/UP) keeps coming to that same window even when the finger leaves
+     * its bounds, so we don't need to resize the tap-zone mid-drag — JS just
+     * suspends position publishing while the drag is in flight.
      */
     private View createTapZoneView(final String id) {
+        final float density = getResources().getDisplayMetrics().density;
+        final float thresholdPx = 8 * density; // 8dp
+        final float[] startRaw = new float[2];
+        final boolean[] dragging = new boolean[1];
+
         View v = new View(this);
         v.setBackgroundColor(Color.TRANSPARENT);
         v.setOnTouchListener((view, ev) -> {
-            if (ev.getActionMasked() == MotionEvent.ACTION_DOWN && webView != null) {
-                String safe = id.replace("\\", "\\\\").replace("'", "\\'");
-                webView.evaluateJavascript(
-                        "window.dispatchEvent(new CustomEvent('vibemoji:avatarTap',{detail:{id:'" + safe + "'}}))",
-                        null);
+            int a = ev.getActionMasked();
+            if (a == MotionEvent.ACTION_DOWN) {
+                startRaw[0] = ev.getRawX();
+                startRaw[1] = ev.getRawY();
+                dragging[0] = false;
+                return true;
+            } else if (a == MotionEvent.ACTION_MOVE) {
+                float dxPx = ev.getRawX() - startRaw[0];
+                float dyPx = ev.getRawY() - startRaw[1];
+                if (!dragging[0] && (float) Math.hypot(dxPx, dyPx) >= thresholdPx) {
+                    dragging[0] = true;
+                    dispatchAvatarEvent("vibemoji:avatarDragStart", id, 0f, 0f);
+                }
+                if (dragging[0]) {
+                    dispatchAvatarEvent("vibemoji:avatarDragMove", id, dxPx / density, dyPx / density);
+                }
+                return true;
+            } else if (a == MotionEvent.ACTION_UP || a == MotionEvent.ACTION_CANCEL) {
+                if (dragging[0]) {
+                    dispatchAvatarEvent("vibemoji:avatarDragEnd", id, 0f, 0f);
+                } else if (a == MotionEvent.ACTION_UP) {
+                    dispatchAvatarEvent("vibemoji:avatarTap", id, 0f, 0f);
+                }
+                dragging[0] = false;
                 return true;
             }
             return false;
         });
         return v;
+    }
+
+    private void dispatchAvatarEvent(String name, String id, float dx, float dy) {
+        if (webView == null) return;
+        String safe = id.replace("\\", "\\\\").replace("'", "\\'");
+        String js = "window.dispatchEvent(new CustomEvent('" + name +
+                "',{detail:{id:'" + safe + "',dx:" + dx + ",dy:" + dy + "}}))";
+        webView.evaluateJavascript(js, null);
     }
 
     private WindowManager.LayoutParams newTapZoneParams(int x, int y, int w, int h) {

@@ -28,8 +28,15 @@ export class CapacitorAdapter implements PlatformAdapter {
   }
 
   private lastAvatarJson = '';
+  private pendingAvatarRects: { id: string; x: number; y: number; w: number; h: number }[] | null = null;
   publishAvatarRects(rects: { id: string; x: number; y: number; w: number; h: number }[]): void {
-    const json = JSON.stringify(rects);
+    this.pendingAvatarRects = rects;
+    if (this.dragHolders.size === 0) this.flushAvatar();
+  }
+  private flushAvatar(): void {
+    if (this.pendingAvatarRects === null) return;
+    const json = JSON.stringify(this.pendingAvatarRects);
+    this.pendingAvatarRects = null;
     if (json === this.lastAvatarJson) return;
     this.lastAvatarJson = json;
     try { native()?.setAvatarRects?.(json); } catch { /* noop */ }
@@ -45,7 +52,10 @@ export class CapacitorAdapter implements PlatformAdapter {
 
   notifyDragEnd(id: string): void {
     this.dragHolders.delete(id);
-    if (this.dragHolders.size === 0) this.flush();
+    if (this.dragHolders.size === 0) {
+      this.flush();
+      this.flushAvatar();
+    }
   }
 
   private flush(): void {
