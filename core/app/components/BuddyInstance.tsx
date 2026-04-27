@@ -31,6 +31,10 @@ export type BuddyInstanceState = {
   pos: { x: number; y: number };
   messages: ChatMsg[];
   groupId?: string;
+  // When set, the buddy is docked to a screen edge with only its visible
+  // half on-screen. lastFreePos remembers where to slide back on restore.
+  minimized?: { edge: 'left' | 'right' | 'top' | 'bottom' };
+  lastFreePos?: { x: number; y: number };
 };
 
 type Props = {
@@ -46,10 +50,13 @@ type Props = {
   magnetState?: 'attractor' | 'target' | null;
   teammates?: Teammate[];
   isGroupExpanded?: boolean;
+  isGroupMinimized?: boolean;
   onGroupTap?: (gid: string) => void;
+  onRestore?: () => void;
+  onGroupRestore?: (gid: string) => void;
 };
 
-export default function BuddyInstance({ state, anchor, canRemove, onChange, onSpawn, onRemove, onOpenChange, onDragMove, onDragEnd, magnetState, teammates, isGroupExpanded, onGroupTap }: Props) {
+export default function BuddyInstance({ state, anchor, canRemove, onChange, onSpawn, onRemove, onOpenChange, onDragMove, onDragEnd, magnetState, teammates, isGroupExpanded, isGroupMinimized, onGroupTap, onRestore, onGroupRestore }: Props) {
   const personality: Personality =
     PERSONALITY_BY_VARIANT[state.variantId] ?? PERSONALITY_BY_VARIANT.violet;
 
@@ -136,8 +143,10 @@ export default function BuddyInstance({ state, anchor, canRemove, onChange, onSp
   // (which would happen on each onChange fired mid-drag, resetting the base
   // to 0 and snapping the avatar to its anchor).
   const dragBaseRef = useRef<{ x: number; y: number } | null>(null);
-  const callbacksRef = useRef({ onChange, onDragMove, onDragEnd, onGroupTap });
-  useEffect(() => { callbacksRef.current = { onChange, onDragMove, onDragEnd, onGroupTap }; });
+  const callbacksRef = useRef({ onChange, onDragMove, onDragEnd, onGroupTap, onRestore, onGroupRestore });
+  useEffect(() => { callbacksRef.current = { onChange, onDragMove, onDragEnd, onGroupTap, onRestore, onGroupRestore }; });
+  const groupMinimizedRef = useRef(!!isGroupMinimized);
+  useEffect(() => { groupMinimizedRef.current = !!isGroupMinimized; }, [isGroupMinimized]);
   const groupExpandedRef = useRef(!!isGroupExpanded);
   useEffect(() => { groupExpandedRef.current = !!isGroupExpanded; }, [isGroupExpanded]);
   useEffect(() => { onOpenChange?.(state.id, open); }, [open, state.id, onOpenChange]);
@@ -171,6 +180,16 @@ export default function BuddyInstance({ state, anchor, canRemove, onChange, onSp
     const onTap = (e: Event) => {
       if (!matches(e)) return;
       if (justDraggedRef.current) { justDraggedRef.current = false; return; }
+      // Minimized: tap restores instead of opening chat.
+      if (stateRef.current.minimized) {
+        callbacksRef.current.onRestore?.();
+        return;
+      }
+      // Tap on a member of a minimized group restores the whole group.
+      if (groupMinimizedRef.current && stateRef.current.groupId) {
+        callbacksRef.current.onGroupRestore?.(stateRef.current.groupId);
+        return;
+      }
       // If this buddy is part of a collapsed group, the first tap should
       // pop the group open (so the user can see and reach individual
       // members) rather than opening this buddy's chat panel. The next tap
@@ -401,15 +420,35 @@ export default function BuddyInstance({ state, anchor, canRemove, onChange, onSp
     window.addEventListener('blur', stop);
   };
 
+  // Minimized buddies are rendered with their pos computed from the current
+  // viewport (so rotation / IME open won't leave them off-screen). We use
+  // the same math as Buddy.tsx's minimizedBuddyPos, inlined to avoid an
+  // import cycle. Free buddies render with state.pos directly.
+  const renderedPos = (() => {
+    if (!state.minimized) return state.pos;
+    const vv = typeof window !== 'undefined' ? window.visualViewport : undefined;
+    const w = vv?.width ?? (typeof window !== 'undefined' ? window.innerWidth : 0);
+    const h = vv?.height ?? (typeof window !== 'undefined' ? window.innerHeight : 0);
+    const half = 56; // AVATAR_SIZE / 2 (112 / 2)
+    const lf = state.lastFreePos;
+    switch (state.minimized.edge) {
+      case 'left':   return { x: anchor.right + 112 - w - half, y: lf?.y ?? 0 };
+      case 'right':  return { x: anchor.right + half,            y: lf?.y ?? 0 };
+      case 'top':    return { x: lf?.x ?? 0, y: anchor.bottom + 112 - h - half };
+      case 'bottom': return { x: lf?.x ?? 0, y: anchor.bottom + half };
+    }
+  })();
+
   return (
     <div
       data-buddy-member
       data-group={state.groupId || undefined}
+      data-buddy-minimized={state.minimized?.edge || undefined}
       className="fixed z-50"
       style={{
         right: anchor.right,
         bottom: anchor.bottom,
-        transform: `translate(${state.pos.x}px, ${state.pos.y}px)`,
+        transform: `translate(${renderedPos.x}px, ${renderedPos.y}px)`,
         transition: isDragging ? 'none' : 'transform 360ms cubic-bezier(0.22, 1, 0.36, 1)',
       }}
     >
@@ -734,10 +773,19 @@ export default function BuddyInstance({ state, anchor, canRemove, onChange, onSp
             data-buddy-interactive
             data-buddy-avatar
             data-buddy-id={state.id}
-            onPointerDown={onPointerDown}
+            onPointerDown={state.minimized ? undefined : onPointerDown}
             onClick={() => {
               if (justDraggedRef.current) {
                 justDraggedRef.current = false;
+                return;
+              }
+              // Minimized: tap restores instead of opening chat (mobile primary path).
+              if (state.minimized) {
+                onRestore?.();
+                return;
+              }
+              if (isGroupMinimized && state.groupId) {
+                onGroupRestore?.(state.groupId);
                 return;
               }
               if (open) {
@@ -747,7 +795,16 @@ export default function BuddyInstance({ state, anchor, canRemove, onChange, onSp
                 feel('love', 1400);
               }
             }}
-            onPointerEnter={() => feel('happy', 1200)}
+            onPointerEnter={() => {
+              feel('happy', 1200);
+              // Desktop / web: hover on the visible half restores. Mobile
+              // doesn't fire pointerenter from a touch tap, so this is
+              // effectively desktop/web-only behavior.
+              if (!isMobile) {
+                if (state.minimized) onRestore?.();
+                else if (isGroupMinimized && state.groupId) onGroupRestore?.(state.groupId);
+              }
+            }}
             className={`pointer-events-auto relative h-28 w-28 cursor-grab touch-none rounded-full transition-transform hover:scale-105 active:cursor-grabbing active:scale-95 ${
               magnetState === 'target' ? 'scale-110' : magnetState === 'attractor' ? 'scale-105' : ''
             }`}

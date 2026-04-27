@@ -57,7 +57,116 @@ const ANCHOR = (() => {
   return { right: pad, bottom: pad };
 })();
 
-type Group = { id: string; memberIds: string[]; pos: { x: number; y: number } };
+// --- Minimize-to-edge ---
+// Drag-end edge proximity (px) below which a buddy/group snaps to the edge.
+const SNAP_THRESHOLD = 24;
+// Tight inter-member stride used while a group is minimized — members read
+// as a stack (vs. COLLAPSED_STRIDE 28).
+const STACK_STRIDE = 6;
+
+export type Edge = 'left' | 'right' | 'top' | 'bottom';
+export type EdgeDock = { edge: Edge };
+
+const isHorizontalEdge = (e: Edge) => e === 'left' || e === 'right';
+
+// Read the actually-visible viewport (excludes IME / system bars).
+const viewportSize = () => {
+  if (typeof window === 'undefined') return { w: 0, h: 0 };
+  const vv = window.visualViewport;
+  return { w: vv?.width ?? window.innerWidth, h: vv?.height ?? window.innerHeight };
+};
+
+// Given a buddy's current pos translate, return the closest edge (in CSS px
+// distance from the bbox to the screen edge) and that distance. Used by the
+// drag-end snap detection.
+const nearestEdgeForBuddy = (pos: { x: number; y: number }) => {
+  const { w, h } = viewportSize();
+  // Bbox sides relative to the (right:ANCHOR.right, bottom:ANCHOR.bottom) anchor.
+  const right  = ANCHOR.right - pos.x;                       // gap to right edge
+  const left   = w - ANCHOR.right - AVATAR_SIZE + pos.x;      // gap to left edge (>=0 when on screen)
+  const bottom = ANCHOR.bottom - pos.y;                       // gap to bottom edge
+  const top    = h - ANCHOR.bottom - AVATAR_SIZE + pos.y;     // gap to top edge
+  const dists: Array<{ edge: Edge; d: number }> = [
+    { edge: 'left',   d: left },
+    { edge: 'right',  d: right },
+    { edge: 'top',    d: top },
+    { edge: 'bottom', d: bottom },
+  ];
+  dists.sort((a, b) => a.d - b.d);
+  return dists[0];
+};
+
+// Position a single buddy so its CENTER sits exactly on the chosen edge —
+// half visible, half off-screen. The bbox is positioned with right:ANCHOR.right
+// (so untranslated box.right = viewport - ANCHOR.right) and translated by pos.
+// Derivation per edge:
+//   left:   want box.left   = -half  → pos.x = -half - (viewport - ANCHOR.right - AVATAR_SIZE)
+//   right:  want box.right  =  viewport + half → pos.x =  ANCHOR.right + half
+//   top:    want box.top    = -half  → pos.y = -half - (viewport - ANCHOR.bottom - AVATAR_SIZE)
+//   bottom: want box.bottom =  viewport + half → pos.y =  ANCHOR.bottom + half
+const minimizedBuddyPos = (edge: Edge, lastFree?: { x: number; y: number }) => {
+  const { w, h } = viewportSize();
+  const half = AVATAR_SIZE / 2;
+  switch (edge) {
+    case 'left':   return { x: ANCHOR.right + AVATAR_SIZE - w - half, y: lastFree?.y ?? 0 };
+    case 'right':  return { x: ANCHOR.right + half,                    y: lastFree?.y ?? 0 };
+    case 'top':    return { x: lastFree?.x ?? 0, y: ANCHOR.bottom + AVATAR_SIZE - h - half };
+    case 'bottom': return { x: lastFree?.x ?? 0, y: ANCHOR.bottom + half };
+  }
+};
+
+// Distance from each edge for a group's bbox (group-extent depends on
+// stride and member count and orientation).
+const nearestEdgeForGroup = (pos: { x: number; y: number }, memberCount: number) => {
+  const { w, h } = viewportSize();
+  // Members spread to the RIGHT of pos.x at COLLAPSED_STRIDE in the
+  // non-minimized rendered state; that's also the bbox the user sees when
+  // dropping. Width = (N-1)*stride + AVATAR_SIZE.
+  const groupW = (memberCount - 1) * COLLAPSED_STRIDE + AVATAR_SIZE;
+  const groupH = AVATAR_SIZE;
+  // Leftmost member translate.x = pos.x; rightmost = pos.x + (N-1)*stride.
+  const rightmost = pos.x + (memberCount - 1) * COLLAPSED_STRIDE;
+  const right  = ANCHOR.right - rightmost;
+  const left   = w - ANCHOR.right - AVATAR_SIZE + pos.x;
+  const bottom = ANCHOR.bottom - pos.y;
+  const top    = h - ANCHOR.bottom - groupH + pos.y;
+  const dists: Array<{ edge: Edge; d: number }> = [
+    { edge: 'left',   d: left },
+    { edge: 'right',  d: right },
+    { edge: 'top',    d: top },
+    { edge: 'bottom', d: bottom },
+  ];
+  dists.sort((a, b) => a.d - b.d);
+  return { ...dists[0], groupW, groupH };
+};
+
+// Position a group so the CENTER of its (always-horizontal V1) stack lies
+// half-on, half-off the chosen edge. Same sign conventions as minimizedBuddyPos.
+const minimizedGroupPos = (edge: Edge, memberCount: number, lastFree?: { x: number; y: number }) => {
+  const { w, h } = viewportSize();
+  const half = AVATAR_SIZE / 2;
+  switch (edge) {
+    case 'left':
+      // Leftmost member's box.left = -half.
+      return { x: ANCHOR.right + AVATAR_SIZE - w - half, y: lastFree?.y ?? 0 };
+    case 'right':
+      // Rightmost member's box.right = viewport + half. Rightmost member
+      // translate = pos.x + (N-1)*STACK_STRIDE; want it = ANCHOR.right + half.
+      return { x: ANCHOR.right + half - (memberCount - 1) * STACK_STRIDE, y: lastFree?.y ?? 0 };
+    case 'top':
+      return { x: lastFree?.x ?? 0, y: ANCHOR.bottom + AVATAR_SIZE - h - half };
+    case 'bottom':
+      return { x: lastFree?.x ?? 0, y: ANCHOR.bottom + half };
+  }
+};
+
+type Group = {
+  id: string;
+  memberIds: string[];
+  pos: { x: number; y: number };
+  minimized?: EdgeDock;
+  lastFreePos?: { x: number; y: number };
+};
 type Persisted = { buddies: BuddyInstanceState[]; groups: Group[] };
 
 const initialBuddies = (): BuddyInstanceState[] => [
@@ -257,7 +366,12 @@ export default function Buddy() {
         if (!g) return b;
         const i = g.memberIds.indexOf(b.id);
         if (i < 0) return b;
-        const stride = expanded[g.id] ? EXPANDED_STRIDE : COLLAPSED_STRIDE;
+        // Minimized groups stack horizontally at STACK_STRIDE regardless of
+        // dock edge (V1 — vertical stacks would require a separate hull
+        // layout). collapsed/expanded use the normal horizontal strides.
+        const stride = g.minimized
+          ? STACK_STRIDE
+          : (expanded[g.id] ? EXPANDED_STRIDE : COLLAPSED_STRIDE);
         const target = slotPos(g, i, stride);
         if (dragging?.has(b.id)) return b;
         if (b.pos.x === target.x && b.pos.y === target.y) return b;
@@ -269,8 +383,30 @@ export default function Buddy() {
   }, [groups, expanded]);
 
   const updateBuddy = (id: string, next: BuddyInstanceState) => {
-    const clamped = { ...next, pos: clampBuddyPos(next.pos) };
+    // Minimized buddies intentionally extend off-screen, so skip the
+    // viewport clamp for them. The minimize/restore handlers compute the
+    // exact pos themselves.
+    const clamped = next.minimized ? next : { ...next, pos: clampBuddyPos(next.pos) };
     setBuddies((cur) => cur.map((b) => (b.id === id ? clamped : b)));
+  };
+
+  // Restore a minimized buddy to its lastFreePos (clamped to current viewport).
+  const restoreBuddy = (id: string) => {
+    setBuddies((cur) => cur.map((b) => {
+      if (b.id !== id || !b.minimized) return b;
+      const target = clampBuddyPos(b.lastFreePos ?? b.pos);
+      return { ...b, minimized: undefined, lastFreePos: undefined, pos: target };
+    }));
+  };
+
+  // Restore a minimized group to its lastFreePos. Member buddy positions
+  // resync via the group/expanded-state effect.
+  const restoreGroup = (gid: string) => {
+    setGroups((cur) => cur.map((g) => {
+      if (g.id !== gid || !g.minimized) return g;
+      const target = clampGroupPos(g.lastFreePos ?? g.pos, g.memberIds.length);
+      return { ...g, minimized: undefined, lastFreePos: undefined, pos: target };
+    }));
   };
 
   const spawnBuddy = () => {
@@ -813,6 +949,43 @@ export default function Buddy() {
       setBuddies((cur) => cur.map((x) => (
         x.id === target.id || x.id === id ? { ...x, groupId: newGroupId } : x
       )));
+      return;
+    }
+
+    // Edge-snap: if no merge target won, check whether the user dropped
+    // the buddy near a screen edge. If so, dock it to that edge in
+    // half-hidden form. lastFreePos remembers where to slide back to.
+    const near = nearestEdgeForBuddy(pos);
+    if (near.d < SNAP_THRESHOLD) {
+      const dock: { edge: Edge } = { edge: near.edge };
+      const minPos = minimizedBuddyPos(dock.edge, pos);
+      setBuddies((cur) => cur.map((x) => (
+        x.id === id ? { ...x, minimized: dock, lastFreePos: pos, pos: minPos } : x
+      )));
+    }
+  };
+
+  // Group drag end: detect edge-snap. If the drop is near a screen edge,
+  // dock the group there (members rerender at STACK_STRIDE via the
+  // grouped-members sync effect). If the user dragged a minimized group
+  // AWAY from any edge, un-minimize and clamp it back into bounds.
+  const onGroupDragEnd = (gid: string, pos: { x: number; y: number }) => {
+    const g = groupsRef.current.find((x) => x.id === gid);
+    if (!g) return;
+    const near = nearestEdgeForGroup(pos, g.memberIds.length);
+    if (near.d < SNAP_THRESHOLD) {
+      const dock: { edge: Edge } = { edge: near.edge };
+      const minPos = minimizedGroupPos(dock.edge, g.memberIds.length, pos);
+      const lastFree = g.minimized ? (g.lastFreePos ?? pos) : pos;
+      setGroups((cur) => cur.map((x) => (
+        x.id === gid ? { ...x, minimized: dock, lastFreePos: lastFree, pos: minPos } : x
+      )));
+    } else if (g.minimized) {
+      // Released far from any edge — un-minimize at the dropped position.
+      const target = clampGroupPos(pos, g.memberIds.length);
+      setGroups((cur) => cur.map((x) => (
+        x.id === gid ? { ...x, minimized: undefined, lastFreePos: undefined, pos: target } : x
+      )));
     }
   };
 
@@ -823,8 +996,11 @@ export default function Buddy() {
     // sync members to the new slot positions, but only on a *second*
     // render after the setGroups commit, which makes the hull race ahead
     // of its members during a drag and reads as broken.
-    const memberCount = groupsRef.current.find((g) => g.id === gid)?.memberIds.length ?? 2;
-    pos = clampGroupPos(pos, memberCount);
+    const groupRef = groupsRef.current.find((g) => g.id === gid);
+    const memberCount = groupRef?.memberIds.length ?? 2;
+    // Skip viewport clamp while the group is minimized — drag is allowed
+    // to move freely off-screen; onGroupDragEnd handles re-snap or eject.
+    if (!groupRef?.minimized) pos = clampGroupPos(pos, memberCount);
     setGroups((cur) => cur.map((g) => (g.id === gid ? { ...g, pos } : g)));
     setBuddies((cur) => {
       const g = groupsRef.current.find((x) => x.id === gid);
@@ -879,7 +1055,10 @@ export default function Buddy() {
         magnetState={magnetState}
         teammates={teammatesFor(b)}
         isGroupExpanded={!!(b.groupId && expanded[b.groupId])}
+        isGroupMinimized={!!(b.groupId && groups.find((g) => g.id === b.groupId)?.minimized)}
         onGroupTap={onGroupTap}
+        onRestore={() => restoreBuddy(b.id)}
+        onGroupRestore={restoreGroup}
       />
     );
   };
@@ -890,7 +1069,9 @@ export default function Buddy() {
           the top level so they aren't unmounted/remounted when joining or
           leaving a group. */}
       {groups.map((g) => {
-        const stride = expanded[g.id] ? EXPANDED_STRIDE : COLLAPSED_STRIDE;
+        const stride = g.minimized
+          ? STACK_STRIDE
+          : (expanded[g.id] ? EXPANDED_STRIDE : COLLAPSED_STRIDE);
         const memberVariantIds = g.memberIds
           .map((mid) => buddies.find((b) => b.id === mid)?.variantId)
           .filter((v): v is string => !!v);
@@ -907,10 +1088,12 @@ export default function Buddy() {
             padTop={HULL_PAD_TOP}
             padBottom={HULL_PAD_BOTTOM}
             anchor={ANCHOR}
-            visible={!!peeked[g.id] || !!expanded[g.id]}
+            // Hull only shows on peek/expand, never on a minimized stack.
+            visible={!g.minimized && (!!peeked[g.id] || !!expanded[g.id])}
             magnetActive={magnet?.targetType === 'group' && magnet.targetId === g.id}
             background={gradientFor(memberVariantIds)}
             onGroupDragMove={onGroupDragMove}
+            onGroupDragEnd={onGroupDragEnd}
           />
         );
       })}

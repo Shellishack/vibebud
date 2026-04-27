@@ -17,11 +17,12 @@ type Props = {
   magnetActive?: boolean;
   background?: string;
   onGroupDragMove: (id: string, pos: { x: number; y: number }) => void;
+  onGroupDragEnd?: (id: string, pos: { x: number; y: number }) => void;
 };
 
 export default function BuddyGroup({
   groupId, pos, memberCount, stride, avatarSize, padX, padTop, padBottom, anchor,
-  visible, magnetActive, background, onGroupDragMove,
+  visible, magnetActive, background, onGroupDragMove, onGroupDragEnd,
 }: Props) {
   const adapter = usePlatform();
   const width = (memberCount - 1) * stride + avatarSize + padX * 2;
@@ -47,8 +48,8 @@ export default function BuddyGroup({
   // parent re-renders on each onGroupDragMove (it does setGroups), and a
   // `let` would be reset every time the listener-binding effect re-ran.
   const dragBaseRef = useRef<{ x: number; y: number } | null>(null);
-  const callbacksRef = useRef({ onGroupDragMove });
-  useEffect(() => { callbacksRef.current = { onGroupDragMove }; });
+  const callbacksRef = useRef({ onGroupDragMove, onGroupDragEnd });
+  useEffect(() => { callbacksRef.current = { onGroupDragMove, onGroupDragEnd }; });
   useEffect(() => {
     if (adapter.id !== 'capacitor-android') return;
     if (typeof window === 'undefined') return;
@@ -81,6 +82,7 @@ export default function BuddyGroup({
       adapter.notifyDragEnd(dragKey);
       const dragSet: Set<string> | undefined = (window as unknown as { __vibemojiDragging?: Set<string> }).__vibemojiDragging;
       dragSet?.delete(dragKey);
+      callbacksRef.current.onGroupDragEnd?.(groupId, posRef.current);
       dragBaseRef.current = null;
     };
     window.addEventListener('vibemoji:groupDragStart', onDragStart);
@@ -152,6 +154,7 @@ export default function BuddyGroup({
       dragRef.current = null;
       adapter.notifyDragEnd(key);
       dragSet.delete(key);
+      onGroupDragEnd?.(groupId, posRef.current);
       if (onPointerMove) document.removeEventListener('pointermove', onPointerMove);
       document.removeEventListener('pointerup', stop);
       document.removeEventListener('pointercancel', stop);
