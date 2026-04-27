@@ -16,6 +16,7 @@ import android.os.IBinder;
 import android.os.Looper;
 import android.util.DisplayMetrics;
 import android.view.Gravity;
+import android.view.KeyEvent;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.WindowManager;
@@ -177,7 +178,12 @@ public class OverlayService extends Service {
                 WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS
                         | WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
                         | WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL
-                        | WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE,
+                        | WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
+                        // Idle overlay must not steal key/focus events — otherwise
+                        // the system BACK gesture is captured here and never
+                        // reaches the underlying app. Focus is granted only
+                        // transiently in setInteractive(true) so chat IME works.
+                        | WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
                 PixelFormat.TRANSLUCENT
         );
         params.gravity = Gravity.TOP | Gravity.START;
@@ -207,6 +213,25 @@ public class OverlayService extends Service {
             }
         });
         webView.addJavascriptInterface(new NativeBridge(), "vibemojiNative");
+
+        // While focus is granted to the overlay (popup open), the BACK gesture
+        // would otherwise be consumed by the WebView and never reach the host
+        // app. Forward it to JS as a 'vibemoji:back' event (so the popup can
+        // close itself and call setInteractive(false), restoring NOT_FOCUSABLE
+        // — subsequent BACKs then fall through to the underlying app).
+        webView.setOnKeyListener((view, keyCode, event) -> {
+            if (keyCode != KeyEvent.KEYCODE_BACK) return false;
+            if (params == null
+                    || (params.flags & WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE) != 0) {
+                return false;
+            }
+            if (event.getAction() == KeyEvent.ACTION_UP) {
+                webView.evaluateJavascript(
+                        "window.dispatchEvent(new CustomEvent('vibemoji:back'))",
+                        null);
+            }
+            return true;
+        });
 
         webView.loadUrl(url);
 
@@ -665,8 +690,15 @@ public class OverlayService extends Service {
                 int mainFlags = params.flags;
                 if (interactive) {
                     mainFlags &= ~WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE;
+                    // Grant focus so the chat IME works AND so the overlay
+                    // receives the BACK key (intercepted by webView's key
+                    // listener to close the popup instead of the host app).
+                    mainFlags &= ~WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE;
                 } else {
                     mainFlags |= WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE;
+                    // Drop focus immediately when popup closes so BACK falls
+                    // through to whatever app is underneath.
+                    mainFlags |= WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE;
                 }
                 if (mainFlags != params.flags) {
                     params.flags = mainFlags;

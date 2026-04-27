@@ -61,7 +61,7 @@ const ANCHOR = (() => {
 // Drag-end edge proximity (px) below which a buddy/group snaps to the edge.
 // Generous so the snap feels reliable; the live edge-magnet cue (see
 // edgeMagnetRef wiring) shows the user when they're in the snap zone.
-const SNAP_THRESHOLD = 64;
+const SNAP_THRESHOLD = (typeof window !== 'undefined' && isMobile()) ? 12 : 64;
 // Tight inter-member stride used while a group is minimized — members read
 // as a stack (vs. COLLAPSED_STRIDE 28).
 const STACK_STRIDE = 6;
@@ -1262,8 +1262,10 @@ export default function Buddy() {
             magnetActive={magnet?.targetType === 'group' && magnet.targetId === g.id}
             edgeMagnetActive={edgeMagnet?.kind === 'group' && edgeMagnet.id === g.id}
             background={gradientFor(memberVariantIds)}
+            expanded={!!expanded[g.id]}
             onGroupDragMove={onGroupDragMove}
             onGroupDragEnd={onGroupDragEnd}
+            onGroupTap={onGroupTap}
           />
         );
       })}

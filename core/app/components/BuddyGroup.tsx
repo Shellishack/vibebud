@@ -17,13 +17,15 @@ type Props = {
   magnetActive?: boolean;
   edgeMagnetActive?: boolean;
   background?: string;
+  expanded?: boolean;
   onGroupDragMove: (id: string, pos: { x: number; y: number }) => void;
   onGroupDragEnd?: (id: string, pos: { x: number; y: number }) => void;
+  onGroupTap?: (id: string) => void;
 };
 
 export default function BuddyGroup({
   groupId, pos, memberCount, stride, avatarSize, padX, padTop, padBottom, anchor,
-  visible, magnetActive, edgeMagnetActive, background, onGroupDragMove, onGroupDragEnd,
+  visible, magnetActive, edgeMagnetActive, background, expanded, onGroupDragMove, onGroupDragEnd, onGroupTap,
 }: Props) {
   const adapter = usePlatform();
   const width = (memberCount - 1) * stride + avatarSize + padX * 2;
@@ -33,7 +35,15 @@ export default function BuddyGroup({
   // form a containing block for `position: fixed` descendants. We don't nest
   // members anymore, but keep the wrapper "neutral" anyway. The visual hull
   // (with backdrop blur) is an inner sibling.
-  const isCapacitor = adapter.id === 'capacitor-android';
+  // Native-overlay drag events (vibemoji:groupDragStart/...) are only
+  // dispatched by OverlayService, which injects window.vibemojiNative. The
+  // regular Capacitor app (BridgeActivity WebView) gets adapter.id ===
+  // 'capacitor-android' too, but no overlay — so it must fall back to the
+  // pointer-drag path or the group becomes undraggable in-app.
+  const hasNativeOverlay = adapter.id === 'capacitor-android'
+    && typeof window !== 'undefined'
+    && !!(window as unknown as { vibemojiNative?: unknown }).vibemojiNative;
+  const isCapacitor = hasNativeOverlay;
 
   const rightCss = anchor.right - padX - (pos.x + (memberCount - 1) * stride);
   const bottomCss = anchor.bottom - padBottom - pos.y;
@@ -52,7 +62,7 @@ export default function BuddyGroup({
   const callbacksRef = useRef({ onGroupDragMove, onGroupDragEnd });
   useEffect(() => { callbacksRef.current = { onGroupDragMove, onGroupDragEnd }; });
   useEffect(() => {
-    if (adapter.id !== 'capacitor-android') return;
+    if (!hasNativeOverlay) return;
     if (typeof window === 'undefined') return;
     type Detail = { id?: string; dx?: number; dy?: number };
     const matches = (e: Event) => (e as CustomEvent<Detail>).detail?.id === groupId;
@@ -166,7 +176,72 @@ export default function BuddyGroup({
     window.addEventListener('blur', stop);
   };
 
+  // Touchscreen cluster zone: on mobile builds without the native overlay
+  // (in-app Capacitor WebView, web-mobile browsers) there's no equivalent of
+  // OverlayService's group cluster window, so a collapsed group's avatars
+  // each own their own pointer events and dragging a member just drags that
+  // one buddy (and ejects). This div mirrors the native cluster window —
+  // sits on top of the avatar cluster, taps expand the group, drags move
+  // it. Only shown when collapsed; expanded groups already get the handle
+  // strip on desktop and the avatar tap-zones own member taps natively.
+  const showClusterZone = !hasNativeOverlay && adapter.isMobile && !expanded;
+  const onClusterPointerDown = (e: React.PointerEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    try { (e.currentTarget as Element).setPointerCapture(e.pointerId); } catch { /* noop */ }
+    const startX = e.clientX;
+    const startY = e.clientY;
+    const startBase = { x: posRef.current.x, y: posRef.current.y };
+    let movedFar = false;
+    const dragSet: Set<string> = ((window as unknown as { __vibemojiDragging?: Set<string> }).__vibemojiDragging
+      ||= new Set<string>());
+    const key = `group:${groupId}`;
+    const onMove = (ev: PointerEvent) => {
+      const dx = ev.clientX - startX;
+      const dy = ev.clientY - startY;
+      if (!movedFar && Math.hypot(dx, dy) > 8) {
+        movedFar = true;
+        dragSet.add(key);
+        adapter.notifyDragStart(key);
+      }
+      if (movedFar) {
+        onGroupDragMove(groupId, { x: startBase.x + dx, y: startBase.y + dy });
+      }
+    };
+    const stop = () => {
+      document.removeEventListener('pointermove', onMove);
+      document.removeEventListener('pointerup', stop);
+      document.removeEventListener('pointercancel', stop);
+      if (movedFar) {
+        adapter.notifyDragEnd(key);
+        dragSet.delete(key);
+        onGroupDragEnd?.(groupId, posRef.current);
+      } else {
+        onGroupTap?.(groupId);
+      }
+    };
+    document.addEventListener('pointermove', onMove);
+    document.addEventListener('pointerup', stop);
+    document.addEventListener('pointercancel', stop);
+  };
+
   return (
+    <>
+    {showClusterZone && (
+      <div
+        data-buddy-interactive
+        data-group={groupId}
+        onPointerDown={onClusterPointerDown}
+        className="fixed pointer-events-auto touch-none"
+        style={{
+          right: anchor.right - (pos.x + (memberCount - 1) * stride),
+          bottom: anchor.bottom - pos.y,
+          width: (memberCount - 1) * stride + avatarSize,
+          height: avatarSize,
+          zIndex: 70,
+        }}
+      />
+    )}
     <div
       data-buddy-interactive
       {...(isCapacitor ? {} : { onPointerDown })}
@@ -223,5 +298,6 @@ export default function BuddyGroup({
         </div>
       )}
     </div>
+    </>
   );
 }

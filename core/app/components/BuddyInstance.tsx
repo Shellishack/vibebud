@@ -256,6 +256,16 @@ export default function BuddyInstance({ state, anchor, canRemove, onChange, onSp
     if (!open) return;
     messagesEndRef.current?.scrollIntoView({ block: 'end', behavior: 'smooth' });
   }, [open, state.messages]);
+
+  // Android system BACK while the chat popup is open: close the popup.
+  // Native overlay only forwards this event while it has focus (popup open),
+  // so any open buddy is the right thing to dismiss.
+  useEffect(() => {
+    if (!open) return;
+    const onBack = () => setOpen(false);
+    window.addEventListener('vibemoji:back', onBack);
+    return () => window.removeEventListener('vibemoji:back', onBack);
+  }, [open]);
   const update = (patch: Partial<BuddyInstanceState>) => onChange({ ...stateRef.current, ...patch });
 
   const feel = (next: Emotion, ms = 1600) => {
