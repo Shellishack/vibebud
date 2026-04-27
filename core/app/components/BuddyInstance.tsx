@@ -58,9 +58,19 @@ type Props = {
   onGroupTap?: (gid: string) => void;
   onRestore?: () => void;
   onGroupRestore?: (gid: string) => void;
+  // Hover-peek-out (desktop / web). While true, the buddy/group renders at
+  // its peeked position (fully visible at the docking edge) but state stays
+  // minimized — cursor leaving without a drag re-docks. Drag from peek
+  // commits the restore.
+  dockPeeked?: boolean;
+  groupDockPeeked?: boolean;
+  onDockPeek?: () => void;
+  onDockUnpeek?: () => void;
+  onGroupDockPeek?: (gid: string) => void;
+  onGroupDockUnpeek?: (gid: string) => void;
 };
 
-export default function BuddyInstance({ state, anchor, canRemove, onChange, onSpawn, onRemove, onOpenChange, onDragMove, onDragEnd, magnetState, edgeMagnet, teammates, isGroupExpanded, isGroupMinimized, onGroupTap, onRestore, onGroupRestore }: Props) {
+export default function BuddyInstance({ state, anchor, canRemove, onChange, onSpawn, onRemove, onOpenChange, onDragMove, onDragEnd, magnetState, edgeMagnet, teammates, isGroupExpanded, isGroupMinimized, onGroupTap, onRestore, onGroupRestore, dockPeeked, groupDockPeeked, onDockPeek, onDockUnpeek, onGroupDockPeek, onGroupDockUnpeek }: Props) {
   const personality: Personality =
     PERSONALITY_BY_VARIANT[state.variantId] ?? PERSONALITY_BY_VARIANT.violet;
 
@@ -333,6 +343,15 @@ export default function BuddyInstance({ state, anchor, canRemove, onChange, onSp
 
   const onPointerDown = (e: React.PointerEvent) => {
     e.preventDefault();
+    // Drag-from-peek commits the restore: clear minimized so subsequent
+    // applyDelta updates can move freely, and start the drag from the
+    // currently-rendered (peeked) position rather than the off-screen
+    // minimized pos still held in stateRef.
+    const startedFromMinimized = !!state.minimized;
+    const startPos = startedFromMinimized ? renderedPos : stateRef.current.pos;
+    if (startedFromMinimized) {
+      onChange({ ...stateRef.current, minimized: undefined, lastFreePos: undefined, pos: startPos });
+    }
     // Defensive: if a previous drag never received pointerup/pointercancel
     // (can happen on Android when a finger leaves the touchable region on a
     // hardened OEM ROM), the buddy gets stuck with draggingRef + the click
@@ -374,7 +393,7 @@ export default function BuddyInstance({ state, anchor, canRemove, onChange, onSp
         if (cancelled) return;
         dragRef.current = {
           startScreenX: origin.x, startScreenY: origin.y,
-          baseX: stateRef.current.pos.x, baseY: stateRef.current.pos.y,
+          baseX: startPos.x, baseY: startPos.y,
           moved: false,
         };
         const tick = () => {
@@ -435,6 +454,17 @@ export default function BuddyInstance({ state, anchor, canRemove, onChange, onSp
     const h = vv?.height ?? (typeof window !== 'undefined' ? window.innerHeight : 0);
     const half = 56; // AVATAR_SIZE / 2 (112 / 2)
     const lf = state.lastFreePos;
+    // While the user is hover-peeking the dock, render fully visible at
+    // the edge (uses same negative-pad gap as clampBuddyPos).
+    if (dockPeeked) {
+      const PAD = -16;
+      switch (state.minimized.edge) {
+        case 'left':   return { x: -(w - anchor.right - 112 - PAD), y: lf?.y ?? 0 };
+        case 'right':  return { x: anchor.right - PAD, y: lf?.y ?? 0 };
+        case 'top':    return { x: lf?.x ?? 0, y: -(h - anchor.bottom - 112 - PAD) };
+        case 'bottom': return { x: lf?.x ?? 0, y: anchor.bottom - PAD };
+      }
+    }
     switch (state.minimized.edge) {
       case 'left':   return { x: anchor.right + 112 - w - half, y: lf?.y ?? 0 };
       case 'right':  return { x: anchor.right + half,            y: lf?.y ?? 0 };
@@ -795,7 +825,7 @@ export default function BuddyInstance({ state, anchor, canRemove, onChange, onSp
             data-buddy-interactive
             data-buddy-avatar
             data-buddy-id={state.id}
-            onPointerDown={state.minimized ? undefined : onPointerDown}
+            onPointerDown={state.minimized && !dockPeeked ? undefined : onPointerDown}
             onClick={() => {
               if (justDraggedRef.current) {
                 justDraggedRef.current = false;
@@ -819,12 +849,14 @@ export default function BuddyInstance({ state, anchor, canRemove, onChange, onSp
             }}
             onPointerEnter={() => {
               feel('happy', 1200);
-              // Desktop / web: hover on the visible half restores. Mobile
+              // Desktop / web: hover on the visible half peeks the buddy
+              // (or its group) out of the dock without committing the
+              // restore. A drag commits; cursor leaving re-docks. Mobile
               // doesn't fire pointerenter from a touch tap, so this is
               // effectively desktop/web-only behavior.
               if (!isMobile) {
-                if (state.minimized) onRestore?.();
-                else if (isGroupMinimized && state.groupId) onGroupRestore?.(state.groupId);
+                if (state.minimized) onDockPeek?.();
+                else if (isGroupMinimized && state.groupId) onGroupDockPeek?.(state.groupId);
               }
             }}
             className={`pointer-events-auto relative h-28 w-28 cursor-grab touch-none rounded-full transition-transform hover:scale-105 active:cursor-grabbing active:scale-95 ${

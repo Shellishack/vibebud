@@ -142,6 +142,36 @@ const nearestEdgeForGroup = (pos: { x: number; y: number }, memberCount: number)
   return { ...dists[0], groupW, groupH };
 };
 
+// Peeked-out position for a single buddy: the avatar pops fully into view at
+// the docking edge (touching the edge with the same negative-pad gap as the
+// normal clamp), still semantically minimized. lastFreePos's perpendicular
+// axis is preserved so the avatar pops out where it was last seen along the
+// edge.
+const peekedBuddyPos = (edge: Edge, lastFree?: { x: number; y: number }) => {
+  const { w, h } = viewportSize();
+  const PAD = -16;
+  switch (edge) {
+    case 'left':   return { x: -(w - ANCHOR.right - AVATAR_SIZE - PAD), y: lastFree?.y ?? 0 };
+    case 'right':  return { x: ANCHOR.right - PAD, y: lastFree?.y ?? 0 };
+    case 'top':    return { x: lastFree?.x ?? 0, y: -(h - ANCHOR.bottom - AVATAR_SIZE - PAD) };
+    case 'bottom': return { x: lastFree?.x ?? 0, y: ANCHOR.bottom - PAD };
+  }
+};
+
+// Peeked-out position for a group: the whole stack pops fully into view at
+// the docking edge using COLLAPSED_STRIDE (so the user sees a normal-looking
+// group), still semantically minimized.
+const peekedGroupPos = (edge: Edge, n: number, lastFree?: { x: number; y: number }) => {
+  const { w, h } = viewportSize();
+  const EDGE_GAP = -16;
+  switch (edge) {
+    case 'left':   return { x: -(w - ANCHOR.right - AVATAR_SIZE - EDGE_GAP), y: lastFree?.y ?? 0 };
+    case 'right':  return { x: (ANCHOR.right - EDGE_GAP) - (n - 1) * COLLAPSED_STRIDE, y: lastFree?.y ?? 0 };
+    case 'top':    return { x: lastFree?.x ?? 0, y: -(h - ANCHOR.bottom - AVATAR_SIZE - EDGE_GAP) };
+    case 'bottom': return { x: lastFree?.x ?? 0, y: ANCHOR.bottom - EDGE_GAP };
+  }
+};
+
 // Position a group so the CENTER of its (always-horizontal V1) stack lies
 // half-on, half-off the chosen edge. Same sign conventions as minimizedBuddyPos.
 const minimizedGroupPos = (edge: Edge, memberCount: number, lastFree?: { x: number; y: number }) => {
@@ -270,6 +300,11 @@ export default function Buddy() {
   // SNAP_THRESHOLD of which edge (set during drag, cleared on drag end).
   // Renderers show a glow/scale to signal the snap zone.
   const [edgeMagnet, setEdgeMagnet] = useState<{ kind: 'buddy' | 'group'; id: string; edge: Edge } | null>(null);
+  // Hover-driven peek-out for minimized buddies/groups. Keys are
+  // `buddy:<id>` / `group:<id>`. While set, the renderer uses peekedXxxPos
+  // (fully visible at the edge) but the underlying state.minimized stays
+  // set — releasing without a drag re-docks; starting a drag commits.
+  const [peekedDock, setPeekedDock] = useState<Record<string, boolean>>({});
   const idRef = useRef(2);
   const groupIdRef = useRef(1);
   const hydratedRef = useRef(false);
@@ -278,10 +313,43 @@ export default function Buddy() {
   const groupsRef = useRef(groups);
   const expandedRef = useRef(expanded);
   const peekedRef = useRef(peeked);
+  const peekedDockRef = useRef(peekedDock);
   useEffect(() => { buddiesRef.current = buddies; }, [buddies]);
   useEffect(() => { groupsRef.current = groups; }, [groups]);
   useEffect(() => { expandedRef.current = expanded; }, [expanded]);
   useEffect(() => { peekedRef.current = peeked; }, [peeked]);
+  useEffect(() => { peekedDockRef.current = peekedDock; }, [peekedDock]);
+
+  const peekDockBuddy = (id: string) => {
+    const b = buddiesRef.current.find((x) => x.id === id);
+    if (!b?.minimized) return;
+    setPeekedDock((cur) => (cur[`buddy:${id}`] ? cur : { ...cur, [`buddy:${id}`]: true }));
+  };
+  const unpeekDockBuddy = (id: string) => {
+    const dragging: Set<string> | undefined = (window as { __vibemojiDragging?: Set<string> }).__vibemojiDragging;
+    if (dragging?.has(id)) return;
+    setPeekedDock((cur) => {
+      if (!cur[`buddy:${id}`]) return cur;
+      const next = { ...cur };
+      delete next[`buddy:${id}`];
+      return next;
+    });
+  };
+  const peekDockGroup = (gid: string) => {
+    const g = groupsRef.current.find((x) => x.id === gid);
+    if (!g?.minimized) return;
+    setPeekedDock((cur) => (cur[`group:${gid}`] ? cur : { ...cur, [`group:${gid}`]: true }));
+  };
+  const unpeekDockGroup = (gid: string) => {
+    const dragging: Set<string> | undefined = (window as { __vibemojiDragging?: Set<string> }).__vibemojiDragging;
+    if (dragging?.has(`group:${gid}`)) return;
+    setPeekedDock((cur) => {
+      if (!cur[`group:${gid}`]) return cur;
+      const next = { ...cur };
+      delete next[`group:${gid}`];
+      return next;
+    });
+  };
 
   // Mobile (Capacitor / web-mobile) lacks the hover signal that drives the
   // peek/expand state on desktop, so we expose an explicit "tap a group to
@@ -375,10 +443,14 @@ export default function Buddy() {
         // Minimized groups stack horizontally at STACK_STRIDE regardless of
         // dock edge (V1 — vertical stacks would require a separate hull
         // layout). collapsed/expanded use the normal horizontal strides.
-        const stride = g.minimized
+        const dockPeeked = !!peekedDock[`group:${g.id}`];
+        const stride = (g.minimized && !dockPeeked)
           ? STACK_STRIDE
           : (expanded[g.id] ? EXPANDED_STRIDE : COLLAPSED_STRIDE);
-        const target = slotPos(g, i, stride);
+        const groupRenderPos = (g.minimized && dockPeeked)
+          ? peekedGroupPos(g.minimized.edge, g.memberIds.length, g.lastFreePos)
+          : g.pos;
+        const target = { x: groupRenderPos.x + i * stride, y: groupRenderPos.y };
         if (dragging?.has(b.id)) return b;
         if (b.pos.x === target.x && b.pos.y === target.y) return b;
         changed = true;
@@ -386,7 +458,7 @@ export default function Buddy() {
       });
       return changed ? next : cur;
     });
-  }, [groups, expanded]);
+  }, [groups, expanded, peekedDock]);
 
   const updateBuddy = (id: string, next: BuddyInstanceState) => {
     // Minimized buddies intentionally extend off-screen, so skip the
@@ -490,6 +562,12 @@ export default function Buddy() {
       //     actual member avatar of that group → expand stage.
       const groupEl = el?.closest('[data-group]') as HTMLElement | null;
       let peekGid = groupEl?.getAttribute('data-group') || null;
+      // Minimized groups never participate in the peek/expand hover state —
+      // they have their own dock-peek model (peekedDock) that pops them out
+      // at COLLAPSED_STRIDE without exploding to EXPANDED_STRIDE.
+      if (peekGid && groupsRef.current.find((g) => g.id === peekGid)?.minimized) {
+        peekGid = null;
+      }
       let expandGid: string | null = null;
       // Expand only while cursor is inside the hull rect inset by
       // EXPAND_HIT_INSET on every side. Outer ring acts as a peek-only buffer.
@@ -542,12 +620,66 @@ export default function Buddy() {
       for (const gid of Object.keys(expandedRef.current)) {
         if (expandedRef.current[gid] && gid !== expandGid) scheduleCollapse(gid, 'expand');
       }
+
+      // Hover-driven peek-out: re-dock any peeked buddy/group whose visible
+      // bbox no longer holds the cursor (and isn't currently being dragged).
+      const dock = peekedDockRef.current;
+      if (Object.keys(dock).length > 0) {
+        const buddyEl = el?.closest('[data-buddy-avatar]') as HTMLElement | null;
+        const overBuddyId = buddyEl?.getAttribute('data-buddy-id') || null;
+        const memberEl = el?.closest('[data-buddy-member]') as HTMLElement | null;
+        const overMemberGid = memberEl?.getAttribute('data-group') || null;
+        const hullEl = el?.closest('[data-group][data-buddy-interactive]') as HTMLElement | null;
+        const overHullGid = hullEl?.getAttribute('data-group') || null;
+        for (const key of Object.keys(dock)) {
+          const sep = key.indexOf(':');
+          const kind = key.slice(0, sep);
+          const id = key.slice(sep + 1);
+          let stillOver = false;
+          if (kind === 'buddy') stillOver = overBuddyId === id;
+          else if (kind === 'group') stillOver = overMemberGid === id || overHullGid === id;
+          if (!stillOver) {
+            if (kind === 'buddy') unpeekDockBuddy(id);
+            else if (kind === 'group') unpeekDockGroup(id);
+          }
+        }
+      }
     };
     document.addEventListener('mousemove', onMove);
     return () => {
       document.removeEventListener('mousemove', onMove);
       for (const t of collapseTimers.values()) clearTimeout(t);
     };
+  }, [adapter]);
+
+  // Plain-web (non-electron, non-mobile) peek-leave detection. Mirrors the
+  // tail of the electron handler above — kept separate to avoid coupling
+  // peek-leave to the much heavier electron click-through wiring.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (adapter.id !== 'web') return;
+    const onMove = (ev: MouseEvent) => {
+      const dock = peekedDockRef.current;
+      if (Object.keys(dock).length === 0) return;
+      const el = document.elementFromPoint(ev.clientX, ev.clientY) as HTMLElement | null;
+      const overBuddyId = el?.closest('[data-buddy-avatar]')?.getAttribute('data-buddy-id') || null;
+      const overMemberGid = el?.closest('[data-buddy-member]')?.getAttribute('data-group') || null;
+      const overHullGid = el?.closest('[data-group][data-buddy-interactive]')?.getAttribute('data-group') || null;
+      for (const key of Object.keys(dock)) {
+        const sep = key.indexOf(':');
+        const kind = key.slice(0, sep);
+        const id = key.slice(sep + 1);
+        let stillOver = false;
+        if (kind === 'buddy') stillOver = overBuddyId === id;
+        else if (kind === 'group') stillOver = overMemberGid === id || overHullGid === id;
+        if (!stillOver) {
+          if (kind === 'buddy') unpeekDockBuddy(id);
+          else if (kind === 'group') unpeekDockGroup(id);
+        }
+      }
+    };
+    document.addEventListener('mousemove', onMove);
+    return () => document.removeEventListener('mousemove', onMove);
   }, [adapter]);
 
   // Android-overlay touch routing: the OverlayService window has no
@@ -916,6 +1048,13 @@ export default function Buddy() {
   const onDragEnd = (id: string, pos: { x: number; y: number }, moved: boolean) => {
     setMagnet(null);
     setEdgeMagnet(null);
+    // A drag commits the peek (in either direction); peekedDock tracks
+    // hover-state only and shouldn't survive the drop.
+    setPeekedDock((cur) => {
+      const k = `buddy:${id}`;
+      if (!cur[k]) return cur;
+      const next = { ...cur }; delete next[k]; return next;
+    });
     if (!moved) return;
     const b = buddiesRef.current.find((x) => x.id === id);
     if (!b) return;
@@ -993,6 +1132,11 @@ export default function Buddy() {
   // AWAY from any edge, un-minimize and clamp it back into bounds.
   const onGroupDragEnd = (gid: string, pos: { x: number; y: number }) => {
     setEdgeMagnet(null);
+    setPeekedDock((cur) => {
+      const k = `group:${gid}`;
+      if (!cur[k]) return cur;
+      const next = { ...cur }; delete next[k]; return next;
+    });
     const g = groupsRef.current.find((x) => x.id === gid);
     if (!g) return;
     const near = nearestEdgeForGroup(pos, g.memberIds.length);
@@ -1013,6 +1157,18 @@ export default function Buddy() {
   };
 
   const onGroupDragMove = (gid: string, pos: { x: number; y: number }) => {
+    // A drag from a hover-peeked dock commits the restore: clear the
+    // minimized intent so the new drag pos owns the rendered position
+    // (otherwise renderedGroupPos would keep snapping back to peekedPos).
+    const gPre = groupsRef.current.find((x) => x.id === gid);
+    if (gPre?.minimized) {
+      setGroups((cur) => cur.map((g) => (g.id === gid ? { ...g, minimized: undefined, lastFreePos: undefined } : g)));
+      setPeekedDock((cur) => {
+        const k = `group:${gid}`;
+        if (!cur[k]) return cur;
+        const next = { ...cur }; delete next[k]; return next;
+      });
+    }
     // Update the group's pos AND every member's pos in the same React
     // batch — mirroring the avatar drag path where `onChange` writes the
     // buddy's pos directly. The [groups, expanded] effect would eventually
@@ -1092,6 +1248,12 @@ export default function Buddy() {
         onGroupTap={onGroupTap}
         onRestore={() => restoreBuddy(b.id)}
         onGroupRestore={restoreGroup}
+        dockPeeked={!!peekedDock[`buddy:${b.id}`]}
+        groupDockPeeked={!!(b.groupId && peekedDock[`group:${b.groupId}`])}
+        onDockPeek={() => peekDockBuddy(b.id)}
+        onDockUnpeek={() => unpeekDockBuddy(b.id)}
+        onGroupDockPeek={(gid) => peekDockGroup(gid)}
+        onGroupDockUnpeek={(gid) => unpeekDockGroup(gid)}
       />
     );
   };
@@ -1102,18 +1264,22 @@ export default function Buddy() {
           the top level so they aren't unmounted/remounted when joining or
           leaving a group. */}
       {groups.map((g) => {
-        const stride = g.minimized
+        const dockPeeked = !!peekedDock[`group:${g.id}`];
+        const stride = (g.minimized && !dockPeeked)
           ? STACK_STRIDE
           : (expanded[g.id] ? EXPANDED_STRIDE : COLLAPSED_STRIDE);
         const memberVariantIds = g.memberIds
           .map((mid) => buddies.find((b) => b.id === mid)?.variantId)
           .filter((v): v is string => !!v);
         if (memberVariantIds.length < 2) return null;
+        const renderedGroupPos = (g.minimized && dockPeeked)
+          ? peekedGroupPos(g.minimized.edge, memberVariantIds.length, g.lastFreePos)
+          : g.pos;
         return (
           <BuddyGroup
             key={g.id}
             groupId={g.id}
-            pos={g.pos}
+            pos={renderedGroupPos}
             memberCount={memberVariantIds.length}
             stride={stride}
             avatarSize={AVATAR_SIZE}
@@ -1121,8 +1287,9 @@ export default function Buddy() {
             padTop={HULL_PAD_TOP}
             padBottom={HULL_PAD_BOTTOM}
             anchor={ANCHOR}
-            // Hull only shows on peek/expand, never on a minimized stack.
-            visible={!g.minimized && (!!peeked[g.id] || !!expanded[g.id])}
+            // Hull shows on peek/expand of a free group, OR while a
+            // minimized group is being hover-peeked.
+            visible={(!g.minimized && (!!peeked[g.id] || !!expanded[g.id])) || (!!g.minimized && dockPeeked)}
             magnetActive={magnet?.targetType === 'group' && magnet.targetId === g.id}
             edgeMagnetActive={edgeMagnet?.kind === 'group' && edgeMagnet.id === g.id}
             background={gradientFor(memberVariantIds)}
