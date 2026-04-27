@@ -304,6 +304,10 @@ export default function BuddyInstance({ state, anchor, canRemove, onChange, onSp
     const pool: Emotion[] = [
       'happy', 'surprised', 'thinking', 'love', 'sad', 'sleepy',
       'angry', 'excited', 'shy', 'cool', 'wink', 'confused', 'proud', 'sick',
+      'celebrating', 'working', 'nervous', 'frustrated', 'curious', 'smug',
+      'bored', 'determined', 'mischievous', 'relieved', 'shocked', 'embarrassed',
+      'eureka', 'laughing', 'crying', 'dizzy', 'evil', 'peaceful',
+      'hopeful', 'disappointed', 'suspicious', 'panicked', 'awestruck', 'flirty',
     ];
     const delay = 2200 + Math.random() * 2800;
     const t = setTimeout(() => {
