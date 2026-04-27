@@ -517,15 +517,17 @@ export default function Buddy() {
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
-    // Click-through hover detection is desktop-only; Capacitor uses
-    // touchable-region routing instead (handled in the next effect).
-    if (adapter.id !== 'electron') return;
-    const electron = adapter as ElectronAdapter;
+    // Hover-driven peek/expand runs on both Electron and plain web. Electron
+    // additionally pipes hover state into setInteractive() for click-through;
+    // plain web doesn't need that. Capacitor uses touchable-region routing
+    // instead (handled in the next effect).
+    if (adapter.id !== 'electron' && adapter.id !== 'web') return;
+    const electron = adapter.id === 'electron' ? (adapter as ElectronAdapter) : null;
     let interactive = false;
     const setInteractive = (next: boolean) => {
       if (next === interactive) return;
       interactive = next;
-      electron.setInteractive(next);
+      electron?.setInteractive(next);
     };
     type Stage = 'peek' | 'expand';
     const collapseTimers = new Map<string, ReturnType<typeof setTimeout>>();
@@ -649,37 +651,7 @@ export default function Buddy() {
     };
   }, [adapter]);
 
-  // Plain-web (non-electron, non-mobile) peek-leave detection. Mirrors the
-  // tail of the electron handler above — kept separate to avoid coupling
-  // peek-leave to the much heavier electron click-through wiring.
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    if (adapter.id !== 'web') return;
-    const onMove = (ev: MouseEvent) => {
-      const dock = peekedDockRef.current;
-      if (Object.keys(dock).length === 0) return;
-      const el = document.elementFromPoint(ev.clientX, ev.clientY) as HTMLElement | null;
-      const overBuddyId = el?.closest('[data-buddy-avatar]')?.getAttribute('data-buddy-id') || null;
-      const overMemberGid = el?.closest('[data-buddy-member]')?.getAttribute('data-group') || null;
-      const overHullGid = el?.closest('[data-group][data-buddy-interactive]')?.getAttribute('data-group') || null;
-      for (const key of Object.keys(dock)) {
-        const sep = key.indexOf(':');
-        const kind = key.slice(0, sep);
-        const id = key.slice(sep + 1);
-        let stillOver = false;
-        if (kind === 'buddy') stillOver = overBuddyId === id;
-        else if (kind === 'group') stillOver = overMemberGid === id || overHullGid === id;
-        if (!stillOver) {
-          if (kind === 'buddy') unpeekDockBuddy(id);
-          else if (kind === 'group') unpeekDockGroup(id);
-        }
-      }
-    };
-    document.addEventListener('mousemove', onMove);
-    return () => document.removeEventListener('mousemove', onMove);
-  }, [adapter]);
-
-  // Android-overlay touch routing: the OverlayService window has no
+// Android-overlay touch routing: the OverlayService window has no
   // FLAG_NOT_TOUCHABLE, so by default it would consume every touch on screen.
   // We continuously report the bounding boxes of all interactive buddy
   // elements to native, which sets them as the window's touchable region —
