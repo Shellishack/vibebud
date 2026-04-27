@@ -336,6 +336,25 @@ export default function Buddy() {
   // elements to native, which sets them as the window's touchable region —
   // touches outside fall through to whatever app is underneath. Replaces the
   // mouse-hover-driven setInteractive model on touchscreens.
+  // Native group tap-zone fires `vibemoji:groupTap` when a non-drag tap
+  // lands on the cluster zone (non-expanded group) or on the handle strip
+  // (expanded group). Route to onGroupTap to toggle expansion.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (adapter.id !== 'capacitor-android') return;
+    const handler = (e: Event) => {
+      const id = (e as CustomEvent<{ id?: string }>).detail?.id;
+      if (!id) return;
+      if (expandedRef.current[id]) {
+        onGroupTapCollapse(id);
+      } else {
+        onGroupTap(id);
+      }
+    };
+    window.addEventListener('vibemoji:groupTap', handler);
+    return () => window.removeEventListener('vibemoji:groupTap', handler);
+  }, [adapter]);
+
   useEffect(() => {
     if (typeof window === 'undefined') return;
     if (!adapter.isNative || adapter.id !== 'capacitor-android') return;
@@ -368,6 +387,31 @@ export default function Buddy() {
       });
       adapter.publishInteractiveRects(rects);
 
+      // Members of a non-expanded group cluster on top of each other; their
+      // avatar tap-zones sit above the group tap-zone in z-order and would
+      // steal drags meant for the whole group. For every non-expanded group
+      // we skip publishing member avatar zones — the group zone owns the
+      // cluster (tap → expand, drag → move group). We also union the member
+      // bounding rects to publish a group zone even when the hull is not
+      // visible (peeked), so the user can grab the cluster directly without
+      // first peeking.
+      const expandedNow = expandedRef.current;
+      const memberRectsByGroup = new Map<string, DOMRect[]>();
+      const memberEls = document.querySelectorAll<HTMLElement>('[data-buddy-member][data-group]');
+      memberEls.forEach((m) => {
+        const gid = m.getAttribute('data-group');
+        if (!gid) return;
+        const r = m.getBoundingClientRect();
+        if (r.width <= 0 || r.height <= 0) return;
+        const arr = memberRectsByGroup.get(gid) ?? [];
+        arr.push(r);
+        memberRectsByGroup.set(gid, arr);
+      });
+      const nonExpandedGroupIds = new Set<string>();
+      for (const gid of memberRectsByGroup.keys()) {
+        if (!expandedNow[gid]) nonExpandedGroupIds.add(gid);
+      }
+
       // Per-buddy tap-zones: native maintains one transparent overlay
       // window per avatar id, sized exactly to that avatar's screen rect.
       // Tapping zone N forwards N's buddy id to JS so only that buddy's
@@ -378,6 +422,9 @@ export default function Buddy() {
       avatars.forEach((el) => {
         const id = el.getAttribute('data-buddy-id');
         if (!id) return;
+        const memberEl = el.closest<HTMLElement>('[data-buddy-member]');
+        const gid = memberEl?.getAttribute('data-group') || null;
+        if (gid && nonExpandedGroupIds.has(gid)) return;
         const r = el.getBoundingClientRect();
         if (r.width <= 0 || r.height <= 0) return;
         avatarRects.push({
@@ -397,11 +444,19 @@ export default function Buddy() {
       // non-zero, so we additionally filter by computed opacity to avoid
       // creating tap-zones over invisible hulls and stealing taps from the
       // background app).
-      const groupEls = document.querySelectorAll<HTMLElement>('[data-group][data-buddy-interactive]');
       const groupRects: { id: string; x: number; y: number; w: number; h: number }[] = [];
-      groupEls.forEach((el) => {
+      // CSS px height of the drag-handle strip published as the group zone
+      // when the group is expanded. The visible handle pill sits at top:8 of
+      // the hull; this strip generously covers the padTop area above the
+      // member avatars without overlapping them.
+      const HANDLE_STRIP_CSS = 28;
+      // Expanded groups: shrink the group zone to the top "handle" strip of
+      // the hull so it doesn't overlap member avatar zones. Source rect from
+      // the visible hull element.
+      const hullEls = document.querySelectorAll<HTMLElement>('[data-group][data-buddy-interactive]');
+      hullEls.forEach((el) => {
         const id = el.getAttribute('data-group');
-        if (!id) return;
+        if (!id || !expandedNow[id]) return;
         const cs = window.getComputedStyle(el);
         if (parseFloat(cs.opacity) <= 0.01) return;
         const r = el.getBoundingClientRect();
@@ -411,9 +466,30 @@ export default function Buddy() {
           x: Math.floor(r.left * dpr),
           y: Math.floor(r.top * dpr),
           w: Math.ceil(r.width * dpr),
-          h: Math.ceil(r.height * dpr),
+          h: Math.ceil(Math.min(HANDLE_STRIP_CSS, r.height) * dpr),
         });
       });
+      // Non-expanded groups: union member rects into one cluster zone so the
+      // user can grab the whole group without first peeking it. This zone
+      // owns the cluster (tap → expand via vibemoji:groupTap; drag → move).
+      for (const [gid, rects] of memberRectsByGroup) {
+        if (expandedNow[gid]) continue;
+        let l = Infinity, t = Infinity, rgt = -Infinity, btm = -Infinity;
+        for (const r of rects) {
+          if (r.left < l) l = r.left;
+          if (r.top < t) t = r.top;
+          if (r.right > rgt) rgt = r.right;
+          if (r.bottom > btm) btm = r.bottom;
+        }
+        if (!isFinite(l) || rgt <= l || btm <= t) continue;
+        groupRects.push({
+          id: gid,
+          x: Math.floor(l * dpr),
+          y: Math.floor(t * dpr),
+          w: Math.ceil((rgt - l) * dpr),
+          h: Math.ceil((btm - t) * dpr),
+        });
+      }
       adapter.publishGroupRects(groupRects);
     };
     const schedule = () => {
@@ -601,7 +677,29 @@ export default function Buddy() {
   };
 
   const onGroupDragMove = (gid: string, pos: { x: number; y: number }) => {
+    // Update the group's pos AND every member's pos in the same React
+    // batch — mirroring the avatar drag path where `onChange` writes the
+    // buddy's pos directly. The [groups, expanded] effect would eventually
+    // sync members to the new slot positions, but only on a *second*
+    // render after the setGroups commit, which makes the hull race ahead
+    // of its members during a drag and reads as broken.
     setGroups((cur) => cur.map((g) => (g.id === gid ? { ...g, pos } : g)));
+    setBuddies((cur) => {
+      const g = groupsRef.current.find((x) => x.id === gid);
+      if (!g) return cur;
+      const stride = expandedRef.current[gid] ? EXPANDED_STRIDE : COLLAPSED_STRIDE;
+      let changed = false;
+      const nextArr = cur.map((b) => {
+        if (b.groupId !== gid) return b;
+        const i = g.memberIds.indexOf(b.id);
+        if (i < 0) return b;
+        const target = { x: pos.x + i * stride, y: pos.y };
+        if (b.pos.x === target.x && b.pos.y === target.y) return b;
+        changed = true;
+        return { ...b, pos: target };
+      });
+      return changed ? nextArr : cur;
+    });
   };
 
   const teammatesFor = (b: BuddyInstanceState): Teammate[] => {

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { usePlatform } from './hooks/usePlatform';
 
 type Props = {
@@ -31,17 +31,21 @@ export default function BuddyGroup({
   // form a containing block for `position: fixed` descendants. We don't nest
   // members anymore, but keep the wrapper "neutral" anyway. The visual hull
   // (with backdrop blur) is an inner sibling.
+  const isCapacitor = adapter.id === 'capacitor-android';
+
   const rightCss = anchor.right - padX - (pos.x + (memberCount - 1) * stride);
   const bottomCss = anchor.bottom - padBottom - pos.y;
 
   const dragRef = useRef<{ startX: number; startY: number; baseX: number; baseY: number } | null>(null);
   const posRef = useRef(pos);
   useEffect(() => { posRef.current = pos; }, [pos]);
+  const draggingRef = useRef(false);
+  const [isDragging, setIsDragging] = useState(false);
 
-  // Capacitor drag plumbing — see BuddyInstance for the same pattern. The
-  // refs survive parent re-renders mid-drag (each onGroupDragMove triggers
-  // a parent setState, so the listener-binding effect itself must NOT
-  // depend on the inline callback).
+  // Capacitor drag plumbing — same shape as the per-buddy drag wiring in
+  // BuddyInstance. dragBaseRef + callbacksRef must be refs because the
+  // parent re-renders on each onGroupDragMove (it does setGroups), and a
+  // `let` would be reset every time the listener-binding effect re-ran.
   const dragBaseRef = useRef<{ x: number; y: number } | null>(null);
   const callbacksRef = useRef({ onGroupDragMove });
   useEffect(() => { callbacksRef.current = { onGroupDragMove }; });
@@ -54,19 +58,26 @@ export default function BuddyGroup({
     const onDragStart = (e: Event) => {
       if (!matches(e)) return;
       dragBaseRef.current = { x: posRef.current.x, y: posRef.current.y };
+      draggingRef.current = true;
+      setIsDragging(true);
       adapter.notifyDragStart(dragKey);
       const dragSet: Set<string> = ((window as unknown as { __vibemojiDragging?: Set<string> }).__vibemojiDragging
         ||= new Set<string>());
       dragSet.add(dragKey);
+      // Notify parent immediately so any "expand peeked group while
+      // dragging" / collapse-suppression logic kicks in at gesture start.
+      callbacksRef.current.onGroupDragMove(groupId, dragBaseRef.current);
     };
     const onDragMoveEvt = (e: Event) => {
-      if (!matches(e) || !dragBaseRef.current) return;
+      if (!matches(e) || !draggingRef.current || !dragBaseRef.current) return;
       const detail = (e as CustomEvent<Detail>).detail || {};
       const next = { x: dragBaseRef.current.x + (detail.dx ?? 0), y: dragBaseRef.current.y + (detail.dy ?? 0) };
       callbacksRef.current.onGroupDragMove(groupId, next);
     };
     const onDragEndEvt = (e: Event) => {
-      if (!matches(e)) return;
+      if (!matches(e) || !draggingRef.current) return;
+      draggingRef.current = false;
+      setIsDragging(false);
       adapter.notifyDragEnd(dragKey);
       const dragSet: Set<string> | undefined = (window as unknown as { __vibemojiDragging?: Set<string> }).__vibemojiDragging;
       dragSet?.delete(dragKey);
@@ -154,10 +165,12 @@ export default function BuddyGroup({
   return (
     <div
       data-buddy-interactive
+      {...(isCapacitor ? {} : { onPointerDown })}
       data-group={groupId}
-      onPointerDown={onPointerDown}
       title="Drag to move group"
-      className={`pointer-events-auto fixed cursor-grab rounded-full border border-white/50 active:cursor-grabbing ${
+      className={`fixed rounded-full border border-white/50 ${
+        isCapacitor ? '' : 'pointer-events-auto cursor-grab active:cursor-grabbing'
+      } ${
         visible || magnetActive ? 'shadow-xl backdrop-blur-md opacity-100' : 'opacity-0 border-transparent'
       } ${magnetActive ? 'ring-4 ring-violet-400/80 shadow-[0_0_36px_8px_rgba(167,139,250,0.55)]' : ''}`}
       style={{
@@ -167,12 +180,13 @@ export default function BuddyGroup({
         height,
         zIndex: 30,
         background: (visible || magnetActive) ? background : 'transparent',
-        transition:
-          'opacity 180ms ease-out, ' +
-          'width 280ms cubic-bezier(0.22, 1, 0.36, 1), ' +
-          'right 280ms cubic-bezier(0.22, 1, 0.36, 1), ' +
-          'bottom 280ms cubic-bezier(0.22, 1, 0.36, 1), ' +
-          'background 220ms ease-out',
+        transition: isDragging
+          ? 'opacity 180ms ease-out, width 280ms cubic-bezier(0.22, 1, 0.36, 1), background 220ms ease-out'
+          : 'opacity 180ms ease-out, ' +
+            'width 280ms cubic-bezier(0.22, 1, 0.36, 1), ' +
+            'right 280ms cubic-bezier(0.22, 1, 0.36, 1), ' +
+            'bottom 280ms cubic-bezier(0.22, 1, 0.36, 1), ' +
+            'background 220ms ease-out',
         animation: magnetActive ? 'buddy-magnet-pulse 1100ms ease-in-out infinite' : undefined,
       }}
     >
