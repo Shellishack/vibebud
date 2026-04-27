@@ -93,7 +93,12 @@ export class CapacitorAdapter implements PlatformAdapter {
 
   getCursorPoint(): Promise<{ x: number; y: number }> | null { return null; }
 
-  setFocusable(_focusable: boolean): void { /* noop — Capacitor activity handles focus itself */ }
+  setFocusable(_focusable: boolean): void {
+    // Intentionally a no-op for now. Toggling FLAG_NOT_FOCUSABLE on the live
+    // overlay window via updateViewLayout disrupts the WebView's touch state
+    // (buttons stop firing). The soft keyboard / IME path needs a different
+    // approach — likely a fresh focusable child window for inputs only.
+  }
 
   onSpawnRequest(_cb: () => void): () => void { return () => {}; }
 

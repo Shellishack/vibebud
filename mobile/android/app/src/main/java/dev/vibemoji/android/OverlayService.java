@@ -164,12 +164,17 @@ public class OverlayService extends Service {
         // Trade-off: dragging the avatar is disabled in this revision —
         // re-enabling it requires moving the tap-zone with the gesture and
         // syncing position back to JS, which we can add later.
+        // Window is created focusable (no FLAG_NOT_FOCUSABLE) so the soft
+        // keyboard can route into chat inputs while the popup is open.
+        // Passthrough to background apps is handled entirely by FLAG_NOT_TOUCHABLE
+        // (toggled off only while the popup is open). When NOT_TOUCHABLE is set,
+        // taps reach the underlying app and that app's window naturally takes
+        // focus, so this overlay doesn't permanently steal input from below.
         params = new WindowManager.LayoutParams(
                 screenWidth,
                 screenHeight,
                 type,
-                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
-                        | WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS
+                WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS
                         | WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
                         | WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL
                         | WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE,
@@ -178,6 +183,7 @@ public class OverlayService extends Service {
         params.gravity = Gravity.TOP | Gravity.START;
         params.x = 0;
         params.y = 0;
+        params.softInputMode = WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE;
 
         webView = new WebView(this);
         webView.setBackgroundColor(Color.TRANSPARENT);

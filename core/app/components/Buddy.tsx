@@ -375,13 +375,18 @@ export default function Buddy() {
     if (adapter.id === 'electron') return;
     const anyOpen = Object.values(expanded).some(Boolean) || Object.values(peeked).some(Boolean);
     if (!anyOpen) return;
+    // Bubble phase (not capture). Capture-phase pointerdown on document runs
+    // before React 19's root-level event delegation, and on Capacitor WebView
+    // can interfere with button onClick dispatch even though we don't call
+    // preventDefault/stopPropagation. Bubble lets the React click handlers
+    // fire first; we still see the document event afterwards for outside-tap.
     const onDown = (ev: PointerEvent) => {
       const target = ev.target as Element | null;
       if (target && target.closest('[data-buddy-interactive],[data-buddy-avatar],[data-group]')) return;
       collapseAllGroups();
     };
-    document.addEventListener('pointerdown', onDown, true);
-    return () => document.removeEventListener('pointerdown', onDown, true);
+    document.addEventListener('pointerdown', onDown);
+    return () => document.removeEventListener('pointerdown', onDown);
   }, [adapter, expanded, peeked]);
 
   // Exposed by the publishing effect below so other effects (e.g. settle
