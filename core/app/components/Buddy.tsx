@@ -42,7 +42,7 @@ const HULL_PAD_X = 10;
 const HULL_PAD_TOP = 22;
 const HULL_PAD_BOTTOM = 8;
 const COLLAPSED_STRIDE = 28;
-const EXPANDED_STRIDE = 132;
+const EXPANDED_STRIDE = 96;
 // Inner hit-box for expand: the hull rect inset by this many px on every side.
 // Larger inset = thicker peek-only buffer ring around the hull edge.
 const EXPAND_HIT_INSET = 48;
@@ -161,12 +161,15 @@ const peekedBuddyPos = (edge: Edge, lastFree?: { x: number; y: number }) => {
 // Peeked-out position for a group: the whole stack pops fully into view at
 // the docking edge using COLLAPSED_STRIDE (so the user sees a normal-looking
 // group), still semantically minimized.
-const peekedGroupPos = (edge: Edge, n: number, lastFree?: { x: number; y: number }) => {
+// stride lets the right-edge dock keep the rightmost member anchored to the
+// edge regardless of whether the group is currently collapsed or expanded —
+// expansion grows leftward into the screen instead of off the right edge.
+const peekedGroupPos = (edge: Edge, n: number, lastFree: { x: number; y: number } | undefined, stride: number = COLLAPSED_STRIDE) => {
   const { w, h } = viewportSize();
   const EDGE_GAP = -16;
   switch (edge) {
     case 'left':   return { x: -(w - ANCHOR.right - AVATAR_SIZE - EDGE_GAP), y: lastFree?.y ?? 0 };
-    case 'right':  return { x: (ANCHOR.right - EDGE_GAP) - (n - 1) * COLLAPSED_STRIDE, y: lastFree?.y ?? 0 };
+    case 'right':  return { x: (ANCHOR.right - EDGE_GAP) - (n - 1) * stride, y: lastFree?.y ?? 0 };
     case 'top':    return { x: lastFree?.x ?? 0, y: -(h - ANCHOR.bottom - AVATAR_SIZE - EDGE_GAP) };
     case 'bottom': return { x: lastFree?.x ?? 0, y: ANCHOR.bottom - EDGE_GAP };
   }
@@ -448,7 +451,7 @@ export default function Buddy() {
           ? STACK_STRIDE
           : (expanded[g.id] ? EXPANDED_STRIDE : COLLAPSED_STRIDE);
         const groupRenderPos = (g.minimized && dockPeeked)
-          ? peekedGroupPos(g.minimized.edge, g.memberIds.length, g.lastFreePos)
+          ? peekedGroupPos(g.minimized.edge, g.memberIds.length, g.lastFreePos, stride)
           : g.pos;
         const target = { x: groupRenderPos.x + i * stride, y: groupRenderPos.y };
         if (dragging?.has(b.id)) return b;
@@ -562,12 +565,6 @@ export default function Buddy() {
       //     actual member avatar of that group → expand stage.
       const groupEl = el?.closest('[data-group]') as HTMLElement | null;
       let peekGid = groupEl?.getAttribute('data-group') || null;
-      // Minimized groups never participate in the peek/expand hover state —
-      // they have their own dock-peek model (peekedDock) that pops them out
-      // at COLLAPSED_STRIDE without exploding to EXPANDED_STRIDE.
-      if (peekGid && groupsRef.current.find((g) => g.id === peekGid)?.minimized) {
-        peekGid = null;
-      }
       let expandGid: string | null = null;
       // Expand only while cursor is inside the hull rect inset by
       // EXPAND_HIT_INSET on every side. Outer ring acts as a peek-only buffer.
@@ -1273,7 +1270,7 @@ export default function Buddy() {
           .filter((v): v is string => !!v);
         if (memberVariantIds.length < 2) return null;
         const renderedGroupPos = (g.minimized && dockPeeked)
-          ? peekedGroupPos(g.minimized.edge, memberVariantIds.length, g.lastFreePos)
+          ? peekedGroupPos(g.minimized.edge, memberVariantIds.length, g.lastFreePos, stride)
           : g.pos;
         return (
           <BuddyGroup
