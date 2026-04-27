@@ -6,6 +6,7 @@ type VibemojiNative = {
   setExpanded?: (v: boolean) => void;
   stopOverlay?: () => void;
   setAvatarRects?: (json: string) => void;
+  setGroupRects?: (json: string) => void;
 };
 
 const native = (): VibemojiNative | undefined => {
@@ -42,6 +43,21 @@ export class CapacitorAdapter implements PlatformAdapter {
     try { native()?.setAvatarRects?.(json); } catch { /* noop */ }
   }
 
+  private lastGroupJson = '';
+  private pendingGroupRects: { id: string; x: number; y: number; w: number; h: number }[] | null = null;
+  publishGroupRects(rects: { id: string; x: number; y: number; w: number; h: number }[]): void {
+    this.pendingGroupRects = rects;
+    if (this.dragHolders.size === 0) this.flushGroup();
+  }
+  private flushGroup(): void {
+    if (this.pendingGroupRects === null) return;
+    const json = JSON.stringify(this.pendingGroupRects);
+    this.pendingGroupRects = null;
+    if (json === this.lastGroupJson) return;
+    this.lastGroupJson = json;
+    try { native()?.setGroupRects?.(json); } catch { /* noop */ }
+  }
+
   notifyDragStart(id: string): void {
     // Native side flips its own nativeDragActive flag on ACTION_DOWN; we
     // don't bridge anything here. The point is to STOP publishing region
@@ -55,6 +71,7 @@ export class CapacitorAdapter implements PlatformAdapter {
     if (this.dragHolders.size === 0) {
       this.flush();
       this.flushAvatar();
+      this.flushGroup();
     }
   }
 

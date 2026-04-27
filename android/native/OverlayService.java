@@ -65,6 +65,12 @@ public class OverlayService extends Service {
     private final java.util.Map<String, View> tapZones = new java.util.HashMap<>();
     private final java.util.Map<String, WindowManager.LayoutParams> tapZoneParams = new java.util.HashMap<>();
     private boolean tapZonesInteractive = true;
+    // Group hull tap-zones: parallel structures, one transparent window per
+    // visible group hull. Z-order is below avatar zones so taps on member
+    // avatars hit the avatar tap-zone, while taps on empty hull area hit the
+    // group tap-zone (drag the whole group).
+    private final java.util.Map<String, View> groupZones = new java.util.HashMap<>();
+    private final java.util.Map<String, WindowManager.LayoutParams> groupZoneParams = new java.util.HashMap<>();
     private final Handler main = new Handler(Looper.getMainLooper());
     private final List<Rect> touchableRects = new ArrayList<>();
     private volatile boolean nativeDragActive = false;
@@ -265,6 +271,61 @@ public class OverlayService extends Service {
         webView.evaluateJavascript(js, null);
     }
 
+    /**
+     * Group hull tap-zone view: same gesture model as the per-avatar zones
+     * (8dp drag threshold, tap-vs-drag distinction) but dispatches
+     * `vibemoji:groupTap`/`groupDragStart`/`groupDragMove`/`groupDragEnd`
+     * keyed by the group id, so the JS BuddyGroup component can move the
+     * whole group on touch.
+     */
+    private View createGroupZoneView(final String gid) {
+        final float density = getResources().getDisplayMetrics().density;
+        final float thresholdPx = 8 * density;
+        final float[] startRaw = new float[2];
+        final boolean[] dragging = new boolean[1];
+
+        View v = new View(this);
+        v.setBackgroundColor(Color.TRANSPARENT);
+        v.setOnTouchListener((view, ev) -> {
+            int a = ev.getActionMasked();
+            if (a == MotionEvent.ACTION_DOWN) {
+                startRaw[0] = ev.getRawX();
+                startRaw[1] = ev.getRawY();
+                dragging[0] = false;
+                return true;
+            } else if (a == MotionEvent.ACTION_MOVE) {
+                float dxPx = ev.getRawX() - startRaw[0];
+                float dyPx = ev.getRawY() - startRaw[1];
+                if (!dragging[0] && (float) Math.hypot(dxPx, dyPx) >= thresholdPx) {
+                    dragging[0] = true;
+                    dispatchGroupEvent("vibemoji:groupDragStart", gid, 0f, 0f);
+                }
+                if (dragging[0]) {
+                    dispatchGroupEvent("vibemoji:groupDragMove", gid, dxPx / density, dyPx / density);
+                }
+                return true;
+            } else if (a == MotionEvent.ACTION_UP || a == MotionEvent.ACTION_CANCEL) {
+                if (dragging[0]) {
+                    dispatchGroupEvent("vibemoji:groupDragEnd", gid, 0f, 0f);
+                } else if (a == MotionEvent.ACTION_UP) {
+                    dispatchGroupEvent("vibemoji:groupTap", gid, 0f, 0f);
+                }
+                dragging[0] = false;
+                return true;
+            }
+            return false;
+        });
+        return v;
+    }
+
+    private void dispatchGroupEvent(String name, String gid, float dx, float dy) {
+        if (webView == null) return;
+        String safe = gid.replace("\\", "\\\\").replace("'", "\\'");
+        String js = "window.dispatchEvent(new CustomEvent('" + name +
+                "',{detail:{id:'" + safe + "',dx:" + dx + ",dy:" + dy + "}}))";
+        webView.evaluateJavascript(js, null);
+    }
+
     private WindowManager.LayoutParams newTapZoneParams(int x, int y, int w, int h) {
         int type = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
                 ? WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
@@ -287,6 +348,10 @@ public class OverlayService extends Service {
                 try { windowManager.removeView(v); }
                 catch (IllegalArgumentException ignored) { /* detached */ }
             }
+            for (View v : groupZones.values()) {
+                try { windowManager.removeView(v); }
+                catch (IllegalArgumentException ignored) { /* detached */ }
+            }
             if (webView != null) {
                 try {
                     windowManager.removeView(webView);
@@ -298,6 +363,8 @@ public class OverlayService extends Service {
         }
         tapZones.clear();
         tapZoneParams.clear();
+        groupZones.clear();
+        groupZoneParams.clear();
         webView = null;
         windowManager = null;
         params = null;
@@ -462,6 +529,86 @@ public class OverlayService extends Service {
                     catch (IllegalArgumentException ignored) { /* detached */ }
                     tapZoneParams.remove(entry.getKey());
                     it.remove();
+                }
+            });
+        }
+
+        /**
+         * Same shape as {@link #setAvatarRects} but for group hull windows.
+         * After any new hull is added, we re-stack all avatar tap-zones on
+         * top (Android keeps later-added windows above earlier ones, so a
+         * fresh hull would otherwise shadow existing avatars and steal their
+         * taps).
+         */
+        @JavascriptInterface
+        public void setGroupRects(final String json) {
+            main.post(() -> {
+                if (windowManager == null) return;
+                JSONArray arr;
+                try { arr = new JSONArray(json == null ? "[]" : json); }
+                catch (Exception e) { return; }
+
+                java.util.Set<String> seen = new java.util.HashSet<>();
+                boolean addedNew = false;
+                for (int i = 0; i < arr.length(); i++) {
+                    JSONObject o = arr.optJSONObject(i);
+                    if (o == null) continue;
+                    String gid = o.optString("id", null);
+                    if (gid == null) continue;
+                    int x = (int) Math.floor(o.optDouble("x", 0));
+                    int y = (int) Math.floor(o.optDouble("y", 0));
+                    int w = (int) Math.ceil(o.optDouble("w", 0));
+                    int h = (int) Math.ceil(o.optDouble("h", 0));
+                    if (w <= 0 || h <= 0) continue;
+                    seen.add(gid);
+
+                    View v = groupZones.get(gid);
+                    WindowManager.LayoutParams p = groupZoneParams.get(gid);
+                    if (v == null) {
+                        v = createGroupZoneView(gid);
+                        p = newTapZoneParams(x, y, w, h);
+                        try {
+                            windowManager.addView(v, p);
+                            groupZones.put(gid, v);
+                            groupZoneParams.put(gid, p);
+                            addedNew = true;
+                        } catch (Throwable t) {
+                            android.util.Log.w("vibemoji", "group-zone add failed for " + gid, t);
+                        }
+                    } else if (p != null) {
+                        if (p.x != x || p.y != y || p.width != w || p.height != h) {
+                            p.x = x; p.y = y; p.width = w; p.height = h;
+                            try { windowManager.updateViewLayout(v, p); }
+                            catch (IllegalArgumentException ignored) { /* detached */ }
+                        }
+                    }
+                }
+
+                // Remove group-zones whose ids dropped out.
+                java.util.Iterator<java.util.Map.Entry<String, View>> it = groupZones.entrySet().iterator();
+                while (it.hasNext()) {
+                    java.util.Map.Entry<String, View> entry = it.next();
+                    if (seen.contains(entry.getKey())) continue;
+                    try { windowManager.removeView(entry.getValue()); }
+                    catch (IllegalArgumentException ignored) { /* detached */ }
+                    groupZoneParams.remove(entry.getKey());
+                    it.remove();
+                }
+
+                // Keep avatar zones above group zones: newly-added hulls
+                // would otherwise sit on top of existing avatars and shadow
+                // their taps. Re-add (raise) all current avatar windows.
+                if (addedNew && !tapZones.isEmpty()) {
+                    for (java.util.Map.Entry<String, View> entry : tapZones.entrySet()) {
+                        WindowManager.LayoutParams ap = tapZoneParams.get(entry.getKey());
+                        if (ap == null) continue;
+                        try { windowManager.removeView(entry.getValue()); }
+                        catch (IllegalArgumentException ignored) { /* detached */ }
+                        try { windowManager.addView(entry.getValue(), ap); }
+                        catch (Throwable t) {
+                            android.util.Log.w("vibemoji", "avatar-zone re-stack failed for " + entry.getKey(), t);
+                        }
+                    }
                 }
             });
         }

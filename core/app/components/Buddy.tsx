@@ -48,6 +48,7 @@ const EXPAND_HIT_INSET = 48;
 const MERGE_RADIUS = 90;
 const EJECT_RADIUS = 180;
 const HOVER_LEAVE_GRACE_MS = 250;
+const MOBILE_AUTO_COLLAPSE_MS = 6000;
 const ANCHOR = { right: 24, bottom: 24 };
 
 type Group = { id: string; memberIds: string[]; pos: { x: number; y: number } };
@@ -75,6 +76,27 @@ const slotPos = (group: Group, index: number, stride: number) => ({
   y: group.pos.y,
 });
 
+// Clamp a candidate group origin so that the rightmost member at expanded
+// stride still fits on-screen and the hull renders inside the viewport.
+// The hull right-CSS = anchor.right - HULL_PAD_X - (pos.x + (N-1)*stride),
+// so we need pos.x + (N-1)*EXPANDED_STRIDE <= anchor.right - HULL_PAD_X.
+const clampGroupPos = (candidate: { x: number; y: number }, memberCount: number) => {
+  if (typeof window === 'undefined') return candidate;
+  const maxX = (ANCHOR.right - HULL_PAD_X) - (memberCount - 1) * EXPANDED_STRIDE;
+  const viewportW = window.innerWidth;
+  // Don't push so far left that the leftmost member is off the left edge:
+  // member 0's left edge is at viewport_w - anchor.right - avatar + pos.x.
+  // Clamp pos.x >= -(viewport_w - anchor.right - avatar - 8).
+  const minX = -(viewportW - ANCHOR.right - AVATAR_SIZE - 8);
+  const x = Math.min(maxX, Math.max(minX, candidate.x));
+  // Y: keep at most a reasonable distance from the bottom anchor.
+  const viewportH = window.innerHeight;
+  const minY = -(viewportH - ANCHOR.bottom - AVATAR_SIZE - HULL_PAD_TOP - 8);
+  const maxY = 0;
+  const y = Math.min(maxY, Math.max(minY, candidate.y));
+  return { x, y };
+};
+
 export default function Buddy() {
   const adapter = usePlatform();
   const [buddies, setBuddies] = useState<BuddyInstanceState[]>(initialBuddies);
@@ -94,6 +116,35 @@ export default function Buddy() {
   useEffect(() => { groupsRef.current = groups; }, [groups]);
   useEffect(() => { expandedRef.current = expanded; }, [expanded]);
   useEffect(() => { peekedRef.current = peeked; }, [peeked]);
+
+  // Mobile (Capacitor / web-mobile) lacks the hover signal that drives the
+  // peek/expand state on desktop, so we expose an explicit "tap a group to
+  // expand it" gesture and auto-collapse after a short idle window.
+  const mobileCollapseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const onGroupTap = (gid: string) => {
+    setPeeked((cur) => ({ ...cur, [gid]: true }));
+    setExpanded((cur) => {
+      const next: Record<string, boolean> = {};
+      // Collapse any other groups that were expanded.
+      for (const k of Object.keys(cur)) if (k !== gid) next[k] = false;
+      next[gid] = true;
+      return next;
+    });
+    if (mobileCollapseTimerRef.current) clearTimeout(mobileCollapseTimerRef.current);
+    mobileCollapseTimerRef.current = setTimeout(() => {
+      const dragging: Set<string> | undefined = (window as unknown as { __vibemojiDragging?: Set<string> }).__vibemojiDragging;
+      if (dragging && dragging.size > 0) {
+        // Don't collapse mid-drag — re-arm so we collapse once the user lets go.
+        mobileCollapseTimerRef.current = setTimeout(() => onGroupTapCollapse(gid), 800);
+        return;
+      }
+      onGroupTapCollapse(gid);
+    }, MOBILE_AUTO_COLLAPSE_MS);
+  };
+  const onGroupTapCollapse = (gid: string) => {
+    setExpanded((cur) => (cur[gid] ? { ...cur, [gid]: false } : cur));
+    setPeeked((cur) => (cur[gid] ? { ...cur, [gid]: false } : cur));
+  };
 
   useEffect(() => {
     const stored = loadFromStorage();
@@ -338,6 +389,32 @@ export default function Buddy() {
         });
       });
       adapter.publishAvatarRects(avatarRects);
+
+      // Per-group tap-zones: native maintains one transparent window per
+      // visible group hull (BuddyGroup wrapper). Lets the user drag the
+      // entire group on touch. Only currently-visible hulls (those with a
+      // non-zero rect — invisible hulls have opacity:0 but still measure
+      // non-zero, so we additionally filter by computed opacity to avoid
+      // creating tap-zones over invisible hulls and stealing taps from the
+      // background app).
+      const groupEls = document.querySelectorAll<HTMLElement>('[data-group][data-buddy-interactive]');
+      const groupRects: { id: string; x: number; y: number; w: number; h: number }[] = [];
+      groupEls.forEach((el) => {
+        const id = el.getAttribute('data-group');
+        if (!id) return;
+        const cs = window.getComputedStyle(el);
+        if (parseFloat(cs.opacity) <= 0.01) return;
+        const r = el.getBoundingClientRect();
+        if (r.width <= 0 || r.height <= 0) return;
+        groupRects.push({
+          id,
+          x: Math.floor(r.left * dpr),
+          y: Math.floor(r.top * dpr),
+          w: Math.ceil(r.width * dpr),
+          h: Math.ceil(r.height * dpr),
+        });
+      });
+      adapter.publishGroupRects(groupRects);
     };
     const schedule = () => {
       if (raf) return;
@@ -364,6 +441,7 @@ export default function Buddy() {
       if (raf) cancelAnimationFrame(raf);
       adapter.publishInteractiveRects([]);
       adapter.publishAvatarRects([]);
+      adapter.publishGroupRects([]);
     };
   }, [adapter]);
 
@@ -488,7 +566,12 @@ export default function Buddy() {
     }
     if (bestG) {
       const g = bestG;
-      setGroups((cur) => cur.map((x) => (x.id === g.id ? { ...x, memberIds: [...x.memberIds, id] } : x)));
+      const newCount = g.memberIds.length + 1;
+      setGroups((cur) => cur.map((x) => (
+        x.id === g.id
+          ? { ...x, memberIds: [...x.memberIds, id], pos: clampGroupPos(x.pos, newCount) }
+          : x
+      )));
       setBuddies((cur) => cur.map((x) => (x.id === id ? { ...x, groupId: g.id } : x)));
       return;
     }
@@ -502,7 +585,15 @@ export default function Buddy() {
     if (bestB) {
       const target = bestB;
       const newGroupId = `group-${groupIdRef.current++}`;
-      setGroups((cur) => [...cur, { id: newGroupId, memberIds: [target.id, id], pos: target.pos }]);
+      // Members spread rightward from group.pos via slotPos (x: pos.x + i*stride),
+      // and the hull's right CSS subtracts the rightmost member offset. With the
+      // avatar anchored to viewport's right edge (translate(positive) = move
+      // rightward = off-screen), the group only fits if group.pos.x is far
+      // enough negative to absorb the spread at the widest stride. Clamp at
+      // creation so a small phone screen doesn't render the hull and the
+      // newly-added member fully off the right edge.
+      const groupPos = clampGroupPos(target.pos, 2);
+      setGroups((cur) => [...cur, { id: newGroupId, memberIds: [target.id, id], pos: groupPos }]);
       setBuddies((cur) => cur.map((x) => (
         x.id === target.id || x.id === id ? { ...x, groupId: newGroupId } : x
       )));
@@ -547,6 +638,8 @@ export default function Buddy() {
         onDragEnd={onDragEnd}
         magnetState={magnetState}
         teammates={teammatesFor(b)}
+        isGroupExpanded={!!(b.groupId && expanded[b.groupId])}
+        onGroupTap={onGroupTap}
       />
     );
   };

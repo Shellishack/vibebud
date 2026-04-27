@@ -38,6 +38,50 @@ export default function BuddyGroup({
   const posRef = useRef(pos);
   useEffect(() => { posRef.current = pos; }, [pos]);
 
+  // Capacitor drag plumbing — see BuddyInstance for the same pattern. The
+  // refs survive parent re-renders mid-drag (each onGroupDragMove triggers
+  // a parent setState, so the listener-binding effect itself must NOT
+  // depend on the inline callback).
+  const dragBaseRef = useRef<{ x: number; y: number } | null>(null);
+  const callbacksRef = useRef({ onGroupDragMove });
+  useEffect(() => { callbacksRef.current = { onGroupDragMove }; });
+  useEffect(() => {
+    if (adapter.id !== 'capacitor-android') return;
+    if (typeof window === 'undefined') return;
+    type Detail = { id?: string; dx?: number; dy?: number };
+    const matches = (e: Event) => (e as CustomEvent<Detail>).detail?.id === groupId;
+    const dragKey = `group:${groupId}`;
+    const onDragStart = (e: Event) => {
+      if (!matches(e)) return;
+      dragBaseRef.current = { x: posRef.current.x, y: posRef.current.y };
+      adapter.notifyDragStart(dragKey);
+      const dragSet: Set<string> = ((window as unknown as { __vibemojiDragging?: Set<string> }).__vibemojiDragging
+        ||= new Set<string>());
+      dragSet.add(dragKey);
+    };
+    const onDragMoveEvt = (e: Event) => {
+      if (!matches(e) || !dragBaseRef.current) return;
+      const detail = (e as CustomEvent<Detail>).detail || {};
+      const next = { x: dragBaseRef.current.x + (detail.dx ?? 0), y: dragBaseRef.current.y + (detail.dy ?? 0) };
+      callbacksRef.current.onGroupDragMove(groupId, next);
+    };
+    const onDragEndEvt = (e: Event) => {
+      if (!matches(e)) return;
+      adapter.notifyDragEnd(dragKey);
+      const dragSet: Set<string> | undefined = (window as unknown as { __vibemojiDragging?: Set<string> }).__vibemojiDragging;
+      dragSet?.delete(dragKey);
+      dragBaseRef.current = null;
+    };
+    window.addEventListener('vibemoji:groupDragStart', onDragStart);
+    window.addEventListener('vibemoji:groupDragMove', onDragMoveEvt);
+    window.addEventListener('vibemoji:groupDragEnd', onDragEndEvt);
+    return () => {
+      window.removeEventListener('vibemoji:groupDragStart', onDragStart);
+      window.removeEventListener('vibemoji:groupDragMove', onDragMoveEvt);
+      window.removeEventListener('vibemoji:groupDragEnd', onDragEndEvt);
+    };
+  }, [adapter, groupId]);
+
   const onPointerDown = (e: React.PointerEvent) => {
     e.preventDefault();
     e.stopPropagation();

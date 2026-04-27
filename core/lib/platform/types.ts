@@ -18,6 +18,11 @@ export interface PlatformAdapter {
   // pixels, keyed by buddy id, so native can maintain one tap-zone window
   // per avatar and forward the tapped buddy's id to JS. Pass [] to hide all.
   publishAvatarRects(rects: { id: string; x: number; y: number; w: number; h: number }[]): void;
+
+  // Capacitor-only: per-group hull bounding box (device pixels). Native uses
+  // these to maintain a transparent tap-zone window per visible group hull
+  // so the user can drag the whole group on touch. Pass [] to hide all.
+  publishGroupRects(rects: { id: string; x: number; y: number; w: number; h: number }[]): void;
   notifyDragStart(buddyId: string): void;
   notifyDragEnd(buddyId: string): void;
 

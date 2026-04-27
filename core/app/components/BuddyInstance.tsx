@@ -45,9 +45,11 @@ type Props = {
   onDragEnd?: (id: string, pos: { x: number; y: number }, moved: boolean) => void;
   magnetState?: 'attractor' | 'target' | null;
   teammates?: Teammate[];
+  isGroupExpanded?: boolean;
+  onGroupTap?: (gid: string) => void;
 };
 
-export default function BuddyInstance({ state, anchor, canRemove, onChange, onSpawn, onRemove, onOpenChange, onDragMove, onDragEnd, magnetState, teammates }: Props) {
+export default function BuddyInstance({ state, anchor, canRemove, onChange, onSpawn, onRemove, onOpenChange, onDragMove, onDragEnd, magnetState, teammates, isGroupExpanded, onGroupTap }: Props) {
   const personality: Personality =
     PERSONALITY_BY_VARIANT[state.variantId] ?? PERSONALITY_BY_VARIANT.violet;
 
@@ -134,8 +136,10 @@ export default function BuddyInstance({ state, anchor, canRemove, onChange, onSp
   // (which would happen on each onChange fired mid-drag, resetting the base
   // to 0 and snapping the avatar to its anchor).
   const dragBaseRef = useRef<{ x: number; y: number } | null>(null);
-  const callbacksRef = useRef({ onChange, onDragMove, onDragEnd });
-  useEffect(() => { callbacksRef.current = { onChange, onDragMove, onDragEnd }; });
+  const callbacksRef = useRef({ onChange, onDragMove, onDragEnd, onGroupTap });
+  useEffect(() => { callbacksRef.current = { onChange, onDragMove, onDragEnd, onGroupTap }; });
+  const groupExpandedRef = useRef(!!isGroupExpanded);
+  useEffect(() => { groupExpandedRef.current = !!isGroupExpanded; }, [isGroupExpanded]);
   useEffect(() => { onOpenChange?.(state.id, open); }, [open, state.id, onOpenChange]);
 
   // On Android the main WebView window is FLAG_NOT_TOUCHABLE by default so it
@@ -167,6 +171,15 @@ export default function BuddyInstance({ state, anchor, canRemove, onChange, onSp
     const onTap = (e: Event) => {
       if (!matches(e)) return;
       if (justDraggedRef.current) { justDraggedRef.current = false; return; }
+      // If this buddy is part of a collapsed group, the first tap should
+      // pop the group open (so the user can see and reach individual
+      // members) rather than opening this buddy's chat panel. The next tap
+      // — now on an already-expanded group member — falls through to the
+      // popup-toggle path.
+      if (stateRef.current.groupId && !groupExpandedRef.current && callbacksRef.current.onGroupTap) {
+        callbacksRef.current.onGroupTap(stateRef.current.groupId);
+        return;
+      }
       setOpen((cur) => !cur);
     };
     const onDragStart = (e: Event) => {
