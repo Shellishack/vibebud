@@ -79,6 +79,32 @@ const slotPos = (group: Group, index: number, stride: number) => ({
 // stride still fits on-screen and the hull renders inside the viewport.
 // The hull right-CSS = anchor.right - HULL_PAD_X - (pos.x + (N-1)*stride),
 // so we need pos.x + (N-1)*EXPANDED_STRIDE <= anchor.right - HULL_PAD_X.
+// Clamp a single buddy's drag/spawn offset so the avatar stays fully on
+// screen. pos is the translate applied on top of (right: ANCHOR.right,
+// bottom: ANCHOR.bottom). Positive x moves right, positive y moves down.
+//
+// Prefer visualViewport over innerWidth/innerHeight — on Android WebView
+// (especially when the overlay extends behind status/nav bars under
+// FLAG_LAYOUT_NO_LIMITS), innerWidth/Height can report the full window
+// including system-bar areas that aren't visually usable. visualViewport
+// reflects the actually-visible area, including IME state.
+const clampBuddyPos = (candidate: { x: number; y: number }) => {
+  if (typeof window === 'undefined') return candidate;
+  const vv = window.visualViewport;
+  const viewportW = vv?.width ?? window.innerWidth;
+  const viewportH = vv?.height ?? window.innerHeight;
+  // Extra safety pad (status bar / nav bar / rounded corners on some devices).
+  const PAD = 4;
+  const minX = -(viewportW - ANCHOR.right - AVATAR_SIZE - PAD);
+  const maxX = ANCHOR.right - PAD;
+  const minY = -(viewportH - ANCHOR.bottom - AVATAR_SIZE - PAD);
+  const maxY = ANCHOR.bottom - PAD;
+  return {
+    x: Math.min(maxX, Math.max(minX, candidate.x)),
+    y: Math.min(maxY, Math.max(minY, candidate.y)),
+  };
+};
+
 const clampGroupPos = (candidate: { x: number; y: number }, memberCount: number) => {
   if (typeof window === 'undefined') return candidate;
   const maxX = (ANCHOR.right - HULL_PAD_X) - (memberCount - 1) * EXPANDED_STRIDE;
@@ -152,7 +178,9 @@ export default function Buddy() {
   useEffect(() => {
     const stored = loadFromStorage();
     if (stored) {
-      setBuddies(stored.buddies);
+      // Reclamp persisted positions in case they were saved off-screen by an
+      // earlier build that didn't clamp, or if the viewport has shrunk.
+      setBuddies(stored.buddies.map((b) => ({ ...b, pos: clampBuddyPos(b.pos) })));
       setGroups(stored.groups);
       const maxN = stored.buddies.reduce((m, b) => {
         const n = parseInt(b.id.replace(/^buddy-/, ''), 10);
@@ -199,20 +227,25 @@ export default function Buddy() {
   }, [groups, expanded]);
 
   const updateBuddy = (id: string, next: BuddyInstanceState) => {
-    setBuddies((cur) => cur.map((b) => (b.id === id ? next : b)));
+    const clamped = { ...next, pos: clampBuddyPos(next.pos) };
+    setBuddies((cur) => cur.map((b) => (b.id === id ? clamped : b)));
   };
 
   const spawnBuddy = () => {
     setBuddies((cur) => {
       const taken = cur.map((b) => b.variantId);
       const personality = nextUnusedPersonality(taken);
-      const offset = cur.length * 28;
+      // Place new buddies in a row to the left of the bottom-right anchor,
+      // with a small gap between each. clampBuddyPos keeps them on screen
+      // when the row outgrows the viewport — they pile up at the left edge.
+      const gap = 16;
+      const candidate = { x: -cur.length * (AVATAR_SIZE + gap), y: 0 };
       return [
         ...cur,
         {
           id: `buddy-${idRef.current++}`,
           variantId: personality.variantId,
-          pos: { x: -offset * 4, y: -offset },
+          pos: clampBuddyPos(candidate),
           messages: [],
         },
       ];
@@ -745,6 +778,8 @@ export default function Buddy() {
     // sync members to the new slot positions, but only on a *second*
     // render after the setGroups commit, which makes the hull race ahead
     // of its members during a drag and reads as broken.
+    const memberCount = groupsRef.current.find((g) => g.id === gid)?.memberIds.length ?? 2;
+    pos = clampGroupPos(pos, memberCount);
     setGroups((cur) => cur.map((g) => (g.id === gid ? { ...g, pos } : g)));
     setBuddies((cur) => {
       const g = groupsRef.current.find((x) => x.id === gid);

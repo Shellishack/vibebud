@@ -518,7 +518,7 @@ export default function BuddyInstance({ state, anchor, canRemove, onChange, onSp
                     </svg>
                   </button>
                   <button
-                    onClick={onSpawn}
+                    onClick={() => { onSpawn(); setOpen(false); }}
                     title="Add a new buddy"
                     aria-label="Add a new buddy"
                     className="grid h-7 w-7 place-items-center rounded-full text-zinc-500 hover:bg-emerald-100 hover:text-emerald-700 dark:text-zinc-400 dark:hover:bg-emerald-500/20 dark:hover:text-emerald-300"
