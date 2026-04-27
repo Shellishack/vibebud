@@ -48,7 +48,6 @@ const EXPAND_HIT_INSET = 48;
 const MERGE_RADIUS = 90;
 const EJECT_RADIUS = 180;
 const HOVER_LEAVE_GRACE_MS = 250;
-const MOBILE_AUTO_COLLAPSE_MS = 6000;
 const ANCHOR = { right: 24, bottom: 24 };
 
 type Group = { id: string; memberIds: string[]; pos: { x: number; y: number } };
@@ -119,8 +118,8 @@ export default function Buddy() {
 
   // Mobile (Capacitor / web-mobile) lacks the hover signal that drives the
   // peek/expand state on desktop, so we expose an explicit "tap a group to
-  // expand it" gesture and auto-collapse after a short idle window.
-  const mobileCollapseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // expand it" gesture. Dismissal happens when the user taps outside the
+  // group/avatar/popup region (see the document-level listener below).
   const onGroupTap = (gid: string) => {
     setPeeked((cur) => ({ ...cur, [gid]: true }));
     setExpanded((cur) => {
@@ -130,20 +129,24 @@ export default function Buddy() {
       next[gid] = true;
       return next;
     });
-    if (mobileCollapseTimerRef.current) clearTimeout(mobileCollapseTimerRef.current);
-    mobileCollapseTimerRef.current = setTimeout(() => {
-      const dragging: Set<string> | undefined = (window as unknown as { __vibemojiDragging?: Set<string> }).__vibemojiDragging;
-      if (dragging && dragging.size > 0) {
-        // Don't collapse mid-drag — re-arm so we collapse once the user lets go.
-        mobileCollapseTimerRef.current = setTimeout(() => onGroupTapCollapse(gid), 800);
-        return;
-      }
-      onGroupTapCollapse(gid);
-    }, MOBILE_AUTO_COLLAPSE_MS);
   };
   const onGroupTapCollapse = (gid: string) => {
     setExpanded((cur) => (cur[gid] ? { ...cur, [gid]: false } : cur));
     setPeeked((cur) => (cur[gid] ? { ...cur, [gid]: false } : cur));
+  };
+  const collapseAllGroups = () => {
+    setExpanded((cur) => {
+      if (!Object.values(cur).some(Boolean)) return cur;
+      const next: Record<string, boolean> = {};
+      for (const k of Object.keys(cur)) next[k] = false;
+      return next;
+    });
+    setPeeked((cur) => {
+      if (!Object.values(cur).some(Boolean)) return cur;
+      const next: Record<string, boolean> = {};
+      for (const k of Object.keys(cur)) next[k] = false;
+      return next;
+    });
   };
 
   useEffect(() => {
@@ -354,6 +357,32 @@ export default function Buddy() {
     window.addEventListener('vibemoji:groupTap', handler);
     return () => window.removeEventListener('vibemoji:groupTap', handler);
   }, [adapter]);
+
+  // Tap-outside-to-dismiss: while any group is peeked/expanded, a tap that
+  // misses the group/avatar/popup regions collapses every group. Replaces
+  // the previous time-based auto-collapse on mobile.
+  // - Capacitor: setOverlayExpanded(true) (driven by hasGroupSpilloutRef
+  //   below) makes the main WebView fully touchable, so the document sees
+  //   pointerdowns landing on empty areas. Avatar/group tap-zones sit above
+  //   the WebView and consume their own taps, so this listener only fires
+  //   for true "outside" taps.
+  // - Web/web-mobile: same idea, just pointer events on the page directly.
+  // - Electron: the existing hover-driven HOVER_LEAVE_GRACE_MS path already
+  //   handles dismissal naturally; no need for a click handler that would
+  //   conflict with click-through routing.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (adapter.id === 'electron') return;
+    const anyOpen = Object.values(expanded).some(Boolean) || Object.values(peeked).some(Boolean);
+    if (!anyOpen) return;
+    const onDown = (ev: PointerEvent) => {
+      const target = ev.target as Element | null;
+      if (target && target.closest('[data-buddy-interactive],[data-buddy-avatar],[data-group]')) return;
+      collapseAllGroups();
+    };
+    document.addEventListener('pointerdown', onDown, true);
+    return () => document.removeEventListener('pointerdown', onDown, true);
+  }, [adapter, expanded, peeked]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
