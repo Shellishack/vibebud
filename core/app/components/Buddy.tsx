@@ -108,20 +108,23 @@ const clampBuddyPos = (candidate: { x: number; y: number }) => {
 const clampGroupPos = (
   candidate: { x: number; y: number },
   memberCount: number,
-  stride: number = EXPANDED_STRIDE,
+  stride: number = COLLAPSED_STRIDE,
 ) => {
   if (typeof window === 'undefined') return candidate;
   const viewportW = window.innerWidth;
-  // Don't push so far left that the leftmost member is off the left edge:
-  // member 0's left edge is at viewport_w - anchor.right - avatar + pos.x.
-  // Clamp pos.x >= -(viewport_w - anchor.right - avatar - 8).
-  const minX = -(viewportW - ANCHOR.right - AVATAR_SIZE - 8);
-  // Rightmost-member-fits-anchor bound. For wide groups on narrow screens,
-  // this can be MORE negative than minX, in which case the group cannot
-  // fully fit when expanded — fall back to minX so we don't clamp to a
-  // value that's already off the left edge (the expanded view will spill
-  // to the right, which the overlay-spillout mechanism handles).
-  const maxXRaw = (ANCHOR.right - HULL_PAD_X) - (memberCount - 1) * stride;
+  // Edge gap (distance from screen edge to nearest avatar edge). Same on
+  // both sides so the group's clamp window is symmetric.
+  const EDGE_GAP = 4;
+  // Leftmost member's left edge sits at viewport_w - anchor.right - avatar + pos.x.
+  // Clamp so that left edge >= EDGE_GAP.
+  const minX = -(viewportW - ANCHOR.right - AVATAR_SIZE - EDGE_GAP);
+  // Rightmost member's right edge sits at viewport_w - anchor.right + (pos.x + (N-1)*stride).
+  // Clamp so that right edge <= viewport_w - EDGE_GAP, i.e.
+  //   pos.x + (N-1)*stride <= anchor.right - EDGE_GAP.
+  // Stride defaults to COLLAPSED so the user's normal (non-expanded) view
+  // gets symmetric gaps; the brief expanded view may spill past the right,
+  // which the overlay-spillout mechanism already handles.
+  const maxXRaw = (ANCHOR.right - EDGE_GAP) - (memberCount - 1) * stride;
   const maxX = Math.max(minX, maxXRaw);
   const x = Math.min(maxX, Math.max(minX, candidate.x));
   // Y: keep at most a reasonable distance from the bottom anchor.
