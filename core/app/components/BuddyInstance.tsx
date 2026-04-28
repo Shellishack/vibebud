@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import dynamic from 'next/dynamic';
 import { usePlatform, useLayout } from './hooks/usePlatform';
-import { VARIANTS, buildAnimation, cssColor, getNotoCodepoint, NOTO_GROUPS, type Emotion, type NotoGroup } from './avatars';
+import { VARIANTS, buildAnimation, cssColor, getNotoCodepoint, NOTO_GROUPS, sampleFacesWithHands, type Emotion, type NotoGroup, type FacesWithHandsComposition } from './avatars';
 import { PERSONALITY_BY_VARIANT, type Personality } from './personalities';
 import {
   buildSystemPrompt, streamChat, trimHistory, fetchModels,
@@ -42,7 +42,10 @@ export type BuddyInstanceState = {
   // chosen group; codepoint within the group is picked per current
   // emotion. The variantId is still used for personality/persona
   // resolution and the group hull color.
-  avatar?: { kind: 'noto'; group: NotoGroup };
+  // For 'facesWithHands', `composition` is the resolved 5-emoji composite.
+  // It's resampled on emotion change (or set by the LLM) and persisted with
+  // the rest of the buddy state.
+  avatar?: { kind: 'noto'; group: NotoGroup; composition?: FacesWithHandsComposition };
 };
 
 type Props = {
@@ -150,7 +153,10 @@ export default function BuddyInstance({ state, anchor, canRemove, onChange, onSp
   // one of the 6 built-in color variants for rendering.
   const variant = VARIANTS.find((v) => v.id === personality.colorId) ?? VARIANTS[0];
   const variantAnim = useMemo(() => buildAnimation(variant, emotion), [variant, emotion]);
-  const notoCp = state.avatar?.kind === 'noto' ? getNotoCodepoint(state.avatar.group, emotion) : null;
+  const isComposite = state.avatar?.kind === 'noto' && state.avatar.group === 'facesWithHands';
+  const composition = isComposite ? state.avatar?.composition : undefined;
+  const notoCp = state.avatar?.kind === 'noto' && !isComposite
+    ? getNotoCodepoint(state.avatar.group, emotion) : null;
   const notoData = notoCp ? (notoFetched[notoCp] ?? getCachedLottie(notoCp)) : null;
   const animation = notoData ? (notoData as object) : variantAnim;
 
@@ -165,6 +171,35 @@ export default function BuddyInstance({ state, anchor, canRemove, onChange, onSp
       .catch(() => { /* fall back to variant */ });
     return () => { cancelled = true; };
   }, [notoCp, notoData]);
+
+  // Resample the composite on emotion change (and once on first render if a
+  // facesWithHands buddy is missing its composition — covers buddies migrated
+  // from the previous schema). Pre-warms each codepoint's Lottie.
+  useEffect(() => {
+    if (state.avatar?.kind !== 'noto' || state.avatar.group !== 'facesWithHands') return;
+    const next = sampleFacesWithHands(emotion);
+    onChange({ ...state, avatar: { ...state.avatar, composition: next } });
+    for (const cp of [next.face, next.lh, next.lhItem, next.rh, next.rhItem]) {
+      if (cp) void loadLottie(cp).catch(() => {});
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [emotion, state.avatar?.kind, state.avatar?.group]);
+
+  // Lazy-load any composite codepoints not in cache. We track them in the
+  // same notoFetched map so the Lottie components below get a fresh ref.
+  useEffect(() => {
+    if (!composition) return;
+    const cps = [composition.face, composition.lh, composition.lhItem, composition.rh, composition.rhItem]
+      .filter((cp): cp is string => !!cp);
+    let cancelled = false;
+    for (const cp of cps) {
+      if (notoFetched[cp] || getCachedLottie(cp)) continue;
+      loadLottie(cp)
+        .then((d) => { if (!cancelled) setNotoFetched((cur) => ({ ...cur, [cp]: d })); })
+        .catch(() => {});
+    }
+    return () => { cancelled = true; };
+  }, [composition, notoFetched]);
 
   const dragRef = useRef<{ startScreenX: number; startScreenY: number; baseX: number; baseY: number; moved: boolean } | null>(null);
   const draggingRef = useRef(false);
@@ -710,7 +745,12 @@ export default function BuddyInstance({ state, anchor, canRemove, onChange, onSp
                           key={g}
                           onClick={() => {
                             void loadLottie(cfg.default).catch(() => {});
-                            update({ avatar: { kind: 'noto', group: g } });
+                            if (g === 'facesWithHands') {
+                              const composition = sampleFacesWithHands(emotion);
+                              update({ avatar: { kind: 'noto', group: g, composition } });
+                            } else {
+                              update({ avatar: { kind: 'noto', group: g } });
+                            }
                             setFamilyMenu(null);
                           }}
                           title={cfg.label}
@@ -954,7 +994,11 @@ export default function BuddyInstance({ state, anchor, canRemove, onChange, onSp
             aria-label={`open ${personality.name}`}
           >
             <div className="h-full w-full" style={{ animation: 'buddy-bob 3s ease-in-out infinite' }}>
-              <Lottie animationData={animation} loop autoplay />
+              {isComposite && composition ? (
+                <CompositeAvatar composition={composition} fetched={notoFetched} />
+              ) : (
+                <Lottie animationData={animation} loop autoplay />
+              )}
             </div>
           </button>
         </div>
@@ -974,6 +1018,54 @@ function FamilyPill({ label, active, open, onClick }: { label: string; active: b
     <button onClick={onClick} aria-pressed={active} className={`${base} ${cls}`}>
       {label}
     </button>
+  );
+}
+
+// Renders the [lhItem][lh][face][rh][rhItem] composite. Each side cluster
+// (item+hand) sits in its own flex group with a tight inner gap so the gap
+// between hand and item is smaller than the gap between hand and face. Slot
+// sizes are proportional to the avatar box; missing slots are skipped.
+function CompositeAvatar({
+  composition,
+  fetched,
+}: {
+  composition: FacesWithHandsComposition;
+  fetched: Record<string, unknown>;
+}) {
+  const dataFor = (cp: string | undefined) =>
+    cp ? ((fetched[cp] ?? getCachedLottie(cp)) as object | null) : null;
+  const faceData = dataFor(composition.face);
+  const lhData = dataFor(composition.lh);
+  const lhItemData = dataFor(composition.lhItem);
+  const rhData = dataFor(composition.rh);
+  const rhItemData = dataFor(composition.rhItem);
+  // Sizes as flex-basis percent of the inner row width. Values were tuned so
+  // the cluster fits in the 7rem (h-28 w-28) buddy button without overflow.
+  const faceSize = '52%';
+  const handSize = '22%';
+  const itemSize = '18%';
+  const Slot = ({ data, basis }: { data: object | null; basis: string }) =>
+    data ? (
+      <div style={{ flexBasis: basis, height: basis }} className="aspect-square shrink-0">
+        <Lottie animationData={data} loop autoplay />
+      </div>
+    ) : null;
+  return (
+    <div className="flex h-full w-full items-center justify-center" style={{ gap: '6%' }}>
+      {(composition.lhItem || composition.lh) && (
+        <div className="flex items-center" style={{ gap: '2%' }}>
+          <Slot data={lhItemData} basis={itemSize} />
+          <Slot data={lhData} basis={handSize} />
+        </div>
+      )}
+      <Slot data={faceData} basis={faceSize} />
+      {(composition.rh || composition.rhItem) && (
+        <div className="flex items-center" style={{ gap: '2%' }}>
+          <Slot data={rhData} basis={handSize} />
+          <Slot data={rhItemData} basis={itemSize} />
+        </div>
+      )}
+    </div>
   );
 }
 

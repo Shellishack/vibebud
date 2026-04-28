@@ -135,7 +135,20 @@ export type Emotion =
 // A `noto` avatar family is a named group of Noto Animated Emoji where the
 // rendered codepoint changes with the buddy's current emotion. Each group
 // has a fallback `default` and an `emotions` map of per-emotion overrides.
-export type NotoGroup = 'faces' | 'cats' | 'animals' | 'food';
+export type NotoGroup = 'faces' | 'cats' | 'animals' | 'food' | 'facesWithHands';
+
+// Composite avatar: a face flanked by up to two hands, each optionally holding
+// an item. Layout L→R is [lhItem][lh][face][rh][rhItem]; the hand↔item gap is
+// tighter than the hand↔face gap. Only `face` is required; the four side
+// slots are independently optional. Codepoints are Noto CDN strings (e.g.
+// '1f600', '2764_fe0f') used directly with loadLottie().
+export type FacesWithHandsComposition = {
+  face: string;
+  lh?: string;
+  lhItem?: string;
+  rh?: string;
+  rhItem?: string;
+};
 
 type NotoGroupConfig = {
   label: string;
@@ -191,6 +204,24 @@ export const NOTO_GROUPS: Record<NotoGroup, NotoGroupConfig> = {
       panicked:     '1f630',
       awestruck:    '1f929',
       flirty:       '1f60f',
+    },
+  },
+  facesWithHands: {
+    label: 'Faces + Hands',
+    preview: '1f44b',
+    default: '1f642',
+    // Composite avatars resolve their face via NOTO_FACE_POOL/sampler instead
+    // of this map; kept here so the per-emotion fallback path still works if
+    // a buddy's composition is missing.
+    emotions: {
+      idle:        '1f642',
+      happy:       '1f600',
+      love:        '1f970',
+      sad:         '1f622',
+      angry:       '1f620',
+      excited:     '1f929',
+      celebrating: '1f973',
+      thinking:    '1f914',
     },
   },
   cats: {
@@ -256,6 +287,158 @@ export const NOTO_GROUPS: Record<NotoGroup, NotoGroupConfig> = {
 export function getNotoCodepoint(group: NotoGroup, emotion: Emotion): string {
   const g = NOTO_GROUPS[group];
   return g.emotions[emotion] ?? g.default;
+}
+
+// Emotion-biased pool of face codepoints for the facesWithHands sampler.
+// Each emotion lists multiple plausible Noto faces; the sampler picks one at
+// random. Faces not listed here fall back to NOTO_GROUPS.faces.emotions.
+export const NOTO_FACE_POOL: Partial<Record<Emotion, string[]>> = {
+  idle:        ['1f642', '1f610', '263a_fe0f', '1f636'],
+  happy:       ['1f600', '1f603', '1f604', '1f601', '1f60a', '1f642'],
+  surprised:   ['1f62e', '1f632', '1f633', '1f626', '1f627'],
+  thinking:    ['1f914', '1f9d0', '1f928'],
+  love:        ['1f60d', '1f970', '1f618', '1fae0', '1f617'],
+  sad:         ['1f622', '1f61e', '2639_fe0f', '1f641', '1f614', '1f97a', '1f979'],
+  sleepy:      ['1f634', '1f62a', '1faf9'],
+  angry:       ['1f620', '1f621', '1f624', '1f92c'],
+  excited:     ['1f929', '1f973', '1f92f'],
+  shy:         ['1f60a', '1f60c', '1fae3'],
+  cool:        ['1f60e', '1f920'],
+  wink:        ['1f609', '1f61c', '1f61d'],
+  confused:    ['1f615', '1fae4', '1f644', '1fae5'],
+  proud:       ['1f60c', '1f60f'],
+  sick:        ['1f912', '1f922', '1f92e', '1f915', '1f976'],
+  celebrating: ['1f973', '1f389'],
+  working:     ['1f9d0', '1f913'],
+  nervous:     ['1f628', '1f630', '1fae8'],
+  frustrated:  ['1f624', '1f975', '1f62c'],
+  curious:     ['1f9d0', '1f914'],
+  smug:        ['1f60f', '1f608'],
+  bored:       ['1f971', '1f644', '1fae5'],
+  determined:  ['1f624', '1fae1'],
+  mischievous: ['1f608', '1f921', '1f978'],
+  relieved:    ['1f60c', '1f917'],
+  shocked:     ['1f631', '1f92f'],
+  embarrassed: ['1f633', '1fae2', '1f92d'],
+  eureka:       ['1f929', '1f4a1'],
+  laughing:     ['1f602', '1f923', '1f606'],
+  crying:       ['1f62d', '1f622', '1f97a'],
+  dizzy:        ['1f635', '1f635_200d_1f4ab', '1f974'],
+  evil:         ['1f608', '1f47f', '1f479'],
+  peaceful:     ['1f60c', '1f607', '263a_fe0f'],
+  hopeful:      ['1f970', '1f97a'],
+  disappointed: ['1f61e', '1f614'],
+  suspicious:   ['1f928', '1f9d0', '1f910'],
+  panicked:     ['1f630', '1f628', '1fae8'],
+  awestruck:    ['1f929', '1f92f', '1f632'],
+  flirty:       ['1f60f', '1f618', '1f609'],
+};
+
+// Hand codepoints, biased by emotion. Sampler picks one at random; falls back
+// to GENERIC_HANDS when the emotion isn't listed.
+const GENERIC_HANDS = ['1f44b', '270b', '1f450', '1faf4'];
+export const NOTO_HAND_POOL: Partial<Record<Emotion, string[]>> = {
+  idle:        ['1f44b', '270b', '1faf4'],
+  happy:       ['1f44b', '1f44d', '1f44f', '270c_fe0f', '1faf6'],
+  excited:     ['1f64c', '1f44f', '1f44d', '1f91f'],
+  celebrating: ['1f64c', '1f44f', '1faf6'],
+  love:        ['1faf6', '1f91f', '1f450'],
+  sad:         ['1faf2', '1faf3'],
+  angry:       ['270a', '1f44a', '1f595'],
+  frustrated:  ['270a', '1f44e'],
+  thinking:    ['1faf0', '1f91e'],
+  working:     ['270d_fe0f', '1faf5'],
+  determined:  ['270a', '1f4aa', '1faf8'],
+  surprised:   ['1f932', '270b'],
+  shy:         ['1faf3', '1faf2'],
+  cool:        ['1f918', '1f919'],
+  wink:        ['1f44c', '1f919'],
+  proud:       ['1f44d', '1f4aa'],
+  shocked:     ['1f932', '270b'],
+  embarrassed: ['1faf2', '1f450'],
+  hopeful:     ['1faf0', '1f91e'],
+  flirty:      ['1f91f', '1f618'],
+  smug:        ['1f44c', '1f919'],
+  mischievous: ['1faf0', '1f595'],
+  panicked:    ['270b', '1f932'],
+  laughing:    ['1f44f', '1f44d'],
+  awestruck:   ['1f64c', '1f450'],
+  crying:      ['1faf2', '1faf3'],
+  peaceful:    ['1f450', '1faf6'],
+  eureka:      ['1f44d', '1faf0'],
+};
+
+// Item pool — broad. Hearts, sparkles, fire, food, etc. Biased lightly by
+// emotion; falls back to GENERIC_ITEMS.
+const GENERIC_ITEMS = ['2728', '2b50', '1f31f', '2764_fe0f', '1f525', '1f4af'];
+export const NOTO_ITEM_POOL: Partial<Record<Emotion, string[]>> = {
+  idle:        ['2728', '2b50', '1f31f'],
+  happy:       ['2728', '1f31f', '1f389', '2b50'],
+  love:        ['2764_fe0f', '1f495', '1f496', '1f497', '1f498', '1f49d', '1f49e', '1f49f', '2763_fe0f', '1f48b'],
+  excited:     ['2728', '1f389', '1f38a', '1f4af', '26a1'],
+  celebrating: ['1f389', '1f38a', '2728', '1f4af'],
+  sad:         ['1f494', '1f4a7'],
+  angry:       ['1f525', '1f4a5', '1faef'],
+  frustrated:  ['1f525', '1f4a5'],
+  thinking:    ['1f4a1', '1f9e0', '2753'],
+  working:     ['1f4a1', '1f9e0', '1f4dd'],
+  surprised:   ['2728', '1f4a5', '2757'],
+  shy:         ['1f497', '2728'],
+  cool:        ['1f525', '2b50', '1f60e'],
+  wink:        ['2728', '1f31f'],
+  proud:       ['1f3c6', '2b50', '2728'],
+  sick:        ['1f912', '1fa78'],
+  shocked:     ['1f4a5', '2728'],
+  embarrassed: ['1f49e', '1f497'],
+  hopeful:     ['2b50', '1f31f', '2728'],
+  flirty:      ['1f48b', '2764_fe0f', '1f495'],
+  smug:        ['1f60e', '2728'],
+  mischievous: ['1f525', '1f4a5'],
+  panicked:    ['1f4a5', '2757'],
+  laughing:    ['1f602', '1f4af'],
+  awestruck:   ['2728', '1f31f', '1f929'],
+  crying:      ['1f494', '1f4a7'],
+  peaceful:    ['1f33f', '2b50', '2728'],
+  eureka:      ['1f4a1', '2728'],
+  determined:  ['1f525', '1f4a5', '1f3c6'],
+  curious:     ['1f50d', '2753'],
+  bored:       ['1f4a4'],
+  dizzy:       ['1f4ab', '2728'],
+  evil:        ['1f525', '1f47f'],
+  disappointed: ['1f4a8'],
+  suspicious:   ['1f50d', '2753'],
+  relieved:     ['1f33f', '2728'],
+  nervous:      ['1f4a7'],
+};
+
+const pickFrom = <T,>(arr: readonly T[] | undefined, fallback: readonly T[]): T => {
+  const src = arr && arr.length > 0 ? arr : fallback;
+  return src[Math.floor(Math.random() * src.length)];
+};
+
+/**
+ * Pure sampler for the facesWithHands composite.
+ *
+ * Calls Math.random() — caller decides when to invoke (on emotion change,
+ * spawn, or LLM tool override). `handProb` controls the chance each hand slot
+ * is present; `itemProb` is conditional on the matching hand being present.
+ */
+export function sampleFacesWithHands(
+  emotion: Emotion,
+  opts?: { handProb?: number; itemProb?: number },
+): FacesWithHandsComposition {
+  const handProb = opts?.handProb ?? 0.7;
+  const itemProb = opts?.itemProb ?? 0.5;
+  const facePool = NOTO_FACE_POOL[emotion];
+  const fallbackFace = NOTO_GROUPS.faces.emotions[emotion] ?? NOTO_GROUPS.faces.default;
+  const face = pickFrom(facePool, [fallbackFace]);
+  const hands = NOTO_HAND_POOL[emotion];
+  const items = NOTO_ITEM_POOL[emotion];
+  const lh = Math.random() < handProb ? pickFrom(hands, GENERIC_HANDS) : undefined;
+  const rh = Math.random() < handProb ? pickFrom(hands, GENERIC_HANDS) : undefined;
+  const lhItem = lh && Math.random() < itemProb ? pickFrom(items, GENERIC_ITEMS) : undefined;
+  const rhItem = rh && Math.random() < itemProb ? pickFrom(items, GENERIC_ITEMS) : undefined;
+  return { face, lh, lhItem, rh, rhItem };
 }
 
 type AccessoryKind =
