@@ -578,6 +578,12 @@ const EMOTIONS: Record<Emotion, EmotionConfig> = {
   flirty:       { mouth: [44, 18], eye: [22, 12], eyeR: [22, 4], mouthY: [232, 216],
                   brow: { tilt: 0, lift: -2, tiltL: -2, tiltR: -16 },
                   mouthShape: 'smirk', accessory: 'heart' },
+
+  // Triggered when a flying buddy collides with another body. Wide-eyed,
+  // little open mouth — the "oof, didn't see you there" face.
+  bumped:       { mouth: [30, 26], eye: [28, 30], mouthY: [238, 222],
+                  mouthShape: 'open', pupil: { dx: 0, dy: 0, size: 5 },
+                  accessory: 'sparkles' },
 };
 
 // Blend a body color toward a target by `t` (0..1).
