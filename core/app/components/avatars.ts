@@ -130,7 +130,9 @@ export type Emotion =
   // mapped — the buddy family renders them all natively.
   | 'eureka' | 'laughing' | 'crying' | 'dizzy'
   | 'evil' | 'peaceful' | 'hopeful' | 'disappointed'
-  | 'suspicious' | 'panicked' | 'awestruck' | 'flirty';
+  | 'suspicious' | 'panicked' | 'awestruck' | 'flirty'
+  // Physics: triggered by drag-fling collisions when bouncy-drag is enabled.
+  | 'bumped';
 
 // A `noto` avatar family is a named group of Noto Animated Emoji where the
 // rendered codepoint changes with the buddy's current emotion. Each group

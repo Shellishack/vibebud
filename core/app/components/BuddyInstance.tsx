@@ -79,9 +79,14 @@ type Props = {
   onDockUnpeek?: () => void;
   onGroupDockPeek?: (gid: string) => void;
   onGroupDockUnpeek?: (gid: string) => void;
+  // Bouncy-drag physics: increments per collision so we can react with a
+  // brief shake + 'bumped' emotion. groupBumpTick fires when the buddy's
+  // containing group gets bumped.
+  bumpTick?: number;
+  groupBumpTick?: number;
 };
 
-export default function BuddyInstance({ state, anchor, canRemove, onChange, onSpawn, onRemove, onOpenChange, onDragMove, onDragEnd, magnetState, edgeMagnet, teammates, isGroupExpanded, isGroupMinimized, onGroupTap, onRestore, onGroupRestore, dockPeeked, groupDockPeeked, onDockPeek, onDockUnpeek, onGroupDockPeek, onGroupDockUnpeek }: Props) {
+export default function BuddyInstance({ state, anchor, canRemove, onChange, onSpawn, onRemove, onOpenChange, onDragMove, onDragEnd, magnetState, edgeMagnet, teammates, isGroupExpanded, isGroupMinimized, onGroupTap, onRestore, onGroupRestore, dockPeeked, groupDockPeeked, onDockPeek, onDockUnpeek, onGroupDockPeek, onGroupDockUnpeek, bumpTick, groupBumpTick }: Props) {
   const personality: Personality =
     PERSONALITY_BY_VARIANT[state.variantId] ?? PERSONALITY_BY_VARIANT.violet;
 
@@ -430,6 +435,19 @@ export default function BuddyInstance({ state, anchor, canRemove, onChange, onSp
     setEmotion(next);
     emotionTimerRef.current = setTimeout(() => setEmotion('idle'), ms);
   };
+
+  // Physics collision response: brief CSS-driven shake + 'bumped' emotion.
+  const [shaking, setShaking] = useState(false);
+  const shakeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    if (!bumpTick && !groupBumpTick) return;
+    if (shakeTimerRef.current) clearTimeout(shakeTimerRef.current);
+    setShaking(true);
+    feel('bumped', 700);
+    shakeTimerRef.current = setTimeout(() => setShaking(false), 420);
+    return () => { if (shakeTimerRef.current) clearTimeout(shakeTimerRef.current); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bumpTick, groupBumpTick]);
 
   useEffect(() => {
     if (emotion !== 'idle') return;
@@ -1190,7 +1208,7 @@ export default function BuddyInstance({ state, anchor, canRemove, onChange, onSp
             }`}
             aria-label={`open ${personality.name}`}
           >
-            <div className="h-full w-full" style={{ animation: 'buddy-bob 3s ease-in-out infinite' }}>
+            <div className="h-full w-full" style={{ animation: shaking ? 'buddy-shake 420ms ease-out' : 'buddy-bob 3s ease-in-out infinite' }}>
               {isComposite && composition ? (
                 <CompositeFace composition={composition} fetched={notoFetched} />
               ) : (

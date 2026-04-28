@@ -21,11 +21,13 @@ type Props = {
   onGroupDragMove: (id: string, pos: { x: number; y: number }) => void;
   onGroupDragEnd?: (id: string, pos: { x: number; y: number }) => void;
   onGroupTap?: (id: string) => void;
+  // Bouncy-drag physics: increments per collision so the hull can shake.
+  bumpTick?: number;
 };
 
 export default function BuddyGroup({
   groupId, pos, memberCount, stride, avatarSize, padX, padTop, padBottom, anchor,
-  visible, magnetActive, edgeMagnetActive, background, expanded, onGroupDragMove, onGroupDragEnd, onGroupTap,
+  visible, magnetActive, edgeMagnetActive, background, expanded, onGroupDragMove, onGroupDragEnd, onGroupTap, bumpTick,
 }: Props) {
   const adapter = usePlatform();
   const width = (memberCount - 1) * stride + avatarSize + padX * 2;
@@ -53,6 +55,13 @@ export default function BuddyGroup({
   useEffect(() => { posRef.current = pos; }, [pos]);
   const draggingRef = useRef(false);
   const [isDragging, setIsDragging] = useState(false);
+  const [shaking, setShaking] = useState(false);
+  useEffect(() => {
+    if (!bumpTick) return;
+    setShaking(true);
+    const t = setTimeout(() => setShaking(false), 420);
+    return () => clearTimeout(t);
+  }, [bumpTick]);
 
   // Capacitor drag plumbing — same shape as the per-buddy drag wiring in
   // BuddyInstance. dragBaseRef + callbacksRef must be refs because the
@@ -268,7 +277,9 @@ export default function BuddyGroup({
             'right 280ms cubic-bezier(0.22, 1, 0.36, 1), ' +
             'bottom 280ms cubic-bezier(0.22, 1, 0.36, 1), ' +
             'background 220ms ease-out',
-        animation: magnetActive ? 'buddy-magnet-pulse 1100ms ease-in-out infinite' : undefined,
+        animation: shaking
+          ? 'buddy-shake 420ms ease-out'
+          : (magnetActive ? 'buddy-magnet-pulse 1100ms ease-in-out infinite' : undefined),
       }}
     >
       {visible && !isCapacitor && (

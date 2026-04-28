@@ -7,6 +7,7 @@ import { getNotifyMethod, setNotifyMethod, type NotifyMethod } from './llm';
 import {
   getRemoteClaudeConfig, setRemoteClaudeConfig, type RemoteClaudeConfig,
 } from '../../lib/platform/remoteClaude';
+import { getPhysicsEnabled, setPhysicsEnabled } from './physics';
 
 type Props = { open: boolean; onClose: () => void };
 
@@ -19,6 +20,12 @@ function AppSettingsBody({ onClose }: { onClose: () => void }) {
   const adapter = usePlatform();
   const [method, setMethod] = useState<NotifyMethod>(() => getNotifyMethod());
   const [permGranted, setPermGranted] = useState<boolean>(() => adapter.hasNotificationPermission());
+  const [physicsOn, setPhysicsOn] = useState<boolean>(() => getPhysicsEnabled());
+  const togglePhysics = () => {
+    const next = !physicsOn;
+    setPhysicsOn(next);
+    setPhysicsEnabled(next);
+  };
 
   // Pair-with-desktop state. Web/Capacitor only — Electron uses the
   // in-process Claude bridge and doesn't need a remote URL.
@@ -212,6 +219,21 @@ function AppSettingsBody({ onClose }: { onClose: () => void }) {
               )}
             </section>
           )}
+
+          <section className="mb-5">
+            <p className="text-xs font-semibold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
+              Play
+            </p>
+            <p className="mt-1 mb-3 text-xs text-zinc-500 dark:text-zinc-400">
+              Drag-and-fling to send buddies sailing — they bounce off edges and bump into each other.
+            </p>
+            <Option
+              selected={physicsOn}
+              label="Bouncy drag"
+              desc="Release a buddy mid-flick to send it flying."
+              onClick={togglePhysics}
+            />
+          </section>
 
           <section>
             <p className="text-xs font-semibold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">

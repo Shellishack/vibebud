@@ -10,6 +10,12 @@ import type { Teammate } from './llm';
 import { usePlatform } from './hooks/usePlatform';
 import { isMobile } from '@/lib/platform/detect';
 import type { ElectronAdapter } from '@/lib/platform/electron';
+import {
+  getPhysicsEnabled as readPhysicsEnabled,
+  bboxOverlap, clampMag,
+  FLING_THRESHOLD, REST_THRESHOLD, FLIGHT_DRAG, EDGE_RESTITUTION,
+  COLLIDE_RESTITUTION, VELOCITY_WINDOW_MS, MAX_FLING, type Vec2,
+} from './physics';
 
 // Lighten each avatar color toward white so the hull reads as a pastel
 // backdrop and the saturated avatars pop against it.
@@ -324,6 +330,198 @@ export default function Buddy() {
   const expandedRef = useRef(expanded);
   const peekedRef = useRef(peeked);
   const peekedDockRef = useRef(peekedDock);
+
+  // --- Bouncy-drag physics ---
+  const [physicsEnabled, setPhysicsEnabledState] = useState<boolean>(() => readPhysicsEnabled());
+  const physicsRef = useRef(physicsEnabled);
+  useEffect(() => { physicsRef.current = physicsEnabled; }, [physicsEnabled]);
+  useEffect(() => {
+    const onChange = (e: Event) => setPhysicsEnabledState(!!(e as CustomEvent<boolean>).detail);
+    window.addEventListener('vibemoji:physicsChange', onChange);
+    return () => window.removeEventListener('vibemoji:physicsChange', onChange);
+  }, []);
+  // Bump tick: increments per id (`buddy:<id>` / `group:<id>`) on each
+  // collision, so child components can react with a brief shake + emotion.
+  const [bumpTicks, setBumpTicks] = useState<Record<string, number>>({});
+  // Drag velocity samples, keyed by `buddy:<id>` / `group:<id>`.
+  const velSamplesRef = useRef<Map<string, Array<{ t: number; x: number; y: number }>>>(new Map());
+  const recordSample = (key: string, p: Vec2) => {
+    const t = (typeof performance !== 'undefined' ? performance.now() : Date.now());
+    let buf = velSamplesRef.current.get(key);
+    if (!buf) { buf = []; velSamplesRef.current.set(key, buf); }
+    buf.push({ t, x: p.x, y: p.y });
+    while (buf.length > 1 && t - buf[0].t > VELOCITY_WINDOW_MS) buf.shift();
+  };
+  const consumeVelocity = (key: string): Vec2 => {
+    const buf = velSamplesRef.current.get(key);
+    velSamplesRef.current.delete(key);
+    if (!buf || buf.length < 2) return { x: 0, y: 0 };
+    const a = buf[0], b = buf[buf.length - 1];
+    const dt = b.t - a.t;
+    if (dt <= 0) return { x: 0, y: 0 };
+    return clampMag({ x: (b.x - a.x) / dt, y: (b.y - a.y) / dt }, MAX_FLING);
+  };
+  type Flight = { kind: 'buddy' | 'group'; id: string; pos: Vec2; vel: Vec2 };
+  const flightsRef = useRef<Map<string, Flight>>(new Map());
+  const flightRafRef = useRef<number>(0);
+  const lastFlightTickRef = useRef<number>(0);
+  const ensureFlightLoop = () => {
+    if (flightRafRef.current) return;
+    lastFlightTickRef.current = (typeof performance !== 'undefined' ? performance.now() : Date.now());
+    flightRafRef.current = requestAnimationFrame(flightTick);
+  };
+  const groupSize = (g: Group) => ({
+    w: (g.memberIds.length - 1) * COLLAPSED_STRIDE + AVATAR_SIZE,
+    h: AVATAR_SIZE,
+  });
+  const flightTick = () => {
+    flightRafRef.current = 0;
+    const now = (typeof performance !== 'undefined' ? performance.now() : Date.now());
+    const rawDt = now - lastFlightTickRef.current;
+    lastFlightTickRef.current = now;
+    // Cap dt — if the tab was backgrounded we don't want a giant jump.
+    const dt = Math.min(48, Math.max(1, rawDt));
+    const flights = flightsRef.current;
+    if (flights.size === 0) return;
+
+    // Static-body view: every visible non-flying buddy/group becomes a wall.
+    const flyingKeys = new Set(flights.keys());
+    type Body = { kind: 'buddy' | 'group'; id: string; box: { x: number; y: number; w: number; h: number } };
+    const bodies: Body[] = [];
+    for (const b of buddiesRef.current) {
+      if (b.minimized) continue;
+      if (b.groupId) continue; // grouped members move with their group
+      bodies.push({ kind: 'buddy', id: b.id, box: { x: b.pos.x, y: b.pos.y, w: AVATAR_SIZE, h: AVATAR_SIZE } });
+    }
+    for (const g of groupsRef.current) {
+      if (g.minimized) continue;
+      const s = groupSize(g);
+      bodies.push({ kind: 'group', id: g.id, box: { x: g.pos.x, y: g.pos.y, w: s.w, h: s.h } });
+    }
+
+    const updatedBuddyPos: Record<string, Vec2> = {};
+    const updatedGroupPos: Record<string, Vec2> = {};
+    const collided = new Set<string>();
+    const toRest: Array<Flight> = [];
+    // dt is in ms; vel is px/ms.
+    for (const [key, f] of flights) {
+      // Integrate
+      f.pos = { x: f.pos.x + f.vel.x * dt, y: f.pos.y + f.vel.y * dt };
+      // Per-frame drag (normalize to ~16ms frame so dt jitter doesn't change feel).
+      const dragK = Math.pow(FLIGHT_DRAG, dt / 16);
+      f.vel = { x: f.vel.x * dragK, y: f.vel.y * dragK };
+
+      // Edge bounce via the existing clamp helpers as the source of truth.
+      let clamped: Vec2;
+      let selfBox: { x: number; y: number; w: number; h: number };
+      if (f.kind === 'buddy') {
+        clamped = clampBuddyPos(f.pos);
+        selfBox = { x: clamped.x, y: clamped.y, w: AVATAR_SIZE, h: AVATAR_SIZE };
+      } else {
+        const g = groupsRef.current.find((x) => x.id === f.id);
+        const n = g?.memberIds.length ?? 2;
+        clamped = clampGroupPos(f.pos, n);
+        selfBox = { x: clamped.x, y: clamped.y, w: (n - 1) * COLLAPSED_STRIDE + AVATAR_SIZE, h: AVATAR_SIZE };
+      }
+      if (clamped.x !== f.pos.x) f.vel.x = -f.vel.x * EDGE_RESTITUTION;
+      if (clamped.y !== f.pos.y) f.vel.y = -f.vel.y * EDGE_RESTITUTION;
+      f.pos = clamped;
+
+      // Collisions vs every other body (skip self + skip other in-flight to
+      // avoid double-resolving — the other flight's own pass will handle it).
+      for (const o of bodies) {
+        if (o.kind === f.kind && o.id === f.id) continue;
+        if (flyingKeys.has(`${o.kind}:${o.id}`)) continue;
+        const ov = bboxOverlap(
+          { x: f.pos.x, y: f.pos.y, w: selfBox.w, h: selfBox.h },
+          o.box,
+        );
+        if (!ov) continue;
+        if (ov.axis === 'x') {
+          const dir = (f.pos.x + selfBox.w / 2) < (o.box.x + o.box.w / 2) ? -1 : 1;
+          f.pos.x += dir * ov.depth;
+          f.vel.x = -f.vel.x * COLLIDE_RESTITUTION;
+        } else {
+          const dir = (f.pos.y + selfBox.h / 2) < (o.box.y + o.box.h / 2) ? -1 : 1;
+          f.pos.y += dir * ov.depth;
+          f.vel.y = -f.vel.y * COLLIDE_RESTITUTION;
+        }
+        collided.add(`${f.kind}:${f.id}`);
+        collided.add(`${o.kind}:${o.id}`);
+      }
+
+      if (f.kind === 'buddy') updatedBuddyPos[f.id] = f.pos;
+      else updatedGroupPos[f.id] = f.pos;
+
+      if (Math.hypot(f.vel.x, f.vel.y) < REST_THRESHOLD) toRest.push(f);
+    }
+
+    // Apply position updates in a single pass each.
+    if (Object.keys(updatedBuddyPos).length) {
+      setBuddies((cur) => cur.map((b) => updatedBuddyPos[b.id]
+        ? { ...b, pos: updatedBuddyPos[b.id] }
+        : b));
+    }
+    if (Object.keys(updatedGroupPos).length) {
+      setGroups((cur) => cur.map((g) => updatedGroupPos[g.id]
+        ? { ...g, pos: updatedGroupPos[g.id] }
+        : g));
+    }
+
+    if (collided.size) {
+      setBumpTicks((cur) => {
+        const next = { ...cur };
+        for (const k of collided) next[k] = (next[k] ?? 0) + 1;
+        return next;
+      });
+    }
+
+    // Settle any flight at rest. Dock to nearest edge if it landed close.
+    for (const f of toRest) {
+      const key = `${f.kind}:${f.id}`;
+      flights.delete(key);
+      adapter.notifyDragEnd(`flight:${key}`);
+      if (f.kind === 'buddy') {
+        const near = nearestEdgeForBuddy(f.pos);
+        if (near.d < SNAP_THRESHOLD) {
+          const dock: { edge: Edge } = { edge: near.edge };
+          const minPos = minimizedBuddyPos(dock.edge, f.pos);
+          setBuddies((cur) => cur.map((b) => b.id === f.id
+            ? { ...b, minimized: dock, lastFreePos: f.pos, pos: minPos }
+            : b));
+        }
+      } else {
+        const g = groupsRef.current.find((x) => x.id === f.id);
+        if (g) {
+          const near = nearestEdgeForGroup(f.pos, g.memberIds.length);
+          if (near.d < SNAP_THRESHOLD) {
+            const dock: { edge: Edge } = { edge: near.edge };
+            const minPos = minimizedGroupPos(dock.edge, g.memberIds.length, f.pos);
+            setGroups((cur) => cur.map((x) => x.id === f.id
+              ? { ...x, minimized: dock, lastFreePos: f.pos, pos: minPos }
+              : x));
+          }
+        }
+      }
+    }
+
+    if (flights.size > 0) flightRafRef.current = requestAnimationFrame(flightTick);
+  };
+  const startFlight = (kind: 'buddy' | 'group', id: string, startPos: Vec2, vel: Vec2) => {
+    const key = `${kind}:${id}`;
+    flightsRef.current.set(key, { kind, id, pos: { ...startPos }, vel: { ...vel } });
+    // Hold the drag-holder so Capacitor keeps the touchable region full-window
+    // and persistence/region-publish suspensions remain in effect until rest.
+    adapter.notifyDragStart(`flight:${key}`);
+    ensureFlightLoop();
+  };
+  useEffect(() => () => {
+    if (flightRafRef.current) cancelAnimationFrame(flightRafRef.current);
+    for (const k of flightsRef.current.keys()) adapter.notifyDragEnd(`flight:${k}`);
+    flightsRef.current.clear();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   useEffect(() => { buddiesRef.current = buddies; }, [buddies]);
   useEffect(() => { groupsRef.current = groups; }, [groups]);
   useEffect(() => { expandedRef.current = expanded; }, [expanded]);
@@ -982,6 +1180,7 @@ export default function Buddy() {
   };
 
   const onDragMove = (id: string, pos: { x: number; y: number }) => {
+    if (physicsRef.current) recordSample(`buddy:${id}`, pos);
     const b = buddiesRef.current.find((x) => x.id === id);
     if (!b) return;
     if (b.groupId) {
@@ -1036,6 +1235,9 @@ export default function Buddy() {
   const onDragEnd = (id: string, pos: { x: number; y: number }, moved: boolean) => {
     setMagnet(null);
     setEdgeMagnet(null);
+    const flingVel = physicsRef.current ? consumeVelocity(`buddy:${id}`) : { x: 0, y: 0 };
+    const flingSpeed = Math.hypot(flingVel.x, flingVel.y);
+    const wantFling = physicsRef.current && moved && flingSpeed >= FLING_THRESHOLD;
     // A drag commits the peek (in either direction); peekedDock tracks
     // hover-state only and shouldn't survive the drop.
     setPeekedDock((cur) => {
@@ -1054,6 +1256,12 @@ export default function Buddy() {
       const stride = expandedRef.current[g.id] ? EXPANDED_STRIDE : COLLAPSED_STRIDE;
       const target = slotPos(g, i, stride);
       setBuddies((cur) => cur.map((x) => (x.id === id ? { ...x, pos: target } : x)));
+      return;
+    }
+    if (wantFling && !b.minimized) {
+      // Fast release: bounce mode. Skip merge / edge-snap; let the integrator
+      // run physics and decide where the buddy comes to rest.
+      startFlight('buddy', id, pos, flingVel);
       return;
     }
     let bestG: Group | null = null;
@@ -1127,6 +1335,16 @@ export default function Buddy() {
     });
     const g = groupsRef.current.find((x) => x.id === gid);
     if (!g) return;
+    if (physicsRef.current && !g.minimized) {
+      const flingVel = consumeVelocity(`group:${gid}`);
+      if (Math.hypot(flingVel.x, flingVel.y) >= FLING_THRESHOLD) {
+        startFlight('group', gid, pos, flingVel);
+        return;
+      }
+    } else if (physicsRef.current) {
+      // Drop the buffer even if we don't fling, so it doesn't leak.
+      consumeVelocity(`group:${gid}`);
+    }
     const near = nearestEdgeForGroup(pos, g.memberIds.length);
     if (near.d < SNAP_THRESHOLD) {
       const dock: { edge: Edge } = { edge: near.edge };
@@ -1145,6 +1363,7 @@ export default function Buddy() {
   };
 
   const onGroupDragMove = (gid: string, pos: { x: number; y: number }) => {
+    if (physicsRef.current) recordSample(`group:${gid}`, pos);
     // A drag from a hover-peeked dock commits the restore: clear the
     // minimized intent so the new drag pos owns the rendered position
     // (otherwise renderedGroupPos would keep snapping back to peekedPos).
@@ -1242,6 +1461,8 @@ export default function Buddy() {
         onDockUnpeek={() => unpeekDockBuddy(b.id)}
         onGroupDockPeek={(gid) => peekDockGroup(gid)}
         onGroupDockUnpeek={(gid) => unpeekDockGroup(gid)}
+        bumpTick={bumpTicks[`buddy:${b.id}`] ?? 0}
+        groupBumpTick={b.groupId ? (bumpTicks[`group:${b.groupId}`] ?? 0) : 0}
       />
     );
   };
@@ -1285,6 +1506,7 @@ export default function Buddy() {
             onGroupDragMove={onGroupDragMove}
             onGroupDragEnd={onGroupDragEnd}
             onGroupTap={onGroupTap}
+            bumpTick={bumpTicks[`group:${g.id}`] ?? 0}
           />
         );
       })}
@@ -1356,6 +1578,15 @@ export default function Buddy() {
         @keyframes buddy-bob {
           0%, 100% { transform: translateY(0); }
           50% { transform: translateY(-4%); }
+        }
+        @keyframes buddy-shake {
+          0%   { transform: translate(0, 0) rotate(0); }
+          15%  { transform: translate(-6%, 1%) rotate(-6deg); }
+          30%  { transform: translate(5%, -1%) rotate(5deg); }
+          45%  { transform: translate(-4%, 2%) rotate(-4deg); }
+          60%  { transform: translate(4%, -2%) rotate(3deg); }
+          75%  { transform: translate(-2%, 1%) rotate(-1.5deg); }
+          100% { transform: translate(0, 0) rotate(0); }
         }
       `}</style>
     </>
