@@ -1,4 +1,4 @@
-import type { InteractiveRect, NotificationPayload, PlatformAdapter } from './types';
+import type { ClaudeCodeBridge, InteractiveRect, NotificationPayload, PlatformAdapter } from './types';
 
 type VibemojiNative = {
   setTouchableRegion?: (json: string) => void;
@@ -230,6 +230,11 @@ export class CapacitorAdapter implements PlatformAdapter {
     try { return native()?.hasNotificationPermission?.() === 'granted'; }
     catch { return false; }
   }
+
+  // Capacitor can't spawn local processes — Claude Code session feature is
+  // hidden on Android. A future iteration could relay to a happy-server-style
+  // server over WebSocket.
+  claudeCode(): ClaudeCodeBridge | null { return null; }
 
   onOutsideTap(cb: () => void): () => void {
     if (typeof window === 'undefined') return () => {};

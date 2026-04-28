@@ -1,6 +1,106 @@
 const { app, BrowserWindow, Notification, screen, Tray, Menu, nativeImage, protocol, net, ipcMain } = require('electron');
 const path = require('path');
 const url = require('url');
+const { spawn } = require('child_process');
+const os = require('os');
+
+// --- Claude Code session host -------------------------------------------------
+// Each buddy can hold one long-running `claude` subprocess. We spawn with
+// stream-json I/O so the renderer can pipe user turns in and receive assistant
+// chunks/tool calls as JSONL events. Modeled after the slopus/happy-cli wrap
+// (which also relies on the `claude` CLI being on PATH) and OpenCode's
+// stream-json ACP transport. Sessions are keyed by buddy id and torn down on
+// claude:stop or window close.
+const claudeSessions = new Map(); // buddyId -> { proc, stdoutBuf, stderrBuf, cwd }
+
+function claudeBinary() {
+  // On Windows we rely on shell:true + PATHEXT to resolve .exe/.cmd/.bat.
+  // Hardcoding .cmd misses the native winget install (claude.exe).
+  return process.env.VIBEMOJI_CLAUDE_BIN || 'claude';
+}
+
+function claudeStart(buddyId, opts = {}) {
+  if (claudeSessions.has(buddyId)) return { ok: true, alreadyRunning: true };
+  const cwd = opts.cwd || process.env.VIBEMOJI_CLAUDE_CWD || os.homedir();
+  const args = [
+    '--print',
+    '--input-format', 'stream-json',
+    '--output-format', 'stream-json',
+    '--include-partial-messages',
+    '--verbose',
+    '--permission-mode', 'bypassPermissions',
+  ];
+  if (opts.model) args.push('--model', String(opts.model));
+  if (Array.isArray(opts.allowedTools)) args.push('--allowedTools', opts.allowedTools.join(','));
+  let proc;
+  try {
+    proc = spawn(claudeBinary(), args, {
+      cwd,
+      shell: os.platform() === 'win32',
+      env: { ...process.env },
+    });
+  } catch (err) {
+    return { ok: false, error: String(err && err.message || err) };
+  }
+  const session = { proc, stdoutBuf: '', stderrBuf: '', cwd };
+  claudeSessions.set(buddyId, session);
+  proc.stdout.setEncoding('utf8');
+  proc.stderr.setEncoding('utf8');
+  proc.stdout.on('data', (chunk) => {
+    session.stdoutBuf += chunk;
+    let nl;
+    while ((nl = session.stdoutBuf.indexOf('\n')) >= 0) {
+      const line = session.stdoutBuf.slice(0, nl).trim();
+      session.stdoutBuf = session.stdoutBuf.slice(nl + 1);
+      if (!line) continue;
+      let evt;
+      try { evt = JSON.parse(line); } catch { evt = { type: 'raw', text: line }; }
+      win?.webContents.send('claude:event', { buddyId, event: evt });
+    }
+  });
+  proc.stderr.on('data', (chunk) => {
+    session.stderrBuf += chunk;
+    win?.webContents.send('claude:event', { buddyId, event: { type: 'stderr', text: String(chunk) } });
+  });
+  proc.on('error', (err) => {
+    win?.webContents.send('claude:event', { buddyId, event: { type: 'error', text: String(err && err.message || err) } });
+    claudeSessions.delete(buddyId);
+  });
+  proc.on('close', (code) => {
+    const stderr = (session.stderrBuf || '').trim();
+    win?.webContents.send('claude:event', { buddyId, event: { type: 'closed', code, stderr, bin: claudeBinary(), cwd } });
+    claudeSessions.delete(buddyId);
+  });
+  return { ok: true, cwd };
+}
+
+function claudeSend(buddyId, text) {
+  const session = claudeSessions.get(buddyId);
+  if (!session) return { ok: false, error: 'no-session' };
+  const msg = {
+    type: 'user',
+    message: { role: 'user', content: [{ type: 'text', text: String(text) }] },
+  };
+  try {
+    session.proc.stdin.write(JSON.stringify(msg) + '\n');
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: String(err && err.message || err) };
+  }
+}
+
+function claudeStop(buddyId) {
+  const session = claudeSessions.get(buddyId);
+  if (!session) return { ok: true };
+  try { session.proc.stdin.end(); } catch { /* noop */ }
+  try { session.proc.kill(); } catch { /* noop */ }
+  claudeSessions.delete(buddyId);
+  return { ok: true };
+}
+
+function claudeStopAll() {
+  for (const id of Array.from(claudeSessions.keys())) claudeStop(id);
+}
 
 const DEV_URL = process.env.VIBEMOJI_DEV_URL;
 const OUT_DIR = path.join(__dirname, 'core-out');
@@ -135,13 +235,30 @@ app.whenReady().then(() => {
     if (focusable) win.focus();
   });
 
+  ipcMain.handle('claude:start', (_event, payload) => {
+    if (!payload || typeof payload.buddyId !== 'string') return { ok: false, error: 'bad-payload' };
+    return claudeStart(payload.buddyId, payload.opts || {});
+  });
+  ipcMain.handle('claude:send', (_event, payload) => {
+    if (!payload || typeof payload.buddyId !== 'string') return { ok: false, error: 'bad-payload' };
+    return claudeSend(payload.buddyId, payload.text || '');
+  });
+  ipcMain.handle('claude:stop', (_event, payload) => {
+    if (!payload || typeof payload.buddyId !== 'string') return { ok: false, error: 'bad-payload' };
+    return claudeStop(payload.buddyId);
+  });
+  ipcMain.handle('claude:list', () => Array.from(claudeSessions.keys()));
+
   createWindow();
   createTray();
 });
 
 app.on('window-all-closed', () => {
+  claudeStopAll();
   if (process.platform !== 'darwin') app.quit();
 });
+
+app.on('before-quit', () => { claudeStopAll(); });
 
 app.on('activate', () => {
   if (BrowserWindow.getAllWindows().length === 0) createWindow();

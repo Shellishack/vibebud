@@ -1,4 +1,4 @@
-import type { InteractiveRect, NotificationPayload, PlatformAdapter } from './types';
+import type { ClaudeCodeBridge, InteractiveRect, NotificationPayload, PlatformAdapter } from './types';
 
 type VibemojiBridge = {
   setInteractive?: (v: boolean) => void;
@@ -8,6 +8,7 @@ type VibemojiBridge = {
   onSpawnBuddy?: (cb: () => void) => () => void;
   showNotification?: (payload: NotificationPayload) => void;
   onOpenSettings?: (cb: () => void) => () => void;
+  claude?: ClaudeCodeBridge;
   isElectron?: boolean;
 };
 
@@ -63,6 +64,10 @@ export class ElectronAdapter implements PlatformAdapter {
   }
 
   hasNotificationPermission(): boolean { return true; }
+
+  claudeCode(): ClaudeCodeBridge | null {
+    return bridge()?.claude ?? null;
+  }
 
   onOpenSettings(cb: () => void): () => void {
     const off = bridge()?.onOpenSettings?.(cb);

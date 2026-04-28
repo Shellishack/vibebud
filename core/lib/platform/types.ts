@@ -69,6 +69,11 @@ export interface PlatformAdapter {
   // Synchronous query for current permission state, without prompting. Used
   // to re-check after the user returns from system settings.
   hasNotificationPermission(): boolean;
+
+  // Returns the local Claude Code session bridge, or null when the platform
+  // can't spawn local processes (web, capacitor). Callers should null-check
+  // before exposing the "Claude Code" toggle in the UI.
+  claudeCode(): ClaudeCodeBridge | null;
 }
 
 export type NotificationPayload = {
@@ -76,6 +81,25 @@ export type NotificationPayload = {
   body: string;
   tone?: 'info' | 'action' | 'success';
 };
+
+// Per-buddy Claude Code session bridge. Only Electron implements this — Web
+// and Capacitor adapters return `null` from `claudeCode()` because they
+// can't spawn local processes. Modeled after the slopus/happy-cli wrapping
+// approach (long-running `claude` subprocess in stream-json mode) and
+// OpenCode's stream-json ACP transport.
+export type ClaudeStartOpts = {
+  cwd?: string;
+  model?: string;
+  allowedTools?: string[];
+};
+export type ClaudeEvent = { type: string; [key: string]: unknown };
+export interface ClaudeCodeBridge {
+  start(buddyId: string, opts?: ClaudeStartOpts): Promise<{ ok: boolean; alreadyRunning?: boolean; cwd?: string; error?: string }>;
+  send(buddyId: string, text: string): Promise<{ ok: boolean; error?: string }>;
+  stop(buddyId: string): Promise<{ ok: boolean; error?: string }>;
+  list(): Promise<string[]>;
+  onEvent(cb: (buddyId: string, event: ClaudeEvent) => void): () => void;
+}
 
 export interface LayoutAdapter {
   readonly chatPanelMode: 'anchored' | 'sheet';

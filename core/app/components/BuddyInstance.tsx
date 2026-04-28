@@ -97,6 +97,13 @@ export default function BuddyInstance({ state, anchor, canRemove, onChange, onSp
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [notoFetched, setNotoFetched] = useState<Record<string, unknown>>({});
   const [familyMenu, setFamilyMenu] = useState<'buddy' | 'noto' | null>(null);
+  // Per-buddy Claude Code session: when active, chat sends route through the
+  // local `claude` subprocess (spawned by Electron main) instead of the LLM
+  // HTTP provider. claudeBusy mirrors `busy` for the bridge path.
+  const claudeBridge = adapter.claudeCode();
+  const [claudeActive, setClaudeActive] = useState(false);
+  const [claudeBusy, setClaudeBusy] = useState(false);
+  const claudeReplyIdRef = useRef<number | null>(null);
   const [providerDraft, setProviderDraft] = useState<ProviderId>('openai');
   const [keyDraft, setKeyDraft] = useState('');
   const [modelDraft, setModelDraft] = useState('');
@@ -328,6 +335,85 @@ export default function BuddyInstance({ state, anchor, canRemove, onChange, onSp
   }, [open]);
   const update = (patch: Partial<BuddyInstanceState>) => onChange({ ...stateRef.current, ...patch });
 
+  // Subscribe to Claude Code stream events for this buddy. Each event is one
+  // line of stream-json from `claude --output-format stream-json`. We extract
+  // user-visible text from `assistant` (and partial-message) events and
+  // append it to the current reply bubble; tool-use blocks are surfaced as
+  // bracketed status lines so the user can see what Claude is doing.
+  useEffect(() => {
+    if (!claudeBridge) return;
+    const off = claudeBridge.onEvent((bid, evt) => {
+      if (bid !== state.id) return;
+      const replyId = claudeReplyIdRef.current;
+      const t = evt && typeof evt === 'object' ? (evt as { type?: string }).type : undefined;
+
+      const appendToReply = (chunk: string) => {
+        if (replyId == null || !chunk) return;
+        const cur = stateRef.current.messages;
+        const idx = cur.findIndex((m) => m.id === replyId);
+        if (idx < 0) return;
+        const next = cur.slice();
+        next[idx] = { ...next[idx], text: next[idx].text + chunk };
+        update({ messages: next });
+      };
+      const appendStatus = (text: string) => {
+        const note: ChatMsg = { id: msgIdRef.current++, from: 'buddy', text };
+        update({ messages: [...stateRef.current.messages, note] });
+      };
+
+      if (t === 'system') {
+        // init/system info — kept silent; surfaced only if needed for debugging.
+      } else if (t === 'assistant' || t === 'stream_event') {
+        const msg = (evt as { message?: { content?: Array<{ type?: string; text?: string; name?: string }> } }).message;
+        const blocks = msg?.content;
+        if (Array.isArray(blocks)) {
+          for (const b of blocks) {
+            if (b.type === 'text' && b.text) appendToReply(b.text);
+            else if (b.type === 'tool_use' && b.name) appendToReply(`\n[tool: ${b.name}]\n`);
+          }
+        }
+        // Partial-message variant carries deltas at the top level
+        const delta = (evt as { delta?: { type?: string; text?: string } }).delta;
+        if (delta?.type === 'text_delta' && delta.text) appendToReply(delta.text);
+      } else if (t === 'result') {
+        setClaudeBusy(false);
+        claudeReplyIdRef.current = null;
+        feel('happy', 1500);
+      } else if (t === 'error' || t === 'stderr' || t === 'raw') {
+        const text = (evt as { text?: string }).text || 'claude error';
+        // Always surface to chat — even if no reply is in flight (covers the
+        // common "binary not found" / "auth missing" case where the process
+        // dies before any user turn is sent).
+        if (replyId != null) appendToReply(`\n(${text.trim()})`);
+        else appendStatus(`(claude: ${text.trim()})`);
+      } else if (t === 'closed') {
+        const code = (evt as { code?: number }).code;
+        const stderr = (evt as { stderr?: string }).stderr;
+        const bin = (evt as { bin?: string }).bin;
+        const cwd = (evt as { cwd?: string }).cwd;
+        if (code !== 0) {
+          const detail = stderr
+            ? stderr.trim()
+            : `no stderr — likely '${bin || 'claude'}' is not on PATH or not authenticated (cwd: ${cwd || '?'}). Try 'claude auth' in a terminal, or set VIBEMOJI_CLAUDE_BIN to the full path.`;
+          appendStatus(`(claude exited with code ${code ?? '?'}: ${detail})`);
+        }
+        setClaudeBusy(false);
+        setClaudeActive(false);
+        claudeReplyIdRef.current = null;
+      }
+    });
+    return off;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [claudeBridge, state.id]);
+
+  // Tear down the subprocess if the buddy is removed mid-session.
+  useEffect(() => {
+    return () => {
+      if (claudeBridge && claudeActive) void claudeBridge.stop(state.id).catch(() => {});
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const feel = (next: Emotion, ms = 1600) => {
     if (emotionTimerRef.current) clearTimeout(emotionTimerRef.current);
     setEmotion(next);
@@ -370,7 +456,36 @@ export default function BuddyInstance({ state, anchor, canRemove, onChange, onSp
 
   const send = async () => {
     const text = input.trim();
-    if (!text || busy) return;
+    if (!text || busy || claudeBusy) return;
+
+    // Claude Code branch: pipe the user turn into the local `claude`
+    // subprocess via the platform bridge. The event subscription above
+    // handles streaming the assistant reply back into the chat bubble.
+    if (claudeActive && claudeBridge) {
+      const userMsg: ChatMsg = { id: msgIdRef.current++, from: 'you', text };
+      const replyId = msgIdRef.current++;
+      const baseMessages = [...stateRef.current.messages, userMsg];
+      writeMessages([...baseMessages, { id: replyId, from: 'buddy', text: '' }]);
+      setInput('');
+      setClaudeBusy(true);
+      claudeReplyIdRef.current = replyId;
+      feel('thinking', 1400);
+      const r = await claudeBridge.send(state.id, text);
+      if (!r.ok) {
+        const errText = r.error || 'send failed';
+        const cur = stateRef.current.messages;
+        const idx = cur.findIndex((m) => m.id === replyId);
+        if (idx >= 0) {
+          const next = cur.slice();
+          next[idx] = { ...next[idx], text: `(error: ${errText})` };
+          update({ messages: next });
+        }
+        setClaudeBusy(false);
+        claudeReplyIdRef.current = null;
+      }
+      return;
+    }
+
     if (!getApiKey()) {
       openSettings();
       return;
@@ -715,6 +830,34 @@ export default function BuddyInstance({ state, anchor, canRemove, onChange, onSp
                       onClick={() => setFamilyMenu((m) => (m === 'noto' ? null : 'noto'))}
                     />
                   </div>
+                  {claudeBridge && (
+                    <button
+                      data-buddy-interactive
+                      onClick={async () => {
+                        if (claudeActive) {
+                          await claudeBridge.stop(state.id).catch(() => {});
+                          setClaudeActive(false);
+                          setClaudeBusy(false);
+                          claudeReplyIdRef.current = null;
+                        } else {
+                          const r = await claudeBridge.start(state.id).catch((e) => ({ ok: false, error: String(e) } as const));
+                          if (r.ok) setClaudeActive(true);
+                          else {
+                            const note: ChatMsg = { id: msgIdRef.current++, from: 'buddy', text: `(claude unavailable: ${r.error || 'unknown'})` };
+                            update({ messages: [...stateRef.current.messages, note] });
+                          }
+                        }
+                      }}
+                      className={`ml-auto rounded-full px-2.5 py-0.5 text-[11px] font-medium transition-colors ${
+                        claudeActive
+                          ? 'bg-emerald-600 text-white'
+                          : 'bg-zinc-100 text-zinc-700 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700'
+                      }`}
+                      title={claudeActive ? 'Claude Code session running — click to stop' : 'Start a local Claude Code session for this buddy'}
+                    >
+                      {claudeActive ? '● Claude Code' : 'Claude Code'}
+                    </button>
+                  )}
                 </div>
                 {familyMenu === 'buddy' && (
                   <div className="mt-2 flex flex-wrap items-center gap-1.5 rounded-2xl bg-zinc-50 px-2.5 py-2 dark:bg-zinc-800/60">

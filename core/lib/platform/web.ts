@@ -1,4 +1,4 @@
-import type { InteractiveRect, NotificationPayload, PlatformAdapter, PlatformId } from './types';
+import type { ClaudeCodeBridge, InteractiveRect, NotificationPayload, PlatformAdapter, PlatformId } from './types';
 
 export class WebAdapter implements PlatformAdapter {
   readonly id: PlatformId;
@@ -45,4 +45,9 @@ export class WebAdapter implements PlatformAdapter {
     if (typeof window === 'undefined' || typeof Notification === 'undefined') return false;
     return Notification.permission === 'granted';
   }
+
+  // Web can't spawn local processes. A future iteration could connect to a
+  // happy-server-style relay over WebSocket; for now the feature is hidden
+  // when this returns null.
+  claudeCode(): ClaudeCodeBridge | null { return null; }
 }

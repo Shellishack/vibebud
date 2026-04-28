@@ -18,4 +18,20 @@ contextBridge.exposeInMainWorld('vibemoji', {
     ipcRenderer.on('vibemoji:open-settings', handler);
     return () => ipcRenderer.off('vibemoji:open-settings', handler);
   },
+  // Per-buddy Claude Code session bridge. The main process spawns one
+  // long-running `claude` subprocess per buddyId in stream-json mode and
+  // pipes user turns in / event lines out. Renderer never touches child_process.
+  claude: {
+    start: (buddyId, opts) => ipcRenderer.invoke('claude:start', { buddyId, opts }),
+    send: (buddyId, text) => ipcRenderer.invoke('claude:send', { buddyId, text }),
+    stop: (buddyId) => ipcRenderer.invoke('claude:stop', { buddyId }),
+    list: () => ipcRenderer.invoke('claude:list'),
+    onEvent: (cb) => {
+      const handler = (_e, payload) => {
+        if (payload && typeof payload.buddyId === 'string') cb(payload.buddyId, payload.event);
+      };
+      ipcRenderer.on('claude:event', handler);
+      return () => ipcRenderer.off('claude:event', handler);
+    },
+  },
 });
