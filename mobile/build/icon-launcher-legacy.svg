@@ -1,0 +1,15 @@
+<!-- Pre-API-26 launchers don't support adaptive icons, so this SVG bakes
+     the same lavender background + face features into a single square
+     tile that becomes mipmap-*/ic_launcher.png and ic_launcher_round.png.
+     Visual must match the adaptive icon (background + foreground) so the
+     transition between launcher generations is seamless. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
+  <rect width="256" height="256" fill="#EFE5FF" rx="36" ry="36"/>
+  <g fill="#6D3EDC">
+    <ellipse cx="100" cy="120" rx="14" ry="20"/>
+    <ellipse cx="156" cy="120" rx="14" ry="20"/>
+  </g>
+  <path d="M 100 160 Q 128 184 156 160"
+        stroke="#6D3EDC" stroke-width="12"
+        stroke-linecap="round" fill="none"/>
+</svg>

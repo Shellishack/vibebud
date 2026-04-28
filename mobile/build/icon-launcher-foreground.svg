@@ -1,0 +1,14 @@
+<!-- Adaptive-icon foreground: face features only on transparent ground.
+     The lavender adaptive background (drawable/ic_launcher_background.xml,
+     #EFE5FF) shows through, giving a square-with-face look that matches
+     the user's request: NOT a ball — a flat tile with the buddy's face.
+     Sizing fits the 72dp safe zone of Android's 108dp adaptive canvas. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
+  <g fill="#6D3EDC">
+    <ellipse cx="100" cy="120" rx="14" ry="20"/>
+    <ellipse cx="156" cy="120" rx="14" ry="20"/>
+  </g>
+  <path d="M 100 160 Q 128 184 156 160"
+        stroke="#6D3EDC" stroke-width="12"
+        stroke-linecap="round" fill="none"/>
+</svg>

@@ -329,6 +329,14 @@ export default function Buddy() {
   // set — releasing without a drag re-docks; starting a drag commits.
   const [peekedDock, setPeekedDock] = useState<Record<string, boolean>>({});
   const [appSettingsOpen, setAppSettingsOpen] = useState(false);
+  // True only inside the Android system-overlay WebView (where OverlayService
+  // injects `vibemojiNative`). The in-app Capacitor BridgeActivity WebView
+  // never sees it. Resolved post-mount so SSR/static export renders the gear
+  // and hydration removes it in the overlay.
+  const [isAndroidOverlay, setIsAndroidOverlay] = useState(false);
+  useEffect(() => {
+    setIsAndroidOverlay(!!(window as unknown as { vibemojiNative?: unknown }).vibemojiNative);
+  }, []);
   const idRef = useRef(2);
   const groupIdRef = useRef(1);
   const hydratedRef = useRef(false);
@@ -1915,11 +1923,12 @@ export default function Buddy() {
 
       {buddies.map(renderBuddy)}
 
-      {/* Web only: small gear (and QR shortcut) in the top-right opens app
-          settings. Hidden on Electron (tray "Settings…" item) and on the
-          Capacitor overlay (long-press a buddy → context menu → App
-          settings…) so the floating UI stays uncluttered. */}
-      {adapter.id === 'web' && (
+      {/* Top-right gear (and QR shortcut) opens app settings. Hidden on
+          Electron (tray "Settings…" item) and inside the Android system
+          overlay (no chrome on a floating window — settings reachable via
+          long-press a buddy → context menu → App settings…). Still shown
+          in the in-app Capacitor BridgeActivity WebView and the web build. */}
+      {adapter.id !== 'electron' && !isAndroidOverlay && (
         <div className="fixed right-3 top-3 z-[70] flex gap-2">
           {/* QR shortcut: triggers the same scanQrForPair as AppSettings,
               but skips the modal so re-pairing is one tap. Only meaningful
