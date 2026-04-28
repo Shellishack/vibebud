@@ -1138,12 +1138,15 @@ export default function BuddyInstance({ state, anchor, canRemove, onChange, onSp
           >
             <div className="h-full w-full" style={{ animation: 'buddy-bob 3s ease-in-out infinite' }}>
               {isComposite && composition ? (
-                <CompositeAvatar composition={composition} fetched={notoFetched} />
+                <CompositeFace composition={composition} fetched={notoFetched} />
               ) : (
                 <Lottie animationData={animation} loop autoplay />
               )}
             </div>
           </button>
+          {isComposite && composition && (
+            <CompositeHands composition={composition} fetched={notoFetched} />
+          )}
         </div>
       </div>
     </div>
@@ -1164,11 +1167,26 @@ function FamilyPill({ label, active, open, onClick }: { label: string; active: b
   );
 }
 
-// Renders the [lhItem][lh][face][rh][rhItem] composite. Each side cluster
-// (item+hand) sits in its own flex group with a tight inner gap so the gap
-// between hand and item is smaller than the gap between hand and face. Slot
-// sizes are proportional to the avatar box; missing slots are skipped.
-function CompositeAvatar({
+// Composite layout for facesWithHands: the face fills the button (the actual
+// tap region); hands and items render as decorative siblings positioned
+// outside the button, with pointer-events-none so they don't expand the hit
+// area. This keeps hands/items visually large without competing with the face
+// for the limited interactive-region budget.
+function CompositeFace({
+  composition,
+  fetched,
+}: {
+  composition: FacesWithHandsComposition;
+  fetched: Record<string, unknown>;
+}) {
+  const data = composition.face
+    ? ((fetched[composition.face] ?? getCachedLottie(composition.face)) as object | null)
+    : null;
+  if (!data) return null;
+  return <Lottie animationData={data} loop autoplay />;
+}
+
+function CompositeHands({
   composition,
   fetched,
 }: {
@@ -1177,38 +1195,44 @@ function CompositeAvatar({
 }) {
   const dataFor = (cp: string | undefined) =>
     cp ? ((fetched[cp] ?? getCachedLottie(cp)) as object | null) : null;
-  const faceData = dataFor(composition.face);
   const lhData = dataFor(composition.lh);
   const lhItemData = dataFor(composition.lhItem);
   const rhData = dataFor(composition.rh);
   const rhItemData = dataFor(composition.rhItem);
-  // Sizes as flex-basis percent of the inner row width. Values were tuned so
-  // the cluster fits in the 7rem (h-28 w-28) buddy button without overflow.
-  const faceSize = '52%';
-  const handSize = '22%';
-  const itemSize = '18%';
-  const Slot = ({ data, basis }: { data: object | null; basis: string }) =>
+  // Each prop is sized as a fraction of the 7rem (112px) button. Hands and
+  // items live outside the button bounds via negative offsets.
+  // Button is h-28 (7rem / 112px). Hands ~4.25rem, items ~3.5rem.
+  const handSize = '4.25rem';
+  const itemSize = '3.5rem';
+  const Slot = ({ data, size }: { data: object | null; size: string }) =>
     data ? (
-      <div style={{ flexBasis: basis, height: basis }} className="aspect-square shrink-0">
+      <div style={{ width: size, height: size }} className="aspect-square shrink-0">
         <Lottie animationData={data} loop autoplay />
       </div>
     ) : null;
   return (
-    <div className="flex h-full w-full items-center justify-center" style={{ gap: '6%' }}>
-      {(composition.lhItem || composition.lh) && (
-        <div className="flex items-center" style={{ gap: '2%' }}>
-          <Slot data={lhItemData} basis={itemSize} />
-          <Slot data={lhData} basis={handSize} />
+    <>
+      {(composition.lh || composition.lhItem) && (
+        <div
+          aria-hidden
+          className="pointer-events-none absolute top-1/2 -translate-y-1/2 flex items-center"
+          style={{ right: '100%', gap: '4px', paddingRight: '2px' }}
+        >
+          <Slot data={lhItemData} size={itemSize} />
+          <Slot data={lhData} size={handSize} />
         </div>
       )}
-      <Slot data={faceData} basis={faceSize} />
       {(composition.rh || composition.rhItem) && (
-        <div className="flex items-center" style={{ gap: '2%' }}>
-          <Slot data={rhData} basis={handSize} />
-          <Slot data={rhItemData} basis={itemSize} />
+        <div
+          aria-hidden
+          className="pointer-events-none absolute top-1/2 -translate-y-1/2 flex items-center"
+          style={{ left: '100%', gap: '4px', paddingLeft: '2px' }}
+        >
+          <Slot data={rhData} size={handSize} />
+          <Slot data={rhItemData} size={itemSize} />
         </div>
       )}
-    </div>
+    </>
   );
 }
 
