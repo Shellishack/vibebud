@@ -87,6 +87,11 @@ type Props = {
   // Current avatar rotation in degrees (driven by the parent's flight
   // integrator + drag-time torque accumulation).
   rotation?: number;
+  // True while the parent's physics is actively driving this body's
+  // rotation (drag pendulum or flight). When false, the rotation wrapper
+  // animates the transform with a CSS transition so settling back to 0
+  // glides smoothly.
+  rotationActive?: boolean;
   // Fired on pointer-down with the cursor's offset (in CSS px) from the
   // avatar's center, so the parent can derive torque from a flick.
   onDragStart?: (id: string, grabOffset: { x: number; y: number }) => void;
@@ -95,7 +100,7 @@ type Props = {
   onOpenAppSettings?: () => void;
 };
 
-export default function BuddyInstance({ state, anchor, canRemove, onChange, onSpawn, onRemove, onOpenChange, onDragMove, onDragEnd, magnetState, edgeMagnet, teammates, isGroupExpanded, isGroupMinimized, onGroupTap, onRestore, onGroupRestore, dockPeeked, groupDockPeeked, onDockPeek, onDockUnpeek, onGroupDockPeek, onGroupDockUnpeek, bumpTick, groupBumpTick, rotation, onDragStart, onOpenAppSettings }: Props) {
+export default function BuddyInstance({ state, anchor, canRemove, onChange, onSpawn, onRemove, onOpenChange, onDragMove, onDragEnd, magnetState, edgeMagnet, teammates, isGroupExpanded, isGroupMinimized, onGroupTap, onRestore, onGroupRestore, dockPeeked, groupDockPeeked, onDockPeek, onDockUnpeek, onGroupDockPeek, onGroupDockUnpeek, bumpTick, groupBumpTick, rotation, rotationActive, onDragStart, onOpenAppSettings }: Props) {
   const personality: Personality =
     PERSONALITY_BY_VARIANT[state.variantId] ?? PERSONALITY_BY_VARIANT.violet;
 
@@ -1233,6 +1238,7 @@ export default function BuddyInstance({ state, anchor, canRemove, onChange, onSp
                 transform: rotation ? `rotate(${rotation}deg)` : undefined,
                 transformOrigin: '50% 50%',
                 willChange: rotation ? 'transform' : undefined,
+                transition: rotationActive ? 'none' : 'transform 420ms cubic-bezier(0.22, 1, 0.36, 1)',
               }}
             >
               <div className="h-full w-full" style={{ animation: shaking ? 'buddy-shake 420ms ease-out' : 'buddy-bob 3s ease-in-out infinite' }}>

@@ -26,6 +26,10 @@ type Props = {
   // Current hull rotation in degrees (driven by parent flight integrator
   // + drag-time torque accumulation). Members keep their own orientation.
   rotation?: number;
+  // True while the parent's physics is driving this hull's rotation.
+  // When false, the hull's transform animates with a CSS transition so
+  // settling back to 0 glides smoothly.
+  rotationActive?: boolean;
   // Fired on pointer-down with the cursor's offset (CSS px) from the hull
   // center, so the parent can derive torque from a flick.
   onDragStartPhysics?: (gid: string, grabOffset: { x: number; y: number }) => void;
@@ -33,7 +37,7 @@ type Props = {
 
 export default function BuddyGroup({
   groupId, pos, memberCount, stride, avatarSize, padX, padTop, padBottom, anchor,
-  visible, magnetActive, edgeMagnetActive, background, expanded, onGroupDragMove, onGroupDragEnd, onGroupTap, bumpTick, rotation, onDragStartPhysics,
+  visible, magnetActive, edgeMagnetActive, background, expanded, onGroupDragMove, onGroupDragEnd, onGroupTap, bumpTick, rotation, rotationActive, onDragStartPhysics,
 }: Props) {
   const adapter = usePlatform();
   const width = (memberCount - 1) * stride + avatarSize + padX * 2;
@@ -292,13 +296,14 @@ export default function BuddyGroup({
         background: (visible || magnetActive) ? background : 'transparent',
         transform: rotation ? `rotate(${rotation}deg)` : undefined,
         transformOrigin: '50% 50%',
-        transition: isDragging
+        transition: (isDragging
           ? 'opacity 180ms ease-out, width 280ms cubic-bezier(0.22, 1, 0.36, 1), background 220ms ease-out'
           : 'opacity 180ms ease-out, ' +
             'width 280ms cubic-bezier(0.22, 1, 0.36, 1), ' +
             'right 280ms cubic-bezier(0.22, 1, 0.36, 1), ' +
             'bottom 280ms cubic-bezier(0.22, 1, 0.36, 1), ' +
-            'background 220ms ease-out',
+            'background 220ms ease-out')
+          + (rotationActive ? '' : ', transform 420ms cubic-bezier(0.22, 1, 0.36, 1)'),
         animation: shaking
           ? 'buddy-shake 420ms ease-out'
           : (magnetActive ? 'buddy-magnet-pulse 1100ms ease-in-out infinite' : undefined),

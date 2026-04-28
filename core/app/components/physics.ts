@@ -70,6 +70,22 @@ export const RELEASE_TORQUE_GAIN = 0.012; // (deg/ms) per (px * px/ms)
 // Hard cap on angular velocity (deg/ms) to keep spin from looking strobed.
 export const MAX_ANG_VEL = 1.4;
 
+// --- Pendulum (non-astronaut drag rotation) ---
+// While dragging in calm/bouncy mode, the cursor is the pivot and gravity
+// pulls the avatar's center of mass straight down below it. Modeled as a
+// damped spring toward the gravity-equilibrium angle.
+// Spring constant in (deg/ms²) per (deg of error). Tuned so the swing
+// settles in ~500ms with a small overshoot.
+export const PENDULUM_SPRING = 0.0008;
+// Damping in (1/ms) — reduces angular velocity proportionally each ms.
+export const PENDULUM_DAMPING = 0.012;
+// Below this grab radius (CSS px), gravity-rotation is skipped entirely —
+// a near-center grab would have ambiguous equilibrium and just jitter.
+export const PENDULUM_MIN_GRAB = 6;
+// Easing duration (ms) used to glide rotation back to 0 once a non-astronaut
+// body settles (or a calm-mode drag releases without a fling).
+export const ROTATION_EASE_MS = 420;
+
 export type Box = { x: number; y: number; w: number; h: number };
 export function bboxOverlap(a: Box, b: Box): { axis: 'x' | 'y'; depth: number } | null {
   const ox = Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x);
