@@ -351,6 +351,17 @@ export default function Buddy() {
     window.addEventListener('vibemoji:physicsChange', onChange);
     return () => window.removeEventListener('vibemoji:physicsChange', onChange);
   }, []);
+  // Master rotation toggle. When disabled, avatars never rotate — drag-time
+  // pendulum, flight angVel, and release torque are all bypassed and the
+  // rotation prop forwarded to children is forced to 0.
+  const [rotationEnabled, setRotationEnabledState] = useState<boolean>(() => getRotationEnabled());
+  const rotationEnabledRef = useRef(rotationEnabled);
+  useEffect(() => { rotationEnabledRef.current = rotationEnabled; }, [rotationEnabled]);
+  useEffect(() => {
+    const onChange = (e: Event) => setRotationEnabledState(!!(e as CustomEvent<boolean>).detail);
+    window.addEventListener('vibemoji:rotationChange', onChange);
+    return () => window.removeEventListener('vibemoji:rotationChange', onChange);
+  }, []);
   // Per-body rotation in degrees, keyed by `buddy:<id>` / `group:<id>`.
   // Updated 60fps while flying or being dragged from off-center.
   const [rotations, setRotations] = useState<Record<string, number>>({});
@@ -461,7 +472,7 @@ export default function Buddy() {
           kind: 'buddy', id: b.id, pos: { ...b.pos },
           vel: randomDriftVel(ASTRONAUT_DRIFT_SPEED),
           rot: rotationsRef.current[key] ?? 0,
-          angVel: randomDriftSpin(ASTRONAUT_DRIFT_SPIN),
+          angVel: rotationEnabledRef.current ? randomDriftSpin(ASTRONAUT_DRIFT_SPIN) : 0,
         });
       }
       for (const g of groupsRef.current) {
@@ -473,7 +484,7 @@ export default function Buddy() {
           kind: 'group', id: g.id, pos: { ...g.pos },
           vel: randomDriftVel(ASTRONAUT_DRIFT_SPEED),
           rot: rotationsRef.current[key] ?? 0,
-          angVel: randomDriftSpin(ASTRONAUT_DRIFT_SPIN),
+          angVel: rotationEnabledRef.current ? randomDriftSpin(ASTRONAUT_DRIFT_SPIN) : 0,
         });
       }
     }
@@ -1382,6 +1393,9 @@ export default function Buddy() {
       let Fx = -ax * DRAG_ROT_FORCE_GAIN;
       let Fy = -ay * DRAG_ROT_FORCE_GAIN;
       if (mode !== 'astronaut') Fy += GRAVITY_ACCEL;
+      // Zero-g implies no rotational friction either — astronaut spin is
+      // conserved between cursor-acceleration impulses.
+      const dampPerMs = mode === 'astronaut' ? 0 : DRAG_ROT_DAMPING;
 
       // Sub-step the integrator so high accelerations + occasional 48ms
       // frame stay stable.
@@ -1402,7 +1416,7 @@ export default function Buddy() {
           const alphaDeg = alphaRad * (180 / Math.PI);
           p.angVel += alphaDeg * subDt;
         }
-        p.angVel *= Math.exp(-DRAG_ROT_DAMPING * subDt);
+        if (dampPerMs > 0) p.angVel *= Math.exp(-dampPerMs * subDt);
         if (p.angVel > MAX_ANG_VEL) p.angVel = MAX_ANG_VEL;
         if (p.angVel < -MAX_ANG_VEL) p.angVel = -MAX_ANG_VEL;
         p.rot += p.angVel * subDt;
@@ -1419,6 +1433,7 @@ export default function Buddy() {
     pendulumRafRef.current = requestAnimationFrame(pendulumTick);
   };
   const seedPendulum = (key: string, grab: Vec2, startPos?: Vec2) => {
+    if (!rotationEnabledRef.current) return;
     const grabMag = Math.hypot(grab.x, grab.y);
     if (grabMag < PENDULUM_MIN_GRAB) return;
     const curRot = rotationsRef.current[key] ?? 0;
@@ -1545,7 +1560,7 @@ export default function Buddy() {
     const flickAng = cross2(grab.x, grab.y, flingVel.x, flingVel.y) * RELEASE_TORQUE_GAIN;
     const ped = pendulumsRef.current.get(key);
     pendulumsRef.current.delete(key);
-    const angVelRelease = flickAng + (ped?.angVel ?? 0);
+    const angVelRelease = rotationEnabledRef.current ? (flickAng + (ped?.angVel ?? 0)) : 0;
     const wantBouncyFling = mode === 'bouncy' && moved && flingSpeed >= FLING_THRESHOLD;
     const wantAstronautFling = mode === 'astronaut' && moved;
     // A drag commits the peek (in either direction); peekedDock tracks
@@ -1706,7 +1721,7 @@ export default function Buddy() {
     const flickAng = cross2(grab.x, grab.y, flingVel.x, flingVel.y) * RELEASE_TORQUE_GAIN;
     const ped = pendulumsRef.current.get(gKey);
     pendulumsRef.current.delete(gKey);
-    const angVelRelease = flickAng + (ped?.angVel ?? 0);
+    const angVelRelease = rotationEnabledRef.current ? (flickAng + (ped?.angVel ?? 0)) : 0;
     const wantFling = !g.minimized && (
       mode === 'astronaut'
       || (mode === 'bouncy' && flingSpeed >= FLING_THRESHOLD)
@@ -1841,9 +1856,9 @@ export default function Buddy() {
         onGroupDockUnpeek={(gid) => unpeekDockGroup(gid)}
         bumpTick={bumpTicks[`buddy:${b.id}`] ?? 0}
         groupBumpTick={b.groupId ? (bumpTicks[`group:${b.groupId}`] ?? 0) : 0}
-        rotation={rotations[`buddy:${b.id}`] ?? 0}
-        rotationActive={!!activeRotKeys[`buddy:${b.id}`]}
-        grabPivot={grabPivots[`buddy:${b.id}`]}
+        rotation={rotationEnabled ? (rotations[`buddy:${b.id}`] ?? 0) : 0}
+        rotationActive={rotationEnabled && !!activeRotKeys[`buddy:${b.id}`]}
+        grabPivot={rotationEnabled ? grabPivots[`buddy:${b.id}`] : undefined}
         onDragStart={onBuddyDragStart}
         onOpenAppSettings={() => setAppSettingsOpen(true)}
       />
@@ -1890,9 +1905,9 @@ export default function Buddy() {
             onGroupDragEnd={onGroupDragEnd}
             onGroupTap={onGroupTap}
             bumpTick={bumpTicks[`group:${g.id}`] ?? 0}
-            rotation={rotations[`group:${g.id}`] ?? 0}
-            rotationActive={!!activeRotKeys[`group:${g.id}`]}
-            grabPivot={grabPivots[`group:${g.id}`]}
+            rotation={rotationEnabled ? (rotations[`group:${g.id}`] ?? 0) : 0}
+            rotationActive={rotationEnabled && !!activeRotKeys[`group:${g.id}`]}
+            grabPivot={rotationEnabled ? grabPivots[`group:${g.id}`] : undefined}
             onDragStartPhysics={onGroupDragStartPhysics}
           />
         );
