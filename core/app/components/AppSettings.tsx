@@ -7,7 +7,7 @@ import { getNotifyMethod, setNotifyMethod, type NotifyMethod } from './llm';
 import {
   getRemoteClaudeConfig, setRemoteClaudeConfig, type RemoteClaudeConfig,
 } from '../../lib/platform/remoteClaude';
-import { getPhysicsMode, setPhysicsMode, type PhysicsMode } from './physics';
+import { getPhysicsMode, setPhysicsMode, type PhysicsMode, getRotationEnabled, setRotationEnabled } from './physics';
 
 type Props = { open: boolean; onClose: () => void };
 
@@ -24,6 +24,12 @@ function AppSettingsBody({ onClose }: { onClose: () => void }) {
   const choosePhysics = (next: PhysicsMode) => {
     setPhysicsModeState(next);
     setPhysicsMode(next);
+  };
+  const [rotationOn, setRotationOnState] = useState<boolean>(() => getRotationEnabled());
+  const toggleRotation = () => {
+    const next = !rotationOn;
+    setRotationOnState(next);
+    setRotationEnabled(next);
   };
 
   // Pair-with-desktop state. Web/Capacitor only — Electron uses the
@@ -246,6 +252,20 @@ function AppSettingsBody({ onClose }: { onClose: () => void }) {
                 onClick={() => choosePhysics('astronaut')}
               />
             </div>
+            <label className="mt-3 flex cursor-pointer items-start gap-2 rounded-2xl border border-zinc-200 bg-white px-3 py-2.5 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:hover:bg-zinc-800">
+              <input
+                type="checkbox"
+                checked={rotationOn}
+                onChange={toggleRotation}
+                className="mt-0.5 h-4 w-4 accent-violet-600"
+              />
+              <span className="flex flex-col">
+                <span className="text-sm font-medium text-zinc-900 dark:text-zinc-50">Rotate avatars</span>
+                <span className="text-xs text-zinc-500 dark:text-zinc-400">
+                  Off-center grabs swing the avatar; flicks add spin. Disable to keep avatars upright at all times.
+                </span>
+              </span>
+            </label>
           </section>
 
           <section>

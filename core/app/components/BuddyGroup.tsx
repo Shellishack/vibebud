@@ -297,18 +297,15 @@ export default function BuddyGroup({
         height,
         zIndex: 30,
         background: (visible || magnetActive) ? background : 'transparent',
-        transform: rotation ? `rotate(${rotation}deg)` : undefined,
-        transformOrigin: grabPivot
-          ? `calc(50% + ${grabPivot.x}px) calc(50% + ${grabPivot.y}px)`
-          : '50% 50%',
-        transition: (isDragging
+        // Hull background stays unrotated by request — only the avatars
+        // and their composite hands inside members rotate.
+        transition: isDragging
           ? 'opacity 180ms ease-out, width 280ms cubic-bezier(0.22, 1, 0.36, 1), background 220ms ease-out'
           : 'opacity 180ms ease-out, ' +
             'width 280ms cubic-bezier(0.22, 1, 0.36, 1), ' +
             'right 280ms cubic-bezier(0.22, 1, 0.36, 1), ' +
             'bottom 280ms cubic-bezier(0.22, 1, 0.36, 1), ' +
-            'background 220ms ease-out')
-          + (rotationActive ? '' : ', transform 420ms cubic-bezier(0.22, 1, 0.36, 1)'),
+            'background 220ms ease-out',
         animation: shaking
           ? 'buddy-shake 420ms ease-out'
           : (magnetActive ? 'buddy-magnet-pulse 1100ms ease-in-out infinite' : undefined),

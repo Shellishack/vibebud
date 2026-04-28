@@ -26,6 +26,20 @@ export function setPhysicsMode(m: PhysicsMode) {
   window.dispatchEvent(new CustomEvent<PhysicsMode>('vibemoji:physicsChange', { detail: m }));
 }
 
+const ROTATION_KEY = 'vibemoji.rotation.v1';
+export function getRotationEnabled(): boolean {
+  if (typeof window === 'undefined') return true;
+  try {
+    const v = localStorage.getItem(ROTATION_KEY);
+    return v === null ? true : v === '1';
+  } catch { return true; }
+}
+export function setRotationEnabled(v: boolean) {
+  if (typeof window === 'undefined') return;
+  try { localStorage.setItem(ROTATION_KEY, v ? '1' : '0'); } catch { /* noop */ }
+  window.dispatchEvent(new CustomEvent<boolean>('vibemoji:rotationChange', { detail: v }));
+}
+
 // Back-compat for callers still using the boolean toggle.
 export function getPhysicsEnabled(): boolean { return getPhysicsMode() !== 'off'; }
 export function setPhysicsEnabled(v: boolean) { setPhysicsMode(v ? 'bouncy' : 'off'); }

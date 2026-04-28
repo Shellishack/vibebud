@@ -11,7 +11,8 @@ import { usePlatform } from './hooks/usePlatform';
 import { isMobile } from '@/lib/platform/detect';
 import type { ElectronAdapter } from '@/lib/platform/electron';
 import {
-  getPhysicsMode, bboxOverlap, clampMag, cross2, randomDriftVel, randomDriftSpin,
+  getPhysicsMode, getRotationEnabled,
+  bboxOverlap, clampMag, cross2, randomDriftVel, randomDriftSpin,
   FLING_THRESHOLD, REST_THRESHOLD, FLIGHT_DRAG, EDGE_RESTITUTION,
   COLLIDE_RESTITUTION, VELOCITY_WINDOW_MS, MAX_FLING,
   ASTRONAUT_DRAG, ASTRONAUT_EDGE_RESTITUTION, ASTRONAUT_COLLIDE_RESTITUTION,
@@ -316,6 +317,8 @@ export default function Buddy() {
   const [peeked, setPeeked] = useState<Record<string, boolean>>({});
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [magnet, setMagnet] = useState<{ draggedId: string; targetId: string; targetType: 'buddy' | 'group' } | null>(null);
+  const magnetRef = useRef(magnet);
+  useEffect(() => { magnetRef.current = magnet; }, [magnet]);
   // Live edge-magnet cue: which buddy/group is currently within the
   // SNAP_THRESHOLD of which edge (set during drag, cleared on drag end).
   // Renderers show a glow/scale to signal the snap zone.
@@ -483,17 +486,22 @@ export default function Buddy() {
     const colRest = mode === 'astronaut' ? ASTRONAUT_COLLIDE_RESTITUTION : COLLIDE_RESTITUTION;
     const angDrag = mode === 'astronaut' ? 1.0 : ANG_DRAG;
 
-    // Static-body view: every visible non-flying buddy/group becomes a wall.
+    // Static-body view: every visible non-flying, non-dragged buddy/group
+    // becomes a wall. Dragged bodies are intentionally excluded — colliding
+    // with a body the user is currently positioning produces a bounce that
+    // makes intent (e.g., merging into a group) hard to express.
     const flyingKeys = new Set(flights.keys());
     type Body = { kind: 'buddy' | 'group'; id: string; box: { x: number; y: number; w: number; h: number } };
     const bodies: Body[] = [];
     for (const b of buddiesRef.current) {
       if (b.minimized) continue;
       if (b.groupId) continue;
+      if (dragging.has(b.id)) continue;
       bodies.push({ kind: 'buddy', id: b.id, box: { x: b.pos.x, y: b.pos.y, w: AVATAR_SIZE, h: AVATAR_SIZE } });
     }
     for (const g of groupsRef.current) {
       if (g.minimized) continue;
+      if (dragging.has(`group:${g.id}`)) continue;
       const s = groupSize(g);
       bodies.push({ kind: 'group', id: g.id, box: { x: g.pos.x, y: g.pos.y, w: s.w, h: s.h } });
     }
@@ -503,8 +511,13 @@ export default function Buddy() {
     const updatedRotations: Record<string, number> = {};
     const collided = new Set<string>();
     const toRest: Array<Flight> = [];
+    const m = magnetRef.current;
+    const magnetKey = m ? `${m.targetType}:${m.targetId}` : null;
     // dt is in ms; vel is px/ms; angVel is deg/ms.
     for (const [key, f] of flights) {
+      // Magnetic stasis: while the user is dragging another body toward
+      // this one for a merge, freeze the target so it's easy to hit.
+      if (key === magnetKey) continue;
       // Integrate translation + rotation.
       f.pos = { x: f.pos.x + f.vel.x * dt, y: f.pos.y + f.vel.y * dt };
       f.rot = f.rot + f.angVel * dt;
