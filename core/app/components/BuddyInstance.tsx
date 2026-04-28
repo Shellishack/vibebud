@@ -100,7 +100,13 @@ export default function BuddyInstance({ state, anchor, canRemove, onChange, onSp
   // Per-buddy Claude Code session: when active, chat sends route through the
   // local `claude` subprocess (spawned by Electron main) instead of the LLM
   // HTTP provider. claudeBusy mirrors `busy` for the bridge path.
-  const claudeBridge = adapter.claudeCode();
+  const [claudeBridgeTick, setClaudeBridgeTick] = useState(0);
+  const claudeBridge = useMemo(() => adapter.claudeCode(), [adapter, claudeBridgeTick]);
+  useEffect(() => {
+    const onPaired = () => setClaudeBridgeTick((n) => n + 1);
+    window.addEventListener('vibemoji:paired', onPaired);
+    return () => window.removeEventListener('vibemoji:paired', onPaired);
+  }, []);
   const [claudeActive, setClaudeActive] = useState(false);
   const [claudeBusy, setClaudeBusy] = useState(false);
   const claudeReplyIdRef = useRef<number | null>(null);
@@ -887,8 +893,7 @@ export default function BuddyInstance({ state, anchor, canRemove, onChange, onSp
                           const r = await claudeBridge.start(state.id).catch((e) => ({ ok: false, error: String(e) } as const));
                           if (r.ok) setClaudeActive(true);
                           else {
-                            const note: ChatMsg = { id: msgIdRef.current++, from: 'buddy', text: `(claude unavailable: ${r.error || 'unknown'})` };
-                            update({ messages: [...stateRef.current.messages, note] });
+                            pushToast({ title: 'Claude Code unavailable', body: r.error || 'unknown error', tone: 'action' });
                           }
                         }
                       }}

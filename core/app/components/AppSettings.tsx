@@ -25,6 +25,30 @@ function AppSettingsBody({ onClose }: { onClose: () => void }) {
   const showPairingUi = adapter.id !== 'electron';
   const [pairConfig, setPairConfig] = useState<RemoteClaudeConfig | null>(() => getRemoteClaudeConfig());
   const [scanError, setScanError] = useState<string | null>(null);
+  const [manualHost, setManualHost] = useState(() => getRemoteClaudeConfig()?.url ?? '');
+  const [manualToken, setManualToken] = useState(() => getRemoteClaudeConfig()?.token ?? '');
+  const [manualError, setManualError] = useState<string | null>(null);
+  const submitManual = () => {
+    setManualError(null);
+    const tok = manualToken.trim();
+    if (!tok) { setManualError('Token is required.'); return; }
+    let raw = manualHost.trim();
+    if (!raw) { setManualError('Host is required.'); return; }
+    // Accept "192.168.1.42", "192.168.1.42:3061", or a full ws://… URL.
+    // Default port matches desktop's pairing.js DEFAULT_PORT (3061).
+    if (!/^wss?:\/\//i.test(raw)) raw = 'ws://' + raw;
+    if (!/:\d+(?:\/|$)/.test(raw)) raw = raw.replace(/\/?$/, '') + ':3061';
+    let url: URL;
+    try { url = new URL(raw); }
+    catch { setManualError('Not a valid host or URL.'); return; }
+    if (url.protocol !== 'ws:' && url.protocol !== 'wss:') {
+      setManualError('Use ws:// or wss://.'); return;
+    }
+    const cfg = { url: url.toString().replace(/\/$/, ''), token: tok };
+    setRemoteClaudeConfig(cfg);
+    setPairConfig(cfg);
+    setManualHost(cfg.url);
+  };
   useEffect(() => {
     // MainActivity.handlePairingIntent fires this after a deep-link pair —
     // either from the system camera tapping the QR or from QrPairScanActivity
@@ -105,8 +129,13 @@ function AppSettingsBody({ onClose }: { onClose: () => void }) {
                     onClick={async () => {
                       setScanError('Opening scanner…');
                       const r = await adapter.scanQrForPair?.();
-                      if (r && !r.ok) setScanError(r.reason || 'Unknown failure.');
-                      else setScanError(null);
+                      // Cancel/empty-result is a normal user gesture, not an
+                      // error — stay silent so we don't yell about it.
+                      if (r && !r.ok && !/cancel|empty result/i.test(r.reason || '')) {
+                        setScanError(r.reason || 'Unknown failure.');
+                      } else {
+                        setScanError(null);
+                      }
                     }}
                     className="flex w-full items-center justify-center gap-2 rounded-2xl bg-violet-600 px-4 py-3 text-sm font-semibold text-white hover:bg-violet-700"
                   >
@@ -129,9 +158,53 @@ function AppSettingsBody({ onClose }: { onClose: () => void }) {
                   In-app camera scan isn&apos;t available on this platform. Open <code>vibemoji://pair?…</code> via your browser to pair.
                 </p>
               )}
+              {!pairConfig && (
+              <div className="mt-3 rounded-2xl border border-zinc-200 p-3 dark:border-zinc-700">
+                <p className="mb-2 text-xs font-semibold text-zinc-700 dark:text-zinc-200">
+                  Or enter manually
+                </p>
+                <label className="mb-1 block text-[11px] text-zinc-600 dark:text-zinc-400">
+                  Host (IP, IP:port, or ws://…)
+                </label>
+                <input
+                  type="text"
+                  inputMode="url"
+                  autoCapitalize="off"
+                  autoCorrect="off"
+                  spellCheck={false}
+                  value={manualHost}
+                  onChange={(e) => setManualHost(e.target.value)}
+                  placeholder="192.168.1.42"
+                  className="mb-2 w-full rounded-lg border border-zinc-300 bg-white px-2 py-1.5 font-mono text-[11px] outline-none focus:border-violet-500 dark:border-zinc-700 dark:bg-zinc-900"
+                />
+                <label className="mb-1 block text-[11px] text-zinc-600 dark:text-zinc-400">
+                  Token
+                </label>
+                <input
+                  type="text"
+                  autoCapitalize="off"
+                  autoCorrect="off"
+                  spellCheck={false}
+                  value={manualToken}
+                  onChange={(e) => setManualToken(e.target.value)}
+                  placeholder="paste token from desktop"
+                  className="mb-2 w-full rounded-lg border border-zinc-300 bg-white px-2 py-1.5 font-mono text-[11px] outline-none focus:border-violet-500 dark:border-zinc-700 dark:bg-zinc-900"
+                />
+                <button
+                  onClick={submitManual}
+                  className="w-full rounded-full bg-violet-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-violet-700"
+                >
+                  Pair with these values
+                </button>
+                {manualError && (
+                  <p className="mt-1 text-[10px] text-red-600 dark:text-red-400">{manualError}</p>
+                )}
+              </div>
+              )}
+
               {pairConfig && (
                 <button
-                  onClick={() => { setRemoteClaudeConfig(null); setPairConfig(null); }}
+                  onClick={() => { setRemoteClaudeConfig(null); setPairConfig(null); setManualHost(''); setManualToken(''); }}
                   className="mt-2 w-full rounded-2xl px-4 py-2 text-xs text-zinc-600 ring-1 ring-zinc-200 hover:bg-zinc-100 dark:text-zinc-300 dark:ring-zinc-700 dark:hover:bg-zinc-800"
                 >
                   Unpair

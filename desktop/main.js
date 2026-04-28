@@ -3,7 +3,7 @@ const path = require('path');
 const url = require('url');
 const { createClaudeHost } = require('./claudeSessions');
 const { startBridgeServer } = require('./claude-bridge-server');
-const { getOrCreateToken, showPairingWindow, DEFAULT_PORT } = require('./pairing');
+const { getOrCreateToken, showPairingWindow, refreshPairingWindow, DEFAULT_PORT } = require('./pairing');
 
 // Local Claude Code host for the renderer. Per-buddy long-running `claude`
 // subprocesses with stream-json I/O; events flow back to the renderer via the
@@ -130,18 +130,27 @@ app.whenReady().then(() => {
 
   ipcMain.handle('get-cursor-point', () => screen.getCursorScreenPoint());
 
-  ipcMain.on('vibemoji:notify', (_event, payload) => {
-    if (!payload || typeof payload !== 'object') return;
-    const title = String(payload.title || 'vibemoji');
-    const body = String(payload.body || '');
+  function notifyDesktop(title, body, { silent = false } = {}) {
     if (!Notification.isSupported()) return;
     try {
       const iconPath = path.join(__dirname, 'build', 'tray.png');
       const icon = nativeImage.createFromPath(iconPath);
-      const n = new Notification({ title, body, icon: icon.isEmpty() ? undefined : icon, silent: false });
+      const n = new Notification({
+        title: String(title || 'vibemoji'),
+        body: String(body || ''),
+        icon: icon.isEmpty() ? undefined : icon,
+        silent,
+      });
       n.show();
     } catch { /* noop */ }
+  }
+
+  ipcMain.on('vibemoji:notify', (_event, payload) => {
+    if (!payload || typeof payload !== 'object') return;
+    notifyDesktop(payload.title, payload.body);
   });
+
+  ipcMain.on('vibemoji:refresh-pair-token', () => { void refreshPairingWindow(); });
 
   ipcMain.on('vibemoji:show-pairing', () => {
     void showPairingWindow({ port: Number(process.env.VIBEMOJI_BRIDGE_PORT || DEFAULT_PORT) });
@@ -177,7 +186,19 @@ app.whenReady().then(() => {
     const port = Number(process.env.VIBEMOJI_BRIDGE_PORT || DEFAULT_PORT);
     const host = process.env.VIBEMOJI_BRIDGE_HOST || '0.0.0.0';
     const token = process.env.VIBEMOJI_BRIDGE_TOKEN || getOrCreateToken();
-    startBridgeServer({ host, port, token });
+    startBridgeServer({
+      host, port, token,
+      // Surface bridge-level lifecycle events as desktop notifications so the
+      // user sees when their phone connects and when sessions get spun up.
+      onEvent: (kind, info) => {
+        if (kind === 'paired') {
+          notifyDesktop('Phone connected', `vibemoji bridge accepted a client from ${info.peer}`);
+        } else if (kind === 'session-start') {
+          const buddy = info.buddyId ? ` for ${String(info.buddyId).slice(0, 8)}` : '';
+          notifyDesktop('Claude session started', `Bridge launched a Claude Code subprocess${buddy}.`);
+        }
+      },
+    });
   }
 
   createWindow();

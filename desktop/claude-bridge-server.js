@@ -18,7 +18,11 @@
 // closes so a dropped phone doesn't leave orphan claude processes around.
 const { createClaudeHost } = require('./claudeSessions');
 
-function startBridgeServer({ port, host = '0.0.0.0', token }) {
+// onEvent is an optional callback fired for bridge-level lifecycle events
+// (paired, session-start). main.js uses this to raise desktop notifications
+// so the user knows when their phone connects and when sessions spin up.
+function startBridgeServer({ port, host = '0.0.0.0', token, onEvent }) {
+  const emit = (kind, info) => { try { onEvent?.(kind, info || {}); } catch { /* noop */ } };
   let WebSocketServer;
   try { ({ WebSocketServer } = require('ws')); }
   catch (err) {
@@ -61,10 +65,16 @@ function startBridgeServer({ port, host = '0.0.0.0', token }) {
           return;
         }
         authed = true;
+        emit('paired', { peer });
         return replyAck(msg.id ?? null, { ok: true });
       }
       switch (msg.op) {
-        case 'start': return replyAck(msg.id, claude.start(String(msg.buddyId), msg.opts || {}));
+        case 'start': {
+          const buddyId = String(msg.buddyId);
+          const result = claude.start(buddyId, msg.opts || {});
+          if (result.ok && !result.alreadyRunning) emit('session-start', { buddyId, peer });
+          return replyAck(msg.id, result);
+        }
         case 'send':  return replyAck(msg.id, claude.send(String(msg.buddyId), String(msg.text || '')));
         case 'stop':  return replyAck(msg.id, claude.stop(String(msg.buddyId)));
         case 'list':  return replyAck(msg.id, claude.list());
