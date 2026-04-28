@@ -1,4 +1,5 @@
 import type { ClaudeCodeBridge, InteractiveRect, NotificationPayload, PlatformAdapter, PlatformId } from './types';
+import { getRemoteClaudeBridge } from './remoteClaude';
 
 export class WebAdapter implements PlatformAdapter {
   readonly id: PlatformId;
@@ -46,8 +47,8 @@ export class WebAdapter implements PlatformAdapter {
     return Notification.permission === 'granted';
   }
 
-  // Web can't spawn local processes. A future iteration could connect to a
-  // happy-server-style relay over WebSocket; for now the feature is hidden
-  // when this returns null.
-  claudeCode(): ClaudeCodeBridge | null { return null; }
+  // Web can't spawn local processes. Falls back to the remote WS bridge
+  // (desktop/claude-bridge-server.js) when the user has configured one in
+  // localStorage; otherwise the UI hides the Claude Code toggle.
+  claudeCode(): ClaudeCodeBridge | null { return getRemoteClaudeBridge(); }
 }

@@ -1,106 +1,19 @@
 const { app, BrowserWindow, Notification, screen, Tray, Menu, nativeImage, protocol, net, ipcMain } = require('electron');
 const path = require('path');
 const url = require('url');
-const { spawn } = require('child_process');
-const os = require('os');
+const { createClaudeHost } = require('./claudeSessions');
+const { startBridgeServer } = require('./claude-bridge-server');
+const { getOrCreateToken, showPairingWindow, DEFAULT_PORT } = require('./pairing');
 
-// --- Claude Code session host -------------------------------------------------
-// Each buddy can hold one long-running `claude` subprocess. We spawn with
-// stream-json I/O so the renderer can pipe user turns in and receive assistant
-// chunks/tool calls as JSONL events. Modeled after the slopus/happy-cli wrap
-// (which also relies on the `claude` CLI being on PATH) and OpenCode's
-// stream-json ACP transport. Sessions are keyed by buddy id and torn down on
-// claude:stop or window close.
-const claudeSessions = new Map(); // buddyId -> { proc, stdoutBuf, stderrBuf, cwd }
-
-function claudeBinary() {
-  // On Windows we rely on shell:true + PATHEXT to resolve .exe/.cmd/.bat.
-  // Hardcoding .cmd misses the native winget install (claude.exe).
-  return process.env.VIBEMOJI_CLAUDE_BIN || 'claude';
-}
-
-function claudeStart(buddyId, opts = {}) {
-  if (claudeSessions.has(buddyId)) return { ok: true, alreadyRunning: true };
-  const cwd = opts.cwd || process.env.VIBEMOJI_CLAUDE_CWD || os.homedir();
-  const args = [
-    '--print',
-    '--input-format', 'stream-json',
-    '--output-format', 'stream-json',
-    '--include-partial-messages',
-    '--verbose',
-    '--permission-mode', 'bypassPermissions',
-  ];
-  if (opts.model) args.push('--model', String(opts.model));
-  if (Array.isArray(opts.allowedTools)) args.push('--allowedTools', opts.allowedTools.join(','));
-  let proc;
-  try {
-    proc = spawn(claudeBinary(), args, {
-      cwd,
-      shell: os.platform() === 'win32',
-      env: { ...process.env },
-    });
-  } catch (err) {
-    return { ok: false, error: String(err && err.message || err) };
-  }
-  const session = { proc, stdoutBuf: '', stderrBuf: '', cwd };
-  claudeSessions.set(buddyId, session);
-  proc.stdout.setEncoding('utf8');
-  proc.stderr.setEncoding('utf8');
-  proc.stdout.on('data', (chunk) => {
-    session.stdoutBuf += chunk;
-    let nl;
-    while ((nl = session.stdoutBuf.indexOf('\n')) >= 0) {
-      const line = session.stdoutBuf.slice(0, nl).trim();
-      session.stdoutBuf = session.stdoutBuf.slice(nl + 1);
-      if (!line) continue;
-      let evt;
-      try { evt = JSON.parse(line); } catch { evt = { type: 'raw', text: line }; }
-      win?.webContents.send('claude:event', { buddyId, event: evt });
-    }
-  });
-  proc.stderr.on('data', (chunk) => {
-    session.stderrBuf += chunk;
-    win?.webContents.send('claude:event', { buddyId, event: { type: 'stderr', text: String(chunk) } });
-  });
-  proc.on('error', (err) => {
-    win?.webContents.send('claude:event', { buddyId, event: { type: 'error', text: String(err && err.message || err) } });
-    claudeSessions.delete(buddyId);
-  });
-  proc.on('close', (code) => {
-    const stderr = (session.stderrBuf || '').trim();
-    win?.webContents.send('claude:event', { buddyId, event: { type: 'closed', code, stderr, bin: claudeBinary(), cwd } });
-    claudeSessions.delete(buddyId);
-  });
-  return { ok: true, cwd };
-}
-
-function claudeSend(buddyId, text) {
-  const session = claudeSessions.get(buddyId);
-  if (!session) return { ok: false, error: 'no-session' };
-  const msg = {
-    type: 'user',
-    message: { role: 'user', content: [{ type: 'text', text: String(text) }] },
-  };
-  try {
-    session.proc.stdin.write(JSON.stringify(msg) + '\n');
-    return { ok: true };
-  } catch (err) {
-    return { ok: false, error: String(err && err.message || err) };
-  }
-}
-
-function claudeStop(buddyId) {
-  const session = claudeSessions.get(buddyId);
-  if (!session) return { ok: true };
-  try { session.proc.stdin.end(); } catch { /* noop */ }
-  try { session.proc.kill(); } catch { /* noop */ }
-  claudeSessions.delete(buddyId);
-  return { ok: true };
-}
-
-function claudeStopAll() {
-  for (const id of Array.from(claudeSessions.keys())) claudeStop(id);
-}
+// Local Claude Code host for the renderer. Per-buddy long-running `claude`
+// subprocesses with stream-json I/O; events flow back to the renderer via the
+// `claude:event` IPC channel. Session lifecycle is shared with the optional
+// remote WS bridge below — both sides use createClaudeHost.
+const localClaude = createClaudeHost({
+  emit: (buddyId, event) => {
+    win?.webContents.send('claude:event', { buddyId, event });
+  },
+});
 
 const DEV_URL = process.env.VIBEMOJI_DEV_URL;
 const OUT_DIR = path.join(__dirname, 'core-out');
@@ -166,6 +79,7 @@ function createTray() {
     { label: 'Toggle DevTools', click: () => win?.webContents.toggleDevTools({ mode: 'detach' }) },
     { type: 'separator' },
     { label: 'Add buddy', click: () => win?.webContents.send('spawn-buddy') },
+    { label: 'Pair phone…', click: () => { void showPairingWindow({ port: Number(process.env.VIBEMOJI_BRIDGE_PORT || DEFAULT_PORT) }); } },
     { label: 'Settings…', click: () => win?.webContents.send('vibemoji:open-settings') },
     {
       label: 'Clear local settings',
@@ -229,6 +143,10 @@ app.whenReady().then(() => {
     } catch { /* noop */ }
   });
 
+  ipcMain.on('vibemoji:show-pairing', () => {
+    void showPairingWindow({ port: Number(process.env.VIBEMOJI_BRIDGE_PORT || DEFAULT_PORT) });
+  });
+
   ipcMain.on('set-focusable', (_event, focusable) => {
     if (!win) return;
     win.setFocusable(Boolean(focusable));
@@ -237,28 +155,41 @@ app.whenReady().then(() => {
 
   ipcMain.handle('claude:start', (_event, payload) => {
     if (!payload || typeof payload.buddyId !== 'string') return { ok: false, error: 'bad-payload' };
-    return claudeStart(payload.buddyId, payload.opts || {});
+    return localClaude.start(payload.buddyId, payload.opts || {});
   });
   ipcMain.handle('claude:send', (_event, payload) => {
     if (!payload || typeof payload.buddyId !== 'string') return { ok: false, error: 'bad-payload' };
-    return claudeSend(payload.buddyId, payload.text || '');
+    return localClaude.send(payload.buddyId, payload.text || '');
   });
   ipcMain.handle('claude:stop', (_event, payload) => {
     if (!payload || typeof payload.buddyId !== 'string') return { ok: false, error: 'bad-payload' };
-    return claudeStop(payload.buddyId);
+    return localClaude.stop(payload.buddyId);
   });
-  ipcMain.handle('claude:list', () => Array.from(claudeSessions.keys()));
+  ipcMain.handle('claude:list', () => localClaude.list());
+
+  // WS bridge: lets paired vibemoji clients (Android, web) drive a `claude`
+  // subprocess running on this PC. Token is auto-generated and persisted in
+  // userData; phone pairs by scanning the QR from the tray menu (deep link
+  // encoding url + token). VIBEMOJI_BRIDGE_TOKEN env var overrides the
+  // persisted token; setting VIBEMOJI_BRIDGE_DISABLED=1 skips the bridge
+  // entirely.
+  if (!process.env.VIBEMOJI_BRIDGE_DISABLED) {
+    const port = Number(process.env.VIBEMOJI_BRIDGE_PORT || DEFAULT_PORT);
+    const host = process.env.VIBEMOJI_BRIDGE_HOST || '0.0.0.0';
+    const token = process.env.VIBEMOJI_BRIDGE_TOKEN || getOrCreateToken();
+    startBridgeServer({ host, port, token });
+  }
 
   createWindow();
   createTray();
 });
 
 app.on('window-all-closed', () => {
-  claudeStopAll();
+  localClaude.stopAll();
   if (process.platform !== 'darwin') app.quit();
 });
 
-app.on('before-quit', () => { claudeStopAll(); });
+app.on('before-quit', () => { localClaude.stopAll(); });
 
 app.on('activate', () => {
   if (BrowserWindow.getAllWindows().length === 0) createWindow();

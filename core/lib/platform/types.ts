@@ -74,6 +74,17 @@ export interface PlatformAdapter {
   // can't spawn local processes (web, capacitor). Callers should null-check
   // before exposing the "Claude Code" toggle in the UI.
   claudeCode(): ClaudeCodeBridge | null;
+
+  // Electron-only: opens the desktop pairing-QR window (the same one the tray
+  // menu's "Pair phone…" launches). Surfaced from in-app context menus so the
+  // user doesn't have to hunt through the system tray. No-op elsewhere.
+  showPairingWindow?(): void;
+
+  // Capacitor-only: kicks off the in-app QR scanner. Returns a synchronous
+  // status so callers can surface a visible failure when the native bridge
+  // is missing the method (e.g. stale APK) instead of silently no-op'ing.
+  // Pairing itself completes asynchronously via the `vibemoji:paired` event.
+  scanQrForPair?(): Promise<{ ok: boolean; reason?: string }>;
 }
 
 export type NotificationPayload = {

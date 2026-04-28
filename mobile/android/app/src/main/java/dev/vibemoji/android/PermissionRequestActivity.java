@@ -19,46 +19,54 @@ import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
 
 /**
- * Tiny transparent activity dedicated to the POST_NOTIFICATIONS runtime
- * permission flow. Lives outside Capacitor's BridgeActivity so the system
- * dialog appears immediately without the whole web stack booting first.
+ * Tiny transparent activity that runs runtime permission requests outside
+ * Capacitor's BridgeActivity, so the dialog appears immediately without the
+ * web stack booting first. Triggered by {@link OverlayService}.
  *
- * Triggered by {@link OverlayService#requestNotificationPermission()}.
+ * Pass EXTRA_PERMISSION (e.g. android.Manifest.permission.CAMERA) to ask for
+ * a specific permission. Defaults to POST_NOTIFICATIONS for back-compat with
+ * existing callers.
  */
 public class PermissionRequestActivity extends Activity {
     private static final String TAG = "VibemojiPerm";
-    private static final int REQ_POST_NOTIFICATIONS = 0xB001;
+    public static final String EXTRA_PERMISSION = "dev.vibemoji.android.extra.PERMISSION";
+    private static final int REQ_CODE = 0xB001;
     private static final String PREFS = "vibemoji.perms";
-    private static final String KEY_ASKED_NOTIF = "askedPostNotifications";
 
     private boolean dialogAttempted = false;
     private boolean dialogShown = false;
+    private String requestedPerm = android.Manifest.permission.POST_NOTIFICATIONS;
 
     @Override
     protected void onCreate(@Nullable Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        Log.i(TAG, "PermissionRequestActivity onCreate, SDK=" + Build.VERSION.SDK_INT);
-        toast("Permission flow started (SDK " + Build.VERSION.SDK_INT + ")");
+        Intent in = getIntent();
+        if (in != null && in.hasExtra(EXTRA_PERMISSION)) {
+            String p = in.getStringExtra(EXTRA_PERMISSION);
+            if (p != null && !p.isEmpty()) requestedPerm = p;
+        }
+        Log.i(TAG, "onCreate perm=" + requestedPerm + " SDK=" + Build.VERSION.SDK_INT);
 
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
-            // No runtime permission to ask for on pre-13. Fall back to app
-            // notification settings so the user can flip "Allow notifications".
+        // POST_NOTIFICATIONS is only a runtime permission on Android 13+.
+        // Other permissions (CAMERA) are runtime on all versions we target.
+        boolean isPostNotifications =
+                android.Manifest.permission.POST_NOTIFICATIONS.equals(requestedPerm);
+        if (isPostNotifications && Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
             openAppNotificationSettings();
             finish();
             return;
         }
 
-        String perm = android.Manifest.permission.POST_NOTIFICATIONS;
-        int cur = ContextCompat.checkSelfPermission(this, perm);
+        int cur = ContextCompat.checkSelfPermission(this, requestedPerm);
         if (cur == PackageManager.PERMISSION_GRANTED) {
-            toast("Permission already granted");
             finish();
             return;
         }
 
         SharedPreferences prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
-        boolean haveAsked = prefs.getBoolean(KEY_ASKED_NOTIF, false);
-        boolean canShowRationale = ActivityCompat.shouldShowRequestPermissionRationale(this, perm);
+        String askedKey = "asked:" + requestedPerm;
+        boolean haveAsked = prefs.getBoolean(askedKey, false);
+        boolean canShowRationale = ActivityCompat.shouldShowRequestPermissionRationale(this, requestedPerm);
         Log.i(TAG, "haveAsked=" + haveAsked + " canShowRationale=" + canShowRationale);
 
         if (haveAsked && !canShowRationale) {
@@ -68,13 +76,10 @@ public class PermissionRequestActivity extends Activity {
             return;
         }
 
-        prefs.edit().putBoolean(KEY_ASKED_NOTIF, true).apply();
+        prefs.edit().putBoolean(askedKey, true).apply();
         dialogAttempted = true;
-        ActivityCompat.requestPermissions(this, new String[]{ perm }, REQ_POST_NOTIFICATIONS);
+        ActivityCompat.requestPermissions(this, new String[]{ requestedPerm }, REQ_CODE);
 
-        // Belt-and-braces: if the dialog never actually surfaces (some OEMs
-        // silently no-op a second-attempt request even when rationale claims
-        // it would show), give it a beat then fall back to settings.
         new Handler(Looper.getMainLooper()).postDelayed(() -> {
             if (!isFinishing() && !dialogShown) {
                 toast("Dialog didn't appear — opening App Settings");
@@ -87,8 +92,6 @@ public class PermissionRequestActivity extends Activity {
     @Override
     public void onWindowFocusChanged(boolean hasFocus) {
         super.onWindowFocusChanged(hasFocus);
-        // Losing window focus shortly after we requested permissions means
-        // the system dialog has appeared on top of us — that's our signal.
         if (dialogAttempted && !hasFocus) dialogShown = true;
     }
 
@@ -96,28 +99,22 @@ public class PermissionRequestActivity extends Activity {
     public void onRequestPermissionsResult(
             int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
-        if (requestCode != REQ_POST_NOTIFICATIONS) {
+        if (requestCode != REQ_CODE) {
             finish();
             return;
         }
         boolean granted = grantResults.length > 0
                 && grantResults[0] == PackageManager.PERMISSION_GRANTED;
-        Log.i(TAG, "onRequestPermissionsResult granted=" + granted);
-        if (granted) {
-            toast("Notifications enabled ✓");
-            finish();
-            return;
-        }
-        // User denied. If shouldShowRationale is now false, we're in the
-        // "permanently denied" state — guide them to settings.
-        String perm = android.Manifest.permission.POST_NOTIFICATIONS;
-        boolean canShowRationale = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
-                && ActivityCompat.shouldShowRequestPermissionRationale(this, perm);
-        if (!canShowRationale) {
-            toast("Denied — opening Permissions in App Settings");
-            openAppDetailsSettings();
-        } else {
-            toast("Permission denied");
+        Log.i(TAG, "onRequestPermissionsResult perm=" + requestedPerm + " granted=" + granted);
+        if (!granted) {
+            boolean canShowRationale =
+                    ActivityCompat.shouldShowRequestPermissionRationale(this, requestedPerm);
+            if (!canShowRationale) {
+                toast("Denied — opening Permissions in App Settings");
+                openAppDetailsSettings();
+            } else {
+                toast("Permission denied");
+            }
         }
         finish();
     }

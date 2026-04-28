@@ -1,5 +1,6 @@
 ext {
-    minSdkVersion = 24
+    // Bumped from 24 → 26 to satisfy @capacitor/barcode-scanner's minimum.
+    minSdkVersion = 26
     compileSdkVersion = 36
     targetSdkVersion = 36
     androidxActivityVersion = '1.11.0'

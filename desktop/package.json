@@ -12,6 +12,10 @@
     "make-icon": "node make-icon.js",
     "build:win": "npm run sync-core && npm run make-icon && electron-builder --win --x64"
   },
+  "dependencies": {
+    "qrcode": "^1.5.4",
+    "ws": "^8.20.0"
+  },
   "devDependencies": {
     "cross-env": "^7.0.3",
     "electron": "^33.0.0",

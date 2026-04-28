@@ -55,6 +55,7 @@ public class OverlayService extends Service {
 
     public static final String ACTION_START = "dev.vibemoji.android.action.START_OVERLAY";
     public static final String ACTION_STOP = "dev.vibemoji.android.action.STOP_OVERLAY";
+    public static final String ACTION_RELOAD = "dev.vibemoji.android.action.RELOAD_OVERLAY";
     public static final String EXTRA_URL = "dev.vibemoji.android.extra.URL";
 
     private static final int NOTIFICATION_ID = 4242;
@@ -95,6 +96,15 @@ public class OverlayService extends Service {
         if (ACTION_STOP.equals(action)) {
             stopOverlay();
             return START_NOT_STICKY;
+        }
+        if (ACTION_RELOAD.equals(action)) {
+            // Re-fetch any settings that the WebView reads at boot (e.g. the
+            // remote-claude pairing payload written by MainActivity after a
+            // successful QR scan). No-op if the overlay isn't running.
+            if (RUNNING && webView != null) {
+                main.post(() -> { try { webView.reload(); } catch (Exception ignored) {} });
+            }
+            return START_STICKY;
         }
 
         startInForeground();
@@ -203,6 +213,11 @@ public class OverlayService extends Service {
         s.setDomStorageEnabled(true);
         s.setAllowFileAccess(true);
         s.setMediaPlaybackRequiresUserGesture(false);
+        // Overlay is loaded from https://localhost (via WebViewAssetLoader),
+        // but the remote-claude bridge runs on the user's PC at ws://<lan-ip>.
+        // Without MIXED_CONTENT_ALWAYS_ALLOW the WebSocket is silently dropped
+        // as mixed content and the bridge looks like it just "closed".
+        s.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
 
         // Map https://localhost/<path> → assets/public/<path>, mirroring the
         // path handler Capacitor's BridgeActivity installs on its own WebView.
@@ -820,6 +835,34 @@ public class OverlayService extends Service {
                 } catch (Throwable t) {
                     Toast.makeText(OverlayService.this,
                             "Couldn't launch permission activity: " + t.getMessage(),
+                            Toast.LENGTH_LONG).show();
+                }
+            });
+        }
+
+        /**
+         * Brings MainActivity (the Capacitor BridgeActivity) to the front
+         * with a SCAN_PAIR extra. MainActivity routes its WebView to /scan/,
+         * which is the only place @capacitor-mlkit/barcode-scanning can run
+         * (Capacitor plugins are not injected into the overlay's WebView).
+         * On scan completion, /scan/ writes the pairing to localStorage and
+         * finishes MainActivity via the vibemojiHost JS bridge.
+         */
+        @JavascriptInterface
+        public void scanQrForPair() {
+            main.post(() -> {
+                Toast.makeText(OverlayService.this,
+                        "Bridge: launching scanner…", Toast.LENGTH_SHORT).show();
+                try {
+                    Intent i = new Intent(OverlayService.this, MainActivity.class);
+                    i.putExtra(MainActivity.EXTRA_SCAN_PAIR, true);
+                    i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK
+                            | Intent.FLAG_ACTIVITY_REORDER_TO_FRONT
+                            | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+                    startActivity(i);
+                } catch (Throwable t) {
+                    Toast.makeText(OverlayService.this,
+                            "Couldn't launch scanner: " + t.getMessage(),
                             Toast.LENGTH_LONG).show();
                 }
             });

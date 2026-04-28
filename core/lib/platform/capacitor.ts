@@ -1,4 +1,5 @@
 import type { ClaudeCodeBridge, InteractiveRect, NotificationPayload, PlatformAdapter } from './types';
+import { getRemoteClaudeBridge } from './remoteClaude';
 
 type VibemojiNative = {
   setTouchableRegion?: (json: string) => void;
@@ -11,6 +12,7 @@ type VibemojiNative = {
   showNotification?: (json: string) => void;
   requestNotificationPermission?: () => void;
   hasNotificationPermission?: () => string;
+  scanQrForPair?: () => void;
 };
 
 const native = (): VibemojiNative | undefined => {
@@ -231,10 +233,61 @@ export class CapacitorAdapter implements PlatformAdapter {
     catch { return false; }
   }
 
-  // Capacitor can't spawn local processes — Claude Code session feature is
-  // hidden on Android. A future iteration could relay to a happy-server-style
-  // server over WebSocket.
-  claudeCode(): ClaudeCodeBridge | null { return null; }
+  // Two WebViews can host this code on Android:
+  //   1. Overlay's hand-rolled WebView — has `vibemojiNative`, no Capacitor.
+  //      Bridge to native, which bounces MainActivity to /scan/ to call the
+  //      plugin. (Overlay can't call Capacitor plugins directly.)
+  //   2. MainActivity's BridgeActivity WebView — has Capacitor plugins, no
+  //      `vibemojiNative`. We call the plugin directly here, no navigation.
+  // The result of the actual scan is delivered via the `vibemoji:paired`
+  // window event so AppSettings refreshes either way.
+  async scanQrForPair(): Promise<{ ok: boolean; reason?: string }> {
+    const n = native();
+    if (n && typeof n.scanQrForPair === 'function') {
+      try { n.scanQrForPair(); return { ok: true }; }
+      catch (e) { return { ok: false, reason: String(e instanceof Error ? e.message : e) }; }
+    }
+    if (typeof window === 'undefined') {
+      return { ok: false, reason: 'No window — SSR.' };
+    }
+    try {
+      const cap = await import('@capacitor/core');
+      if (!cap.Capacitor.isPluginAvailable('CapacitorBarcodeScanner')) {
+        return { ok: false, reason: 'CapacitorBarcodeScanner plugin not registered. Rebuild the APK.' };
+      }
+      const mod = await import('@capacitor/barcode-scanner');
+      const result = await mod.CapacitorBarcodeScanner.scanBarcode({
+        hint: mod.CapacitorBarcodeScannerTypeHint.QR_CODE,
+        scanInstructions: 'Point at the QR shown by the desktop app',
+      });
+      const text = result?.ScanResult;
+      if (!text) return { ok: false, reason: 'Scan canceled or empty result.' };
+      let parsed: URL;
+      try { parsed = new URL(text); }
+      catch { return { ok: false, reason: `Scanned text is not a URL: ${text}` }; }
+      if (parsed.protocol !== 'vibemoji:' || parsed.host !== 'pair') {
+        return { ok: false, reason: `Not a vibemoji://pair link: ${text}` };
+      }
+      const url = parsed.searchParams.get('url');
+      const token = parsed.searchParams.get('token');
+      if (!url || !token) return { ok: false, reason: 'Link missing url or token.' };
+      // Persist + notify listeners (AppSettings refreshes via this event).
+      try {
+        localStorage.setItem('vibemoji.claudeRemote.v1', JSON.stringify({ url, token }));
+      } catch (e) { return { ok: false, reason: `localStorage write failed: ${e}` }; }
+      window.dispatchEvent(new CustomEvent('vibemoji:paired'));
+      return { ok: true };
+    } catch (e) {
+      const msg = e instanceof Error ? `${e.name}: ${e.message}` : String(e);
+      return { ok: false, reason: msg };
+    }
+  }
+
+  // Capacitor can't spawn local processes. When the user has configured a
+  // remote bridge (vibemoji desktop running with VIBEMOJI_BRIDGE_TOKEN set),
+  // we relay over WebSocket to a `claude` subprocess on that machine. With no
+  // config, returns null and the UI hides the Claude Code toggle.
+  claudeCode(): ClaudeCodeBridge | null { return getRemoteClaudeBridge(); }
 
   onOutsideTap(cb: () => void): () => void {
     if (typeof window === 'undefined') return () => {};

@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Allow cleartext (HTTP/WS) traffic. The remote-claude bridge runs on the
+  user's PC at ws://<lan-ip>:3061; Android 9+ blocks cleartext by default
+  unless explicitly opted-in here. Pair only on a trusted LAN.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+            <certificates src="user" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

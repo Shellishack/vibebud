@@ -109,6 +109,11 @@ export default function BuddyInstance({ state, anchor, canRemove, onChange, onSp
   const [modelDraft, setModelDraft] = useState('');
   const [modelList, setModelList] = useState<string[]>([]);
   const [loadingModels, setLoadingModels] = useState(false);
+
+  // Right-click context menu (desktop / web). Coords are viewport-relative;
+  // the menu is portal'd to document.body so positioning isn't affected by the
+  // buddy's transform'd containing block.
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const modelsAbortRef = useRef<AbortController | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
@@ -680,6 +685,45 @@ export default function BuddyInstance({ state, anchor, canRemove, onChange, onSp
           bottom-anchored on mobile (the buddy lives at the bottom-right edge
           of a phone screen so the desktop right-anchored 320 px stack would
           overflow off-screen). */}
+      {contextMenu && typeof document !== 'undefined' && createPortal(
+        <>
+          <div
+            data-buddy-interactive
+            className="fixed inset-0 z-[70]"
+            onClick={() => setContextMenu(null)}
+            onContextMenu={(e) => { e.preventDefault(); setContextMenu(null); }}
+          />
+          <div
+            data-buddy-interactive
+            className="fixed z-[71] min-w-[180px] overflow-hidden rounded-lg border border-zinc-200 bg-white py-1 text-sm shadow-xl dark:border-zinc-700 dark:bg-zinc-900"
+            style={{
+              left: Math.min(contextMenu.x, (typeof window !== 'undefined' ? window.innerWidth : 9999) - 200),
+              top: Math.min(contextMenu.y, (typeof window !== 'undefined' ? window.innerHeight : 9999) - 240),
+            }}
+          >
+            {[
+              { label: open ? 'Close chat' : 'Open chat', onClick: () => setOpen(!open) },
+              ...(adapter.showPairingWindow
+                ? [{ label: 'Pair phone…', onClick: () => adapter.showPairingWindow?.() }]
+                : []),
+              { label: 'Settings…', onClick: () => openSettings() },
+              { label: 'Add buddy', onClick: () => onSpawn() },
+              ...(canRemove ? [{ label: 'Remove buddy', onClick: () => onRemove(), danger: true }] : []),
+            ].map((item, i) => (
+              <button
+                key={i}
+                onClick={() => { setContextMenu(null); item.onClick(); }}
+                className={`block w-full px-3 py-1.5 text-left hover:bg-zinc-100 dark:hover:bg-zinc-800 ${
+                  (item as { danger?: boolean }).danger ? 'text-red-600 dark:text-red-400' : 'text-zinc-700 dark:text-zinc-200'
+                }`}
+              >
+                {item.label}
+              </button>
+            ))}
+          </div>
+        </>,
+        document.body,
+      )}
       {isMobile && toasts.length > 0 && typeof document !== 'undefined' && createPortal(
         <div className="pointer-events-none fixed left-3 right-3 bottom-36 z-[60] flex flex-col gap-2">
           {toasts.map((t) => (
@@ -985,6 +1029,7 @@ export default function BuddyInstance({ state, anchor, canRemove, onChange, onSp
                 <p className="mt-2 text-[10px] leading-relaxed text-zinc-500 dark:text-zinc-400">
                   Stored locally in this browser only. Calls go direct from your browser to {PROVIDERS[providerDraft].label}.
                 </p>
+
               </div>
             )}
             <div className="min-h-0 flex-1 space-y-2 overflow-y-auto overscroll-contain px-4 py-3">
@@ -1098,6 +1143,10 @@ export default function BuddyInstance({ state, anchor, canRemove, onChange, onSp
             data-buddy-avatar
             data-buddy-id={state.id}
             onPointerDown={state.minimized && !dockPeeked ? undefined : onPointerDown}
+            onContextMenu={(e) => {
+              e.preventDefault();
+              setContextMenu({ x: e.clientX, y: e.clientY });
+            }}
             onClick={() => {
               if (justDraggedRef.current) {
                 justDraggedRef.current = false;

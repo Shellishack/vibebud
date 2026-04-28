@@ -8,6 +8,7 @@ type VibemojiBridge = {
   onSpawnBuddy?: (cb: () => void) => () => void;
   showNotification?: (payload: NotificationPayload) => void;
   onOpenSettings?: (cb: () => void) => () => void;
+  showPairing?: () => void;
   claude?: ClaudeCodeBridge;
   isElectron?: boolean;
 };
@@ -67,6 +68,10 @@ export class ElectronAdapter implements PlatformAdapter {
 
   claudeCode(): ClaudeCodeBridge | null {
     return bridge()?.claude ?? null;
+  }
+
+  showPairingWindow(): void {
+    bridge()?.showPairing?.();
   }
 
   onOpenSettings(cb: () => void): () => void {
