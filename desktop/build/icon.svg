@@ -1,20 +1,27 @@
+<!-- Desktop app icon — matches the Android launcher legacy tile (flat
+     face on lavender rounded square) so desktop and mobile branding are
+     consistent. Also used as the Android splash mark by
+     mobile/make-android-icons.js. -->
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
-  <defs>
-    <radialGradient id="aura" cx="50%" cy="48%" r="60%">
-      <stop offset="0%" stop-color="#8c5cf5" stop-opacity="0.45"/>
-      <stop offset="60%" stop-color="#8c5cf5" stop-opacity="0.10"/>
-      <stop offset="100%" stop-color="#8c5cf5" stop-opacity="0"/>
-    </radialGradient>
-    <radialGradient id="body" cx="40%" cy="35%" r="75%">
-      <stop offset="0%" stop-color="#a982ff"/>
-      <stop offset="60%" stop-color="#8c5cf5"/>
-      <stop offset="100%" stop-color="#6d3edc"/>
-    </radialGradient>
-  </defs>
-  <circle cx="128" cy="132" r="118" fill="url(#aura)"/>
-  <circle cx="128" cy="128" r="86" fill="url(#body)"/>
-  <ellipse cx="105" cy="118" rx="45" ry="32" fill="#ffffff" opacity="0.18"/>
-  <ellipse cx="111" cy="124" rx="11" ry="15" fill="#ffffff"/>
-  <ellipse cx="145" cy="124" rx="11" ry="15" fill="#ffffff"/>
-  <ellipse cx="128" cy="156" rx="22" ry="9" fill="#ffffff"/>
+  <rect width="256" height="256" fill="#EFE5FF" rx="36" ry="36"/>
+  <!-- rosy cheeks -->
+  <g fill="#ffb3c7" opacity="0.85">
+    <ellipse cx="78"  cy="158" rx="14" ry="9"/>
+    <ellipse cx="178" cy="158" rx="14" ry="9"/>
+  </g>
+  <!-- eyes: round pupils with sparkle highlights -->
+  <g fill="#6D3EDC">
+    <circle cx="100" cy="124" r="16"/>
+    <circle cx="156" cy="124" r="16"/>
+  </g>
+  <g fill="#ffffff">
+    <circle cx="105" cy="119" r="5"/>
+    <circle cx="161" cy="119" r="5"/>
+    <circle cx="96"  cy="129" r="2.5"/>
+    <circle cx="152" cy="129" r="2.5"/>
+  </g>
+  <!-- smile -->
+  <path d="M 102 158 Q 128 182 154 158"
+        stroke="#6D3EDC" stroke-width="11"
+        stroke-linecap="round" fill="none"/>
 </svg>
