@@ -105,7 +105,7 @@ function AppSettingsBody({ onClose }: { onClose: () => void }) {
         onClick={onClose}
       >
         <div
-          className="w-full max-w-md rounded-3xl border border-zinc-200 bg-white/95 p-5 shadow-2xl dark:border-zinc-700 dark:bg-zinc-900/95"
+          className="flex max-h-[calc(100vh-2rem)] w-full max-w-md flex-col overflow-y-auto overscroll-contain rounded-3xl border border-zinc-200 bg-white/95 p-5 shadow-2xl dark:border-zinc-700 dark:bg-zinc-900/95"
           onClick={(e) => e.stopPropagation()}
         >
           <div className="mb-4 flex items-center justify-between">

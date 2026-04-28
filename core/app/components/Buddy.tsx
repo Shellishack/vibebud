@@ -1915,12 +1915,11 @@ export default function Buddy() {
 
       {buddies.map(renderBuddy)}
 
-      {/* Web / Capacitor: a small gear in the top-right opens app-wide
-          settings (notification method, future global prefs). On Electron
-          the same modal is opened from the tray "Settings…" item, so we
-          skip rendering the gear there to keep the always-on-top window
-          uncluttered. */}
-      {adapter.id !== 'electron' && (
+      {/* Web only: small gear (and QR shortcut) in the top-right opens app
+          settings. Hidden on Electron (tray "Settings…" item) and on the
+          Capacitor overlay (long-press a buddy → context menu → App
+          settings…) so the floating UI stays uncluttered. */}
+      {adapter.id === 'web' && (
         <div className="fixed right-3 top-3 z-[70] flex gap-2">
           {/* QR shortcut: triggers the same scanQrForPair as AppSettings,
               but skips the modal so re-pairing is one tap. Only meaningful
