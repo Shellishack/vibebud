@@ -11,10 +11,13 @@ import { usePlatform } from './hooks/usePlatform';
 import { isMobile } from '@/lib/platform/detect';
 import type { ElectronAdapter } from '@/lib/platform/electron';
 import {
-  getPhysicsEnabled as readPhysicsEnabled,
-  bboxOverlap, clampMag,
+  getPhysicsMode, bboxOverlap, clampMag, cross2, randomDriftVel, randomDriftSpin,
   FLING_THRESHOLD, REST_THRESHOLD, FLIGHT_DRAG, EDGE_RESTITUTION,
-  COLLIDE_RESTITUTION, VELOCITY_WINDOW_MS, MAX_FLING, type Vec2,
+  COLLIDE_RESTITUTION, VELOCITY_WINDOW_MS, MAX_FLING,
+  ASTRONAUT_DRAG, ASTRONAUT_EDGE_RESTITUTION, ASTRONAUT_COLLIDE_RESTITUTION,
+  ASTRONAUT_DRIFT_SPEED, ASTRONAUT_DRIFT_SPIN,
+  ANG_DRAG, ANG_REST_THRESHOLD, DRAG_TORQUE_GAIN, RELEASE_TORQUE_GAIN, MAX_ANG_VEL,
+  type Vec2, type PhysicsMode,
 } from './physics';
 
 // Lighten each avatar color toward white so the hull reads as a pastel
@@ -331,15 +334,29 @@ export default function Buddy() {
   const peekedRef = useRef(peeked);
   const peekedDockRef = useRef(peekedDock);
 
-  // --- Bouncy-drag physics ---
-  const [physicsEnabled, setPhysicsEnabledState] = useState<boolean>(() => readPhysicsEnabled());
-  const physicsRef = useRef(physicsEnabled);
-  useEffect(() => { physicsRef.current = physicsEnabled; }, [physicsEnabled]);
+  // --- Drag physics ---
+  const [physicsMode, setPhysicsModeState] = useState<PhysicsMode>(() => getPhysicsMode());
+  const modeRef = useRef(physicsMode);
+  useEffect(() => { modeRef.current = physicsMode; }, [physicsMode]);
   useEffect(() => {
-    const onChange = (e: Event) => setPhysicsEnabledState(!!(e as CustomEvent<boolean>).detail);
+    const onChange = (e: Event) => {
+      const m = (e as CustomEvent<PhysicsMode>).detail;
+      if (m === 'off' || m === 'bouncy' || m === 'astronaut') setPhysicsModeState(m);
+    };
     window.addEventListener('vibemoji:physicsChange', onChange);
     return () => window.removeEventListener('vibemoji:physicsChange', onChange);
   }, []);
+  // Per-body rotation in degrees, keyed by `buddy:<id>` / `group:<id>`.
+  // Updated 60fps while flying or being dragged from off-center.
+  const [rotations, setRotations] = useState<Record<string, number>>({});
+  const rotationsRef = useRef(rotations);
+  useEffect(() => { rotationsRef.current = rotations; }, [rotations]);
+  // Grab offset (cursor relative to body's center, in CSS px) captured at
+  // pointer-down. Used to derive torque-from-flick on release.
+  const grabOffsetsRef = useRef<Map<string, Vec2>>(new Map());
+  // Last drag-move sample (pos + timestamp) so we can compute incremental
+  // rotation while dragging from an off-center grab.
+  const lastDragSampleRef = useRef<Map<string, { t: number; x: number; y: number }>>(new Map());
   // Bump tick: increments per id (`buddy:<id>` / `group:<id>`) on each
   // collision, so child components can react with a brief shake + emotion.
   const [bumpTicks, setBumpTicks] = useState<Record<string, number>>({});
@@ -361,7 +378,14 @@ export default function Buddy() {
     if (dt <= 0) return { x: 0, y: 0 };
     return clampMag({ x: (b.x - a.x) / dt, y: (b.y - a.y) / dt }, MAX_FLING);
   };
-  type Flight = { kind: 'buddy' | 'group'; id: string; pos: Vec2; vel: Vec2 };
+  type Flight = {
+    kind: 'buddy' | 'group';
+    id: string;
+    pos: Vec2;
+    vel: Vec2;
+    rot: number;     // degrees
+    angVel: number;  // deg/ms
+  };
   const flightsRef = useRef<Map<string, Flight>>(new Map());
   const flightRafRef = useRef<number>(0);
   const lastFlightTickRef = useRef<number>(0);
@@ -376,13 +400,51 @@ export default function Buddy() {
   });
   const flightTick = () => {
     flightRafRef.current = 0;
+    const mode = modeRef.current;
     const now = (typeof performance !== 'undefined' ? performance.now() : Date.now());
     const rawDt = now - lastFlightTickRef.current;
     lastFlightTickRef.current = now;
     // Cap dt — if the tab was backgrounded we don't want a giant jump.
     const dt = Math.min(48, Math.max(1, rawDt));
     const flights = flightsRef.current;
+    const dragging: Set<string> = (window as unknown as { __vibemojiDragging?: Set<string> }).__vibemojiDragging
+      ?? new Set();
+
+    // Astronaut: top up flights so every visible free body floats.
+    if (mode === 'astronaut') {
+      for (const b of buddiesRef.current) {
+        if (b.minimized || b.groupId) continue;
+        const key = `buddy:${b.id}`;
+        if (flights.has(key)) continue;
+        if (dragging.has(b.id)) continue;
+        flights.set(key, {
+          kind: 'buddy', id: b.id, pos: { ...b.pos },
+          vel: randomDriftVel(ASTRONAUT_DRIFT_SPEED),
+          rot: rotationsRef.current[key] ?? 0,
+          angVel: randomDriftSpin(ASTRONAUT_DRIFT_SPIN),
+        });
+      }
+      for (const g of groupsRef.current) {
+        if (g.minimized) continue;
+        const key = `group:${g.id}`;
+        if (flights.has(key)) continue;
+        if (dragging.has(`group:${g.id}`)) continue;
+        flights.set(key, {
+          kind: 'group', id: g.id, pos: { ...g.pos },
+          vel: randomDriftVel(ASTRONAUT_DRIFT_SPEED),
+          rot: rotationsRef.current[key] ?? 0,
+          angVel: randomDriftSpin(ASTRONAUT_DRIFT_SPIN),
+        });
+      }
+    }
+
     if (flights.size === 0) return;
+
+    // Mode-specific tuning.
+    const linDrag = mode === 'astronaut' ? ASTRONAUT_DRAG : FLIGHT_DRAG;
+    const edgeRest = mode === 'astronaut' ? ASTRONAUT_EDGE_RESTITUTION : EDGE_RESTITUTION;
+    const colRest = mode === 'astronaut' ? ASTRONAUT_COLLIDE_RESTITUTION : COLLIDE_RESTITUTION;
+    const angDrag = mode === 'astronaut' ? 1.0 : ANG_DRAG;
 
     // Static-body view: every visible non-flying buddy/group becomes a wall.
     const flyingKeys = new Set(flights.keys());
@@ -390,7 +452,7 @@ export default function Buddy() {
     const bodies: Body[] = [];
     for (const b of buddiesRef.current) {
       if (b.minimized) continue;
-      if (b.groupId) continue; // grouped members move with their group
+      if (b.groupId) continue;
       bodies.push({ kind: 'buddy', id: b.id, box: { x: b.pos.x, y: b.pos.y, w: AVATAR_SIZE, h: AVATAR_SIZE } });
     }
     for (const g of groupsRef.current) {
@@ -401,15 +463,19 @@ export default function Buddy() {
 
     const updatedBuddyPos: Record<string, Vec2> = {};
     const updatedGroupPos: Record<string, Vec2> = {};
+    const updatedRotations: Record<string, number> = {};
     const collided = new Set<string>();
     const toRest: Array<Flight> = [];
-    // dt is in ms; vel is px/ms.
+    // dt is in ms; vel is px/ms; angVel is deg/ms.
     for (const [key, f] of flights) {
-      // Integrate
+      // Integrate translation + rotation.
       f.pos = { x: f.pos.x + f.vel.x * dt, y: f.pos.y + f.vel.y * dt };
+      f.rot = f.rot + f.angVel * dt;
       // Per-frame drag (normalize to ~16ms frame so dt jitter doesn't change feel).
-      const dragK = Math.pow(FLIGHT_DRAG, dt / 16);
-      f.vel = { x: f.vel.x * dragK, y: f.vel.y * dragK };
+      const dK = Math.pow(linDrag, dt / 16);
+      const aK = Math.pow(angDrag, dt / 16);
+      f.vel = { x: f.vel.x * dK, y: f.vel.y * dK };
+      f.angVel = f.angVel * aK;
 
       // Edge bounce via the existing clamp helpers as the source of truth.
       let clamped: Vec2;
@@ -423,12 +489,12 @@ export default function Buddy() {
         clamped = clampGroupPos(f.pos, n);
         selfBox = { x: clamped.x, y: clamped.y, w: (n - 1) * COLLAPSED_STRIDE + AVATAR_SIZE, h: AVATAR_SIZE };
       }
-      if (clamped.x !== f.pos.x) f.vel.x = -f.vel.x * EDGE_RESTITUTION;
-      if (clamped.y !== f.pos.y) f.vel.y = -f.vel.y * EDGE_RESTITUTION;
+      if (clamped.x !== f.pos.x) f.vel.x = -f.vel.x * edgeRest;
+      if (clamped.y !== f.pos.y) f.vel.y = -f.vel.y * edgeRest;
       f.pos = clamped;
 
-      // Collisions vs every other body (skip self + skip other in-flight to
-      // avoid double-resolving — the other flight's own pass will handle it).
+      // Collisions vs every other body. Skip self; skip other in-flight to
+      // avoid double-resolving — the other flight's own pass handles it.
       for (const o of bodies) {
         if (o.kind === f.kind && o.id === f.id) continue;
         if (flyingKeys.has(`${o.kind}:${o.id}`)) continue;
@@ -440,23 +506,35 @@ export default function Buddy() {
         if (ov.axis === 'x') {
           const dir = (f.pos.x + selfBox.w / 2) < (o.box.x + o.box.w / 2) ? -1 : 1;
           f.pos.x += dir * ov.depth;
-          f.vel.x = -f.vel.x * COLLIDE_RESTITUTION;
+          f.vel.x = -f.vel.x * colRest;
         } else {
           const dir = (f.pos.y + selfBox.h / 2) < (o.box.y + o.box.h / 2) ? -1 : 1;
           f.pos.y += dir * ov.depth;
-          f.vel.y = -f.vel.y * COLLIDE_RESTITUTION;
+          f.vel.y = -f.vel.y * colRest;
         }
         collided.add(`${f.kind}:${f.id}`);
         collided.add(`${o.kind}:${o.id}`);
       }
 
+      // Astronaut: maintain a baseline drift so bodies never come to rest.
+      if (mode === 'astronaut' && Math.hypot(f.vel.x, f.vel.y) < ASTRONAUT_DRIFT_SPEED * 0.4) {
+        const nudge = randomDriftVel(ASTRONAUT_DRIFT_SPEED);
+        f.vel.x += nudge.x; f.vel.y += nudge.y;
+      }
+
       if (f.kind === 'buddy') updatedBuddyPos[f.id] = f.pos;
       else updatedGroupPos[f.id] = f.pos;
+      updatedRotations[key] = f.rot;
 
-      if (Math.hypot(f.vel.x, f.vel.y) < REST_THRESHOLD) toRest.push(f);
+      // Rest detection only in non-astronaut modes.
+      if (mode !== 'astronaut'
+        && Math.hypot(f.vel.x, f.vel.y) < REST_THRESHOLD
+        && Math.abs(f.angVel) < ANG_REST_THRESHOLD
+      ) {
+        toRest.push(f);
+      }
     }
 
-    // Apply position updates in a single pass each.
     if (Object.keys(updatedBuddyPos).length) {
       setBuddies((cur) => cur.map((b) => updatedBuddyPos[b.id]
         ? { ...b, pos: updatedBuddyPos[b.id] }
@@ -467,7 +545,9 @@ export default function Buddy() {
         ? { ...g, pos: updatedGroupPos[g.id] }
         : g));
     }
-
+    if (Object.keys(updatedRotations).length) {
+      setRotations((cur) => ({ ...cur, ...updatedRotations }));
+    }
     if (collided.size) {
       setBumpTicks((cur) => {
         const next = { ...cur };
@@ -477,6 +557,7 @@ export default function Buddy() {
     }
 
     // Settle any flight at rest. Dock to nearest edge if it landed close.
+    // Skipped entirely in astronaut mode (handled above).
     for (const f of toRest) {
       const key = `${f.kind}:${f.id}`;
       flights.delete(key);
@@ -505,16 +586,33 @@ export default function Buddy() {
       }
     }
 
-    if (flights.size > 0) flightRafRef.current = requestAnimationFrame(flightTick);
+    if (flights.size > 0 || mode === 'astronaut') {
+      flightRafRef.current = requestAnimationFrame(flightTick);
+    }
   };
-  const startFlight = (kind: 'buddy' | 'group', id: string, startPos: Vec2, vel: Vec2) => {
+  const startFlight = (
+    kind: 'buddy' | 'group', id: string, startPos: Vec2, vel: Vec2, angVel: number,
+  ) => {
     const key = `${kind}:${id}`;
-    flightsRef.current.set(key, { kind, id, pos: { ...startPos }, vel: { ...vel } });
+    const cappedAng = Math.max(-MAX_ANG_VEL, Math.min(MAX_ANG_VEL, angVel));
+    flightsRef.current.set(key, {
+      kind, id,
+      pos: { ...startPos },
+      vel: { ...vel },
+      rot: rotationsRef.current[key] ?? 0,
+      angVel: cappedAng,
+    });
     // Hold the drag-holder so Capacitor keeps the touchable region full-window
     // and persistence/region-publish suspensions remain in effect until rest.
     adapter.notifyDragStart(`flight:${key}`);
     ensureFlightLoop();
   };
+  // Astronaut mode is always-on once enabled — the loop tops up flights and
+  // keeps drifting until the user changes mode.
+  useEffect(() => {
+    if (physicsMode === 'astronaut') ensureFlightLoop();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [physicsMode]);
   useEffect(() => () => {
     if (flightRafRef.current) cancelAnimationFrame(flightRafRef.current);
     for (const k of flightsRef.current.keys()) adapter.notifyDragEnd(`flight:${k}`);
@@ -1179,8 +1277,54 @@ export default function Buddy() {
     }
   };
 
+  // Drag start (from BuddyInstance / BuddyGroup) — captures the grab offset
+  // so we can derive torque from a flick. Also kills any in-flight motion
+  // for the dragged body so the user's drag isn't fighting the integrator.
+  const onBuddyDragStart = (id: string, grab: Vec2) => {
+    if (modeRef.current === 'off') return;
+    grabOffsetsRef.current.set(`buddy:${id}`, grab);
+    lastDragSampleRef.current.delete(`buddy:${id}`);
+    const key = `buddy:${id}`;
+    if (flightsRef.current.has(key)) {
+      flightsRef.current.delete(key);
+      adapter.notifyDragEnd(`flight:${key}`);
+    }
+  };
+  const onGroupDragStartPhysics = (gid: string, grab: Vec2) => {
+    if (modeRef.current === 'off') return;
+    grabOffsetsRef.current.set(`group:${gid}`, grab);
+    lastDragSampleRef.current.delete(`group:${gid}`);
+    const key = `group:${gid}`;
+    if (flightsRef.current.has(key)) {
+      flightsRef.current.delete(key);
+      adapter.notifyDragEnd(`flight:${key}`);
+    }
+  };
+
+  // Accumulate rotation while the user drags from an off-center grab.
+  // Each frame's increment is (r × Δp) * gain — same sign convention as the
+  // release-torque calc, so grabbing from below and pulling right spins the
+  // avatar the way physical intuition expects.
+  const accumulateDragRotation = (key: string, pos: Vec2) => {
+    const r = grabOffsetsRef.current.get(key);
+    if (!r) return;
+    const t = (typeof performance !== 'undefined' ? performance.now() : Date.now());
+    const last = lastDragSampleRef.current.get(key);
+    lastDragSampleRef.current.set(key, { t, x: pos.x, y: pos.y });
+    if (!last) return;
+    const dx = pos.x - last.x;
+    const dy = pos.y - last.y;
+    if (dx === 0 && dy === 0) return;
+    const dRot = cross2(r.x, r.y, dx, dy) * DRAG_TORQUE_GAIN;
+    if (dRot === 0) return;
+    setRotations((cur) => ({ ...cur, [key]: (cur[key] ?? 0) + dRot }));
+  };
+
   const onDragMove = (id: string, pos: { x: number; y: number }) => {
-    if (physicsRef.current) recordSample(`buddy:${id}`, pos);
+    if (modeRef.current !== 'off') {
+      recordSample(`buddy:${id}`, pos);
+      accumulateDragRotation(`buddy:${id}`, pos);
+    }
     const b = buddiesRef.current.find((x) => x.id === id);
     if (!b) return;
     if (b.groupId) {
@@ -1235,9 +1379,15 @@ export default function Buddy() {
   const onDragEnd = (id: string, pos: { x: number; y: number }, moved: boolean) => {
     setMagnet(null);
     setEdgeMagnet(null);
-    const flingVel = physicsRef.current ? consumeVelocity(`buddy:${id}`) : { x: 0, y: 0 };
+    const mode = modeRef.current;
+    const flingVel = mode !== 'off' ? consumeVelocity(`buddy:${id}`) : { x: 0, y: 0 };
     const flingSpeed = Math.hypot(flingVel.x, flingVel.y);
-    const wantFling = physicsRef.current && moved && flingSpeed >= FLING_THRESHOLD;
+    const grab = grabOffsetsRef.current.get(`buddy:${id}`) ?? { x: 0, y: 0 };
+    grabOffsetsRef.current.delete(`buddy:${id}`);
+    lastDragSampleRef.current.delete(`buddy:${id}`);
+    const angVelRelease = cross2(grab.x, grab.y, flingVel.x, flingVel.y) * RELEASE_TORQUE_GAIN;
+    const wantBouncyFling = mode === 'bouncy' && moved && flingSpeed >= FLING_THRESHOLD;
+    const wantAstronautFling = mode === 'astronaut' && moved;
     // A drag commits the peek (in either direction); peekedDock tracks
     // hover-state only and shouldn't survive the drop.
     setPeekedDock((cur) => {
@@ -1258,10 +1408,12 @@ export default function Buddy() {
       setBuddies((cur) => cur.map((x) => (x.id === id ? { ...x, pos: target } : x)));
       return;
     }
-    if (wantFling && !b.minimized) {
-      // Fast release: bounce mode. Skip merge / edge-snap; let the integrator
-      // run physics and decide where the buddy comes to rest.
-      startFlight('buddy', id, pos, flingVel);
+    if ((wantBouncyFling || wantAstronautFling) && !b.minimized) {
+      // Skip merge/edge-snap; let the integrator decide.
+      const v = wantAstronautFling && flingSpeed < ASTRONAUT_DRIFT_SPEED
+        ? randomDriftVel(ASTRONAUT_DRIFT_SPEED) // tiny release in astronaut still drifts
+        : flingVel;
+      startFlight('buddy', id, pos, v, angVelRelease);
       return;
     }
     let bestG: Group | null = null;
@@ -1335,15 +1487,27 @@ export default function Buddy() {
     });
     const g = groupsRef.current.find((x) => x.id === gid);
     if (!g) return;
-    if (physicsRef.current && !g.minimized) {
+    const mode = modeRef.current;
+    if (mode !== 'off' && !g.minimized) {
       const flingVel = consumeVelocity(`group:${gid}`);
-      if (Math.hypot(flingVel.x, flingVel.y) >= FLING_THRESHOLD) {
-        startFlight('group', gid, pos, flingVel);
+      const flingSpeed = Math.hypot(flingVel.x, flingVel.y);
+      const grab = grabOffsetsRef.current.get(`group:${gid}`) ?? { x: 0, y: 0 };
+      grabOffsetsRef.current.delete(`group:${gid}`);
+      lastDragSampleRef.current.delete(`group:${gid}`);
+      const angVelRelease = cross2(grab.x, grab.y, flingVel.x, flingVel.y) * RELEASE_TORQUE_GAIN;
+      const wantFling = mode === 'astronaut'
+        || (mode === 'bouncy' && flingSpeed >= FLING_THRESHOLD);
+      if (wantFling) {
+        const v = (mode === 'astronaut' && flingSpeed < ASTRONAUT_DRIFT_SPEED)
+          ? randomDriftVel(ASTRONAUT_DRIFT_SPEED)
+          : flingVel;
+        startFlight('group', gid, pos, v, angVelRelease);
         return;
       }
-    } else if (physicsRef.current) {
-      // Drop the buffer even if we don't fling, so it doesn't leak.
+    } else if (mode !== 'off') {
       consumeVelocity(`group:${gid}`);
+      grabOffsetsRef.current.delete(`group:${gid}`);
+      lastDragSampleRef.current.delete(`group:${gid}`);
     }
     const near = nearestEdgeForGroup(pos, g.memberIds.length);
     if (near.d < SNAP_THRESHOLD) {
@@ -1363,7 +1527,10 @@ export default function Buddy() {
   };
 
   const onGroupDragMove = (gid: string, pos: { x: number; y: number }) => {
-    if (physicsRef.current) recordSample(`group:${gid}`, pos);
+    if (modeRef.current !== 'off') {
+      recordSample(`group:${gid}`, pos);
+      accumulateDragRotation(`group:${gid}`, pos);
+    }
     // A drag from a hover-peeked dock commits the restore: clear the
     // minimized intent so the new drag pos owns the rendered position
     // (otherwise renderedGroupPos would keep snapping back to peekedPos).
@@ -1463,6 +1630,9 @@ export default function Buddy() {
         onGroupDockUnpeek={(gid) => unpeekDockGroup(gid)}
         bumpTick={bumpTicks[`buddy:${b.id}`] ?? 0}
         groupBumpTick={b.groupId ? (bumpTicks[`group:${b.groupId}`] ?? 0) : 0}
+        rotation={rotations[`buddy:${b.id}`] ?? 0}
+        onDragStart={onBuddyDragStart}
+        onOpenAppSettings={() => setAppSettingsOpen(true)}
       />
     );
   };
@@ -1507,6 +1677,8 @@ export default function Buddy() {
             onGroupDragEnd={onGroupDragEnd}
             onGroupTap={onGroupTap}
             bumpTick={bumpTicks[`group:${g.id}`] ?? 0}
+            rotation={rotations[`group:${g.id}`] ?? 0}
+            onDragStartPhysics={onGroupDragStartPhysics}
           />
         );
       })}

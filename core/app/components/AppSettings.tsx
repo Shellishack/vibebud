@@ -7,7 +7,7 @@ import { getNotifyMethod, setNotifyMethod, type NotifyMethod } from './llm';
 import {
   getRemoteClaudeConfig, setRemoteClaudeConfig, type RemoteClaudeConfig,
 } from '../../lib/platform/remoteClaude';
-import { getPhysicsEnabled, setPhysicsEnabled } from './physics';
+import { getPhysicsMode, setPhysicsMode, type PhysicsMode } from './physics';
 
 type Props = { open: boolean; onClose: () => void };
 
@@ -20,11 +20,10 @@ function AppSettingsBody({ onClose }: { onClose: () => void }) {
   const adapter = usePlatform();
   const [method, setMethod] = useState<NotifyMethod>(() => getNotifyMethod());
   const [permGranted, setPermGranted] = useState<boolean>(() => adapter.hasNotificationPermission());
-  const [physicsOn, setPhysicsOn] = useState<boolean>(() => getPhysicsEnabled());
-  const togglePhysics = () => {
-    const next = !physicsOn;
-    setPhysicsOn(next);
-    setPhysicsEnabled(next);
+  const [physicsMode, setPhysicsModeState] = useState<PhysicsMode>(() => getPhysicsMode());
+  const choosePhysics = (next: PhysicsMode) => {
+    setPhysicsModeState(next);
+    setPhysicsMode(next);
   };
 
   // Pair-with-desktop state. Web/Capacitor only — Electron uses the
@@ -225,14 +224,28 @@ function AppSettingsBody({ onClose }: { onClose: () => void }) {
               Play
             </p>
             <p className="mt-1 mb-3 text-xs text-zinc-500 dark:text-zinc-400">
-              Drag-and-fling to send buddies sailing — they bounce off edges and bump into each other.
+              Off-center grabs add spin in every mode — flick from the edge for a frisbee throw.
             </p>
-            <Option
-              selected={physicsOn}
-              label="Bouncy drag"
-              desc="Release a buddy mid-flick to send it flying."
-              onClick={togglePhysics}
-            />
+            <div className="flex flex-col gap-2">
+              <Option
+                selected={physicsMode === 'off'}
+                label="Calm"
+                desc="Classic snap-to-edge drag, no flinging."
+                onClick={() => choosePhysics('off')}
+              />
+              <Option
+                selected={physicsMode === 'bouncy'}
+                label="Bouncy"
+                desc="Drag-and-fling to send buddies sailing — they bounce off edges and bump into each other."
+                onClick={() => choosePhysics('bouncy')}
+              />
+              <Option
+                selected={physicsMode === 'astronaut'}
+                label="Astronaut"
+                desc="Zero-g drift: buddies float and spin endlessly, ricocheting off everything."
+                onClick={() => choosePhysics('astronaut')}
+              />
+            </div>
           </section>
 
           <section>

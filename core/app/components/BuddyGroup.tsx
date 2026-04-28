@@ -23,11 +23,17 @@ type Props = {
   onGroupTap?: (id: string) => void;
   // Bouncy-drag physics: increments per collision so the hull can shake.
   bumpTick?: number;
+  // Current hull rotation in degrees (driven by parent flight integrator
+  // + drag-time torque accumulation). Members keep their own orientation.
+  rotation?: number;
+  // Fired on pointer-down with the cursor's offset (CSS px) from the hull
+  // center, so the parent can derive torque from a flick.
+  onDragStartPhysics?: (gid: string, grabOffset: { x: number; y: number }) => void;
 };
 
 export default function BuddyGroup({
   groupId, pos, memberCount, stride, avatarSize, padX, padTop, padBottom, anchor,
-  visible, magnetActive, edgeMagnetActive, background, expanded, onGroupDragMove, onGroupDragEnd, onGroupTap, bumpTick,
+  visible, magnetActive, edgeMagnetActive, background, expanded, onGroupDragMove, onGroupDragEnd, onGroupTap, bumpTick, rotation, onDragStartPhysics,
 }: Props) {
   const adapter = usePlatform();
   const width = (memberCount - 1) * stride + avatarSize + padX * 2;
@@ -119,6 +125,13 @@ export default function BuddyGroup({
     e.preventDefault();
     e.stopPropagation();
     try { (e.currentTarget as Element).setPointerCapture(e.pointerId); } catch { /* noop */ }
+    try {
+      const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+      onDragStartPhysics?.(groupId, {
+        x: e.clientX - (r.left + r.width / 2),
+        y: e.clientY - (r.top + r.height / 2),
+      });
+    } catch { /* noop */ }
     const dragSet: Set<string> = ((window as any).__vibemojiDragging ||= new Set<string>());
     const key = `group:${groupId}`;
     dragSet.add(key);
@@ -198,6 +211,13 @@ export default function BuddyGroup({
     e.preventDefault();
     e.stopPropagation();
     try { (e.currentTarget as Element).setPointerCapture(e.pointerId); } catch { /* noop */ }
+    try {
+      const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+      onDragStartPhysics?.(groupId, {
+        x: e.clientX - (r.left + r.width / 2),
+        y: e.clientY - (r.top + r.height / 2),
+      });
+    } catch { /* noop */ }
     const startX = e.clientX;
     const startY = e.clientY;
     const startBase = { x: posRef.current.x, y: posRef.current.y };
@@ -270,6 +290,8 @@ export default function BuddyGroup({
         height,
         zIndex: 30,
         background: (visible || magnetActive) ? background : 'transparent',
+        transform: rotation ? `rotate(${rotation}deg)` : undefined,
+        transformOrigin: '50% 50%',
         transition: isDragging
           ? 'opacity 180ms ease-out, width 280ms cubic-bezier(0.22, 1, 0.36, 1), background 220ms ease-out'
           : 'opacity 180ms ease-out, ' +

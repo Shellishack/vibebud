@@ -84,9 +84,18 @@ type Props = {
   // containing group gets bumped.
   bumpTick?: number;
   groupBumpTick?: number;
+  // Current avatar rotation in degrees (driven by the parent's flight
+  // integrator + drag-time torque accumulation).
+  rotation?: number;
+  // Fired on pointer-down with the cursor's offset (in CSS px) from the
+  // avatar's center, so the parent can derive torque from a flick.
+  onDragStart?: (id: string, grabOffset: { x: number; y: number }) => void;
+  // Open the app-wide settings modal (notifications, physics mode, pairing).
+  // Used by the right-click menu on Electron, where there's no gear icon.
+  onOpenAppSettings?: () => void;
 };
 
-export default function BuddyInstance({ state, anchor, canRemove, onChange, onSpawn, onRemove, onOpenChange, onDragMove, onDragEnd, magnetState, edgeMagnet, teammates, isGroupExpanded, isGroupMinimized, onGroupTap, onRestore, onGroupRestore, dockPeeked, groupDockPeeked, onDockPeek, onDockUnpeek, onGroupDockPeek, onGroupDockUnpeek, bumpTick, groupBumpTick }: Props) {
+export default function BuddyInstance({ state, anchor, canRemove, onChange, onSpawn, onRemove, onOpenChange, onDragMove, onDragEnd, magnetState, edgeMagnet, teammates, isGroupExpanded, isGroupMinimized, onGroupTap, onRestore, onGroupRestore, dockPeeked, groupDockPeeked, onDockPeek, onDockUnpeek, onGroupDockPeek, onGroupDockUnpeek, bumpTick, groupBumpTick, rotation, onDragStart, onOpenAppSettings }: Props) {
   const personality: Personality =
     PERSONALITY_BY_VARIANT[state.variantId] ?? PERSONALITY_BY_VARIANT.violet;
 
@@ -584,6 +593,15 @@ export default function BuddyInstance({ state, anchor, canRemove, onChange, onSp
       ((window as any).__vibemojiDragging as Set<string> | undefined)?.delete(state.id);
     }
     try { (e.currentTarget as Element).setPointerCapture(e.pointerId); } catch { /* noop */ }
+    // Capture grab offset (cursor relative to the avatar's center, in CSS
+    // px) so the parent can derive torque from this drag.
+    try {
+      const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+      onDragStart?.(state.id, {
+        x: e.clientX - (r.left + r.width / 2),
+        y: e.clientY - (r.top + r.height / 2),
+      });
+    } catch { /* noop */ }
     draggingRef.current = true;
     setIsDragging(true);
     adapter.notifyDragStart(state.id);
@@ -730,7 +748,8 @@ export default function BuddyInstance({ state, anchor, canRemove, onChange, onSp
               ...(adapter.showPairingWindow
                 ? [{ label: 'Pair phone…', onClick: () => adapter.showPairingWindow?.() }]
                 : []),
-              { label: 'Settings…', onClick: () => openSettings() },
+              { label: 'App settings…', onClick: () => onOpenAppSettings?.() },
+              { label: 'Chat settings…', onClick: () => { setOpen(true); openSettings(); } },
               { label: 'Add buddy', onClick: () => onSpawn() },
               ...(canRemove ? [{ label: 'Remove buddy', onClick: () => onRemove(), danger: true }] : []),
             ].map((item, i) => (
@@ -1208,12 +1227,21 @@ export default function BuddyInstance({ state, anchor, canRemove, onChange, onSp
             }`}
             aria-label={`open ${personality.name}`}
           >
-            <div className="h-full w-full" style={{ animation: shaking ? 'buddy-shake 420ms ease-out' : 'buddy-bob 3s ease-in-out infinite' }}>
-              {isComposite && composition ? (
-                <CompositeFace composition={composition} fetched={notoFetched} />
-              ) : (
-                <Lottie animationData={animation} loop autoplay />
-              )}
+            <div
+              className="h-full w-full"
+              style={{
+                transform: rotation ? `rotate(${rotation}deg)` : undefined,
+                transformOrigin: '50% 50%',
+                willChange: rotation ? 'transform' : undefined,
+              }}
+            >
+              <div className="h-full w-full" style={{ animation: shaking ? 'buddy-shake 420ms ease-out' : 'buddy-bob 3s ease-in-out infinite' }}>
+                {isComposite && composition ? (
+                  <CompositeFace composition={composition} fetched={notoFetched} />
+                ) : (
+                  <Lottie animationData={animation} loop autoplay />
+                )}
+              </div>
             </div>
           </button>
           {isComposite && composition && (
