@@ -16,8 +16,9 @@ import {
   COLLIDE_RESTITUTION, VELOCITY_WINDOW_MS, MAX_FLING,
   ASTRONAUT_DRAG, ASTRONAUT_EDGE_RESTITUTION, ASTRONAUT_COLLIDE_RESTITUTION,
   ASTRONAUT_DRIFT_SPEED, ASTRONAUT_DRIFT_SPIN,
-  ANG_DRAG, ANG_REST_THRESHOLD, DRAG_TORQUE_GAIN, RELEASE_TORQUE_GAIN, MAX_ANG_VEL,
-  PENDULUM_SPRING, PENDULUM_DAMPING, PENDULUM_MIN_GRAB, ROTATION_EASE_MS,
+  ANG_DRAG, ANG_REST_THRESHOLD, RELEASE_TORQUE_GAIN, MAX_ANG_VEL,
+  GRAVITY_ACCEL, DRAG_ROT_DAMPING, DRAG_ROT_FORCE_GAIN, DRAG_ROT_MIN_ARM,
+  PENDULUM_MIN_GRAB, ROTATION_EASE_MS,
   type Vec2, type PhysicsMode,
 } from './physics';
 
@@ -364,10 +365,21 @@ export default function Buddy() {
   // Last drag-move sample (pos + timestamp) so we can compute incremental
   // rotation while dragging from an off-center grab (astronaut mode only).
   const lastDragSampleRef = useRef<Map<string, { t: number; x: number; y: number }>>(new Map());
-  // Per-drag pendulum state for calm/bouncy: cursor is the pivot, gravity
-  // (+y) acts on the body's center of mass. A separate rAF loop integrates
-  // a damped spring toward the gravity-equilibrium rotation angle.
-  type PendulumState = { rot: number; angVel: number; grab: Vec2; targetDeg: number; lastT: number };
+  // Per-drag rotation state. Treats the avatar as a rigid body pinned at
+  // the cursor. Three forces contribute to torque about the pivot:
+  //   1. Gravity on the CoM (omitted in astronaut mode).
+  //   2. Linear pseudo-force from cursor acceleration.
+  //   3. Centripetal pseudo-force when the cursor curves (falls out of #2
+  //      automatically once we use the full a_cursor vector).
+  // `history` is the recent cursor positions; we differentiate it twice
+  // (numerically) to recover velocity and acceleration each frame.
+  type PendulumState = {
+    rot: number;       // degrees
+    angVel: number;    // deg/ms
+    grab: Vec2;        // local-frame cursor offset from CoM, captured at drag start
+    history: Array<{ t: number; pos: Vec2 }>;
+    lastT: number;
+  };
   const pendulumsRef = useRef<Map<string, PendulumState>>(new Map());
   const pendulumRafRef = useRef<number>(0);
   // Body keys whose rotation is currently being driven by physics (drag or
@@ -1310,29 +1322,74 @@ export default function Buddy() {
     }
   };
 
-  // Pendulum integrator: in calm/bouncy modes, treat the cursor as a pivot
-  // and gravity (+y) as a constant force on the body's center of mass. We
-  // spring the rotation toward the gravity-equilibrium angle so the heavier
-  // half hangs below the cursor.
+  // Drag-rotation integrator. For each currently-dragged body, computes
+  // angular acceleration about the cursor pivot from up to three torques
+  // and integrates rotation. Runs at ~60fps via rAF until the body's drag
+  // ends.
   const pendulumTick = () => {
     pendulumRafRef.current = 0;
     const now = (typeof performance !== 'undefined' ? performance.now() : Date.now());
     const peds = pendulumsRef.current;
     if (peds.size === 0) return;
+    const mode = modeRef.current;
     const updatedRot: Record<string, number> = {};
     for (const [key, p] of peds) {
       const dtRaw = Math.min(48, Math.max(1, now - p.lastT));
       p.lastT = now;
-      // Sub-step the integrator so a high spring constant + occasional
-      // 48ms frame doesn't blow up.
+
+      // Numerically differentiate cursor history → velocity + acceleration.
+      // We use the (translate) pos values pushed in onDragMove; cursor pos
+      // differs by a constant world offset, so the derivatives are equal.
+      let ax = 0, ay = 0;
+      const h = p.history;
+      if (h.length >= 3) {
+        const a = h[h.length - 3], b = h[h.length - 2], c = h[h.length - 1];
+        const dt1 = b.t - a.t;
+        const dt2 = c.t - b.t;
+        if (dt1 > 0 && dt2 > 0) {
+          const v1x = (b.pos.x - a.pos.x) / dt1;
+          const v1y = (b.pos.y - a.pos.y) / dt1;
+          const v2x = (c.pos.x - b.pos.x) / dt2;
+          const v2y = (c.pos.y - b.pos.y) / dt2;
+          const dtMid = (dt1 + dt2) / 2;
+          ax = (v2x - v1x) / dtMid;
+          ay = (v2y - v1y) / dtMid;
+        }
+      }
+      // Decay the cursor acceleration sample over time so a single jolt
+      // doesn't keep accelerating the rotation forever after the user
+      // stops moving.
+      if (h.length > 0 && now - h[h.length - 1].t > 80) {
+        ax = 0; ay = 0;
+      }
+
+      // Forces per unit mass (acting on the CoM):
+      //   F_inertial = -a_cursor (pseudo-force in cursor's accelerating frame)
+      //   F_gravity  = (0, +g)   only when not astronaut
+      let Fx = -ax * DRAG_ROT_FORCE_GAIN;
+      let Fy = -ay * DRAG_ROT_FORCE_GAIN;
+      if (mode !== 'astronaut') Fy += GRAVITY_ACCEL;
+
+      // Sub-step the integrator so high accelerations + occasional 48ms
+      // frame stay stable.
       const SUBSTEPS = 4;
       const subDt = dtRaw / SUBSTEPS;
       for (let i = 0; i < SUBSTEPS; i++) {
-        let err = p.targetDeg - p.rot;
-        while (err > 180) err -= 360;
-        while (err < -180) err += 360;
-        p.angVel += err * PENDULUM_SPRING * subDt;
-        p.angVel *= Math.exp(-PENDULUM_DAMPING * subDt);
+        // Pivot is the cursor; CoM offset from pivot in world frame is
+        // -R(θ) · grab_local (grab points from CoM to cursor in local frame).
+        const θrad = p.rot * Math.PI / 180;
+        const cs = Math.cos(θrad), sn = Math.sin(θrad);
+        const rx = -(p.grab.x * cs - p.grab.y * sn);
+        const ry = -(p.grab.x * sn + p.grab.y * cs);
+        const r2 = rx * rx + ry * ry;
+        const armSqMin = DRAG_ROT_MIN_ARM * DRAG_ROT_MIN_ARM;
+        if (r2 >= armSqMin) {
+          const tau = rx * Fy - ry * Fx; // 2D cross r × F (px²/ms²)
+          const alphaRad = tau / r2;     // I = m·|r|² with m=1; rad/ms²
+          const alphaDeg = alphaRad * (180 / Math.PI);
+          p.angVel += alphaDeg * subDt;
+        }
+        p.angVel *= Math.exp(-DRAG_ROT_DAMPING * subDt);
         if (p.angVel > MAX_ANG_VEL) p.angVel = MAX_ANG_VEL;
         if (p.angVel < -MAX_ANG_VEL) p.angVel = -MAX_ANG_VEL;
         p.rot += p.angVel * subDt;
@@ -1348,20 +1405,15 @@ export default function Buddy() {
     if (pendulumRafRef.current) return;
     pendulumRafRef.current = requestAnimationFrame(pendulumTick);
   };
-  const seedPendulum = (key: string, grab: Vec2) => {
+  const seedPendulum = (key: string, grab: Vec2, startPos?: Vec2) => {
     const grabMag = Math.hypot(grab.x, grab.y);
     if (grabMag < PENDULUM_MIN_GRAB) return;
-    // Equilibrium: r_world points "up" in screen coords (negative y), so
-    // the avatar's center of mass hangs below the cursor pivot.
-    //   r_world angle = α + θ, want = -90°  →  θ_target = -90° - α.
-    const angleDeg = Math.atan2(grab.y, grab.x) * 180 / Math.PI;
-    let targetDeg = -90 - angleDeg;
     const curRot = rotationsRef.current[key] ?? 0;
-    while (targetDeg - curRot > 180) targetDeg -= 360;
-    while (targetDeg - curRot < -180) targetDeg += 360;
+    const t = (typeof performance !== 'undefined' ? performance.now() : Date.now());
     pendulumsRef.current.set(key, {
-      rot: curRot, angVel: 0, grab: { ...grab }, targetDeg,
-      lastT: (typeof performance !== 'undefined' ? performance.now() : Date.now()),
+      rot: curRot, angVel: 0, grab: { ...grab },
+      history: startPos ? [{ t, pos: { ...startPos } }] : [],
+      lastT: t,
     });
     ensurePendulumLoop();
   };
@@ -1378,8 +1430,11 @@ export default function Buddy() {
       flightsRef.current.delete(key);
       adapter.notifyDragEnd(`flight:${key}`);
     }
-    // Gravity-pendulum applies in calm + bouncy. Astronaut is zero-g.
-    if (modeRef.current !== 'astronaut') seedPendulum(key, grab);
+    // Drag-rotation applies in all modes. Astronaut just skips the gravity
+    // term inside the integrator — the inertial pseudo-force still rotates
+    // the avatar when the cursor accelerates or curves.
+    const b0 = buddiesRef.current.find((x) => x.id === id);
+    seedPendulum(key, grab, b0?.pos);
     markRotActive(key, true);
   };
   const onGroupDragStartPhysics = (gid: string, grab: Vec2) => {
@@ -1391,34 +1446,28 @@ export default function Buddy() {
       flightsRef.current.delete(key);
       adapter.notifyDragEnd(`flight:${key}`);
     }
-    if (modeRef.current !== 'astronaut') seedPendulum(key, grab);
+    const g0 = groupsRef.current.find((x) => x.id === gid);
+    seedPendulum(key, grab, g0?.pos);
     markRotActive(key, true);
   };
 
-  // Astronaut-only: accumulate rotation as cross(r, Δp) * gain. In calm/
-  // bouncy modes the pendulum loop owns rotation while dragging — gravity,
-  // not cursor motion, sets the angle.
-  const accumulateDragRotation = (key: string, pos: Vec2) => {
-    if (modeRef.current !== 'astronaut') return;
-    const r = grabOffsetsRef.current.get(key);
-    if (!r) return;
+  // Append the latest cursor position (= avatar translate pos, which differs
+  // from cursor by a constant world offset, so derivatives match) to the
+  // active drag's history ring buffer. The integrator differentiates this
+  // twice each frame to recover velocity + acceleration.
+  const recordDragCursor = (key: string, pos: Vec2) => {
+    const ped = pendulumsRef.current.get(key);
+    if (!ped) return;
     const t = (typeof performance !== 'undefined' ? performance.now() : Date.now());
-    const last = lastDragSampleRef.current.get(key);
-    lastDragSampleRef.current.set(key, { t, x: pos.x, y: pos.y });
-    if (!last) return;
-    const dx = pos.x - last.x;
-    const dy = pos.y - last.y;
-    if (dx === 0 && dy === 0) return;
-    const dRot = cross2(r.x, r.y, dx, dy) * DRAG_TORQUE_GAIN;
-    if (dRot === 0) return;
-    setRotations((cur) => ({ ...cur, [key]: (cur[key] ?? 0) + dRot }));
+    ped.history.push({ t, pos: { x: pos.x, y: pos.y } });
+    // Cap to last 6 samples — enough for stable accel via central diff,
+    // small enough that we react quickly to direction changes.
+    while (ped.history.length > 6) ped.history.shift();
   };
 
   const onDragMove = (id: string, pos: { x: number; y: number }) => {
-    if (modeRef.current !== 'off') {
-      recordSample(`buddy:${id}`, pos);
-      accumulateDragRotation(`buddy:${id}`, pos);
-    }
+    if (modeRef.current !== 'off') recordSample(`buddy:${id}`, pos);
+    recordDragCursor(`buddy:${id}`, pos);
     const b = buddiesRef.current.find((x) => x.id === id);
     if (!b) return;
     if (b.groupId) {
@@ -1678,10 +1727,8 @@ export default function Buddy() {
   };
 
   const onGroupDragMove = (gid: string, pos: { x: number; y: number }) => {
-    if (modeRef.current !== 'off') {
-      recordSample(`group:${gid}`, pos);
-      accumulateDragRotation(`group:${gid}`, pos);
-    }
+    if (modeRef.current !== 'off') recordSample(`group:${gid}`, pos);
+    recordDragCursor(`group:${gid}`, pos);
     // A drag from a hover-peeked dock commits the restore: clear the
     // minimized intent so the new drag pos owns the rendered position
     // (otherwise renderedGroupPos would keep snapping back to peekedPos).

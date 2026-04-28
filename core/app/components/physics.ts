@@ -59,10 +59,6 @@ export const ASTRONAUT_DRIFT_SPIN = 0.03;
 export const ANG_DRAG = 0.985;
 // Angular rest threshold (deg/ms) — below this, spin halts.
 export const ANG_REST_THRESHOLD = 0.005;
-// While dragging from an off-center grab, accumulate rotation as
-// (r × Δp) * DRAG_TORQUE_GAIN. Tuned so a half-screen drag with a
-// near-edge grab spins the avatar ~1/3 turn.
-export const DRAG_TORQUE_GAIN = 0.014; // deg per (px * px)
 // On release, derive angular velocity from (r × v) where v is in px/ms.
 // Tuned so a fast frisbee-style flick from the rim produces a brisk
 // (a couple of revolutions) spin.
@@ -70,17 +66,32 @@ export const RELEASE_TORQUE_GAIN = 0.012; // (deg/ms) per (px * px/ms)
 // Hard cap on angular velocity (deg/ms) to keep spin from looking strobed.
 export const MAX_ANG_VEL = 1.4;
 
-// --- Pendulum (non-astronaut drag rotation) ---
-// While dragging in calm/bouncy mode, the cursor is the pivot and gravity
-// pulls the avatar's center of mass straight down below it. Modeled as a
-// damped spring toward the gravity-equilibrium angle.
-// Spring constant in (deg/ms²) per (deg of error). Tuned so the swing
-// settles in ~500ms with a small overshoot.
-export const PENDULUM_SPRING = 0.0008;
-// Damping in (1/ms) — reduces angular velocity proportionally each ms.
-export const PENDULUM_DAMPING = 0.012;
-// Below this grab radius (CSS px), gravity-rotation is skipped entirely —
-// a near-center grab would have ambiguous equilibrium and just jitter.
+// --- Drag-time rotation (rigid body on a string under three forces) ---
+// While dragging in any mode, the cursor is the pivot. The avatar's center
+// of mass swings around it driven by:
+//   1. Gravity            — only when not astronaut.
+//   2. Linear pseudo-force — when the cursor accelerates, the body's CoM
+//                            inertia produces a force in the opposite
+//                            direction of cursor acceleration.
+//   3. Centripetal pseudo-force — when the cursor curves, the off-axis
+//                                 component of cursor acceleration shows
+//                                 up here automatically. (It's the same
+//                                 vector as #2, decomposed differently;
+//                                 we don't need to compute it explicitly.)
+// Gravity in screen px/ms². Strong enough to bring the avatar back to
+// upright quickly, light enough that it overshoots and swings a few times.
+export const GRAVITY_ACCEL = 0.0024;
+// Per-ms exponential damping on angular velocity. Low value → noticeable
+// oscillation when the user stops moving (the body swings around the
+// cursor for a beat before settling).
+export const DRAG_ROT_DAMPING = 0.0025;
+// Multiplier on the cursor-acceleration pseudo-force. 1.0 = unit mass.
+export const DRAG_ROT_FORCE_GAIN = 1.0;
+// Min |r| (CSS px) for which we trust the torque/inertia calculation —
+// below this the lever arm is too short and dynamics blow up at the pivot.
+export const DRAG_ROT_MIN_ARM = 8;
+// Below this grab radius (CSS px), drag-rotation is skipped entirely — a
+// near-center grab would have ambiguous equilibrium and just jitter.
 export const PENDULUM_MIN_GRAB = 6;
 // Easing duration (ms) used to glide rotation back to 0 once a non-astronaut
 // body settles (or a calm-mode drag releases without a fling).
