@@ -30,6 +30,9 @@ type Props = {
   // When false, the hull's transform animates with a CSS transition so
   // settling back to 0 glides smoothly.
   rotationActive?: boolean;
+  // Cursor offset (CSS px) from the hull center captured at drag start —
+  // used as the rotation transform-origin so the grab pin stays anchored.
+  grabPivot?: { x: number; y: number };
   // Fired on pointer-down with the cursor's offset (CSS px) from the hull
   // center, so the parent can derive torque from a flick.
   onDragStartPhysics?: (gid: string, grabOffset: { x: number; y: number }) => void;
@@ -37,7 +40,7 @@ type Props = {
 
 export default function BuddyGroup({
   groupId, pos, memberCount, stride, avatarSize, padX, padTop, padBottom, anchor,
-  visible, magnetActive, edgeMagnetActive, background, expanded, onGroupDragMove, onGroupDragEnd, onGroupTap, bumpTick, rotation, rotationActive, onDragStartPhysics,
+  visible, magnetActive, edgeMagnetActive, background, expanded, onGroupDragMove, onGroupDragEnd, onGroupTap, bumpTick, rotation, rotationActive, grabPivot, onDragStartPhysics,
 }: Props) {
   const adapter = usePlatform();
   const width = (memberCount - 1) * stride + avatarSize + padX * 2;
@@ -295,7 +298,9 @@ export default function BuddyGroup({
         zIndex: 30,
         background: (visible || magnetActive) ? background : 'transparent',
         transform: rotation ? `rotate(${rotation}deg)` : undefined,
-        transformOrigin: '50% 50%',
+        transformOrigin: grabPivot
+          ? `calc(50% + ${grabPivot.x}px) calc(50% + ${grabPivot.y}px)`
+          : '50% 50%',
         transition: (isDragging
           ? 'opacity 180ms ease-out, width 280ms cubic-bezier(0.22, 1, 0.36, 1), background 220ms ease-out'
           : 'opacity 180ms ease-out, ' +

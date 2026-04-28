@@ -92,6 +92,11 @@ type Props = {
   // animates the transform with a CSS transition so settling back to 0
   // glides smoothly.
   rotationActive?: boolean;
+  // Cursor offset (CSS px) captured at drag start. Used as the rotation
+  // wrapper's transform-origin so rotation pivots around the grab pin —
+  // the spot the user grabbed stays under the cursor instead of swinging
+  // out from the avatar's geometric center.
+  grabPivot?: { x: number; y: number };
   // Fired on pointer-down with the cursor's offset (in CSS px) from the
   // avatar's center, so the parent can derive torque from a flick.
   onDragStart?: (id: string, grabOffset: { x: number; y: number }) => void;
@@ -100,7 +105,7 @@ type Props = {
   onOpenAppSettings?: () => void;
 };
 
-export default function BuddyInstance({ state, anchor, canRemove, onChange, onSpawn, onRemove, onOpenChange, onDragMove, onDragEnd, magnetState, edgeMagnet, teammates, isGroupExpanded, isGroupMinimized, onGroupTap, onRestore, onGroupRestore, dockPeeked, groupDockPeeked, onDockPeek, onDockUnpeek, onGroupDockPeek, onGroupDockUnpeek, bumpTick, groupBumpTick, rotation, rotationActive, onDragStart, onOpenAppSettings }: Props) {
+export default function BuddyInstance({ state, anchor, canRemove, onChange, onSpawn, onRemove, onOpenChange, onDragMove, onDragEnd, magnetState, edgeMagnet, teammates, isGroupExpanded, isGroupMinimized, onGroupTap, onRestore, onGroupRestore, dockPeeked, groupDockPeeked, onDockPeek, onDockUnpeek, onGroupDockPeek, onGroupDockUnpeek, bumpTick, groupBumpTick, rotation, rotationActive, grabPivot, onDragStart, onOpenAppSettings }: Props) {
   const personality: Personality =
     PERSONALITY_BY_VARIANT[state.variantId] ?? PERSONALITY_BY_VARIANT.violet;
 
@@ -1185,6 +1190,20 @@ export default function BuddyInstance({ state, anchor, canRemove, onChange, onSp
               />
             </>
           )}
+          {/* Rotation wrapper for the avatar visual cluster (button face +
+              composite hands). transform-origin is the grab pin so rotation
+              pivots around the cursor — the user's grip stays anchored
+              instead of swinging out from the avatar's geometric center. */}
+          <div
+            style={{
+              transform: rotation ? `rotate(${rotation}deg)` : undefined,
+              transformOrigin: grabPivot
+                ? `calc(50% + ${grabPivot.x}px) calc(50% + ${grabPivot.y}px)`
+                : '50% 50%',
+              willChange: rotation ? 'transform' : undefined,
+              transition: rotationActive ? 'none' : 'transform 420ms cubic-bezier(0.22, 1, 0.36, 1)',
+            }}
+          >
           <button
             data-buddy-interactive
             data-buddy-avatar
@@ -1232,27 +1251,18 @@ export default function BuddyInstance({ state, anchor, canRemove, onChange, onSp
             }`}
             aria-label={`open ${personality.name}`}
           >
-            <div
-              className="h-full w-full"
-              style={{
-                transform: rotation ? `rotate(${rotation}deg)` : undefined,
-                transformOrigin: '50% 50%',
-                willChange: rotation ? 'transform' : undefined,
-                transition: rotationActive ? 'none' : 'transform 420ms cubic-bezier(0.22, 1, 0.36, 1)',
-              }}
-            >
-              <div className="h-full w-full" style={{ animation: shaking ? 'buddy-shake 420ms ease-out' : 'buddy-bob 3s ease-in-out infinite' }}>
-                {isComposite && composition ? (
-                  <CompositeFace composition={composition} fetched={notoFetched} />
-                ) : (
-                  <Lottie animationData={animation} loop autoplay />
-                )}
-              </div>
+            <div className="h-full w-full" style={{ animation: shaking ? 'buddy-shake 420ms ease-out' : 'buddy-bob 3s ease-in-out infinite' }}>
+              {isComposite && composition ? (
+                <CompositeFace composition={composition} fetched={notoFetched} />
+              ) : (
+                <Lottie animationData={animation} loop autoplay />
+              )}
             </div>
           </button>
           {isComposite && composition && (
             <CompositeHands composition={composition} fetched={notoFetched} />
           )}
+          </div>
         </div>
       </div>
     </div>

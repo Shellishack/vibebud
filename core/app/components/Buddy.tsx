@@ -352,6 +352,12 @@ export default function Buddy() {
   const [rotations, setRotations] = useState<Record<string, number>>({});
   const rotationsRef = useRef(rotations);
   useEffect(() => { rotationsRef.current = rotations; }, [rotations]);
+  // Per-body grab pivot (cursor-relative-to-center, in CSS px). Used as the
+  // CSS transform-origin so rotation pivots around the cursor — the grab pin
+  // stays fixed in screen space instead of swinging out from the avatar's
+  // geometric center. Survives across drags (rotation is 0 between drags so
+  // the stored pivot is harmless), refreshed on each pointer-down.
+  const [grabPivots, setGrabPivots] = useState<Record<string, Vec2>>({});
   // Grab offset (cursor relative to body's center, in CSS px) captured at
   // pointer-down. Used to derive torque-from-flick on release.
   const grabOffsetsRef = useRef<Map<string, Vec2>>(new Map());
@@ -1367,6 +1373,7 @@ export default function Buddy() {
     const key = `buddy:${id}`;
     grabOffsetsRef.current.set(key, grab);
     lastDragSampleRef.current.delete(key);
+    setGrabPivots((cur) => ({ ...cur, [key]: grab }));
     if (flightsRef.current.has(key)) {
       flightsRef.current.delete(key);
       adapter.notifyDragEnd(`flight:${key}`);
@@ -1379,6 +1386,7 @@ export default function Buddy() {
     const key = `group:${gid}`;
     grabOffsetsRef.current.set(key, grab);
     lastDragSampleRef.current.delete(key);
+    setGrabPivots((cur) => ({ ...cur, [key]: grab }));
     if (flightsRef.current.has(key)) {
       flightsRef.current.delete(key);
       adapter.notifyDragEnd(`flight:${key}`);
@@ -1504,7 +1512,25 @@ export default function Buddy() {
       easeRotIfNeeded();
       return;
     }
-    if ((wantBouncyFling || wantAstronautFling) && !b.minimized) {
+    // In astronaut mode, magnet-merge wins over fling: dropping near a
+    // group / buddy should snap-merge, not bounce off. Compute now so we
+    // can short-circuit the fling launch below.
+    let astronautMergeG: Group | null = null;
+    let astronautMergeB: BuddyInstanceState | null = null;
+    if (mode === 'astronaut' && !b.minimized) {
+      let bestD = MERGE_RADIUS;
+      for (const g of groupsRef.current) {
+        if (g.minimized) continue;
+        const d = Math.hypot(g.pos.x - pos.x, g.pos.y - pos.y);
+        if (d < bestD) { bestD = d; astronautMergeG = g; astronautMergeB = null; }
+      }
+      for (const other of buddiesRef.current) {
+        if (other.id === id || other.groupId || other.minimized) continue;
+        const d = Math.hypot(other.pos.x - pos.x, other.pos.y - pos.y);
+        if (d < bestD) { bestD = d; astronautMergeB = other; astronautMergeG = null; }
+      }
+    }
+    if ((wantBouncyFling || (wantAstronautFling && !astronautMergeG && !astronautMergeB)) && !b.minimized) {
       // Skip merge/edge-snap; let the integrator decide.
       const v = wantAstronautFling && flingSpeed < ASTRONAUT_DRIFT_SPEED
         ? randomDriftVel(ASTRONAUT_DRIFT_SPEED) // tiny release in astronaut still drifts
@@ -1536,6 +1562,10 @@ export default function Buddy() {
           : x
       )));
       setBuddies((cur) => cur.map((x) => (x.id === id ? { ...x, groupId: g.id } : x)));
+      // Always level out the merged buddy so it sits upright in its slot,
+      // even in astronaut mode.
+      setRotations((cur) => (cur[key] === 0 ? cur : { ...cur, [key]: 0 }));
+      markRotActive(key, false);
       return;
     }
     let bestB: BuddyInstanceState | null = null;
@@ -1547,6 +1577,7 @@ export default function Buddy() {
     }
     if (bestB) {
       const target = bestB;
+      const targetKey = `buddy:${target.id}`;
       const newGroupId = `group-${groupIdRef.current++}`;
       // Members spread rightward from group.pos via slotPos (x: pos.x + i*stride),
       // and the hull's right CSS subtracts the rightmost member offset. With the
@@ -1560,6 +1591,18 @@ export default function Buddy() {
       setBuddies((cur) => cur.map((x) => (
         x.id === target.id || x.id === id ? { ...x, groupId: newGroupId } : x
       )));
+      // Both members enter the new group upright. Astronaut: stop the
+      // target's flight too so it doesn't keep drifting away from the slot.
+      flightsRef.current.delete(targetKey);
+      adapter.notifyDragEnd(`flight:${targetKey}`);
+      setRotations((cur) => {
+        const next = { ...cur };
+        if (next[key] !== 0) next[key] = 0;
+        if (next[targetKey] !== 0) next[targetKey] = 0;
+        return next;
+      });
+      markRotActive(key, false);
+      markRotActive(targetKey, false);
       return;
     }
 
@@ -1740,6 +1783,7 @@ export default function Buddy() {
         groupBumpTick={b.groupId ? (bumpTicks[`group:${b.groupId}`] ?? 0) : 0}
         rotation={rotations[`buddy:${b.id}`] ?? 0}
         rotationActive={!!activeRotKeys[`buddy:${b.id}`]}
+        grabPivot={grabPivots[`buddy:${b.id}`]}
         onDragStart={onBuddyDragStart}
         onOpenAppSettings={() => setAppSettingsOpen(true)}
       />
@@ -1788,6 +1832,7 @@ export default function Buddy() {
             bumpTick={bumpTicks[`group:${g.id}`] ?? 0}
             rotation={rotations[`group:${g.id}`] ?? 0}
             rotationActive={!!activeRotKeys[`group:${g.id}`]}
+            grabPivot={grabPivots[`group:${g.id}`]}
             onDragStartPhysics={onGroupDragStartPhysics}
           />
         );
