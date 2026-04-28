@@ -1,5 +1,5 @@
 import type { ClaudeCodeBridge, InteractiveRect, NotificationPayload, PlatformAdapter, PlatformId } from './types';
-import { getRemoteClaudeBridge } from './remoteClaude';
+import { getRemoteClaudeBridge, getRemoteCodexBridge } from './remoteClaude';
 
 export class WebAdapter implements PlatformAdapter {
   readonly id: PlatformId;
@@ -51,4 +51,5 @@ export class WebAdapter implements PlatformAdapter {
   // (desktop/claude-bridge-server.js) when the user has configured one in
   // localStorage; otherwise the UI hides the Claude Code toggle.
   claudeCode(): ClaudeCodeBridge | null { return getRemoteClaudeBridge(); }
+  codexCode(): ClaudeCodeBridge | null { return getRemoteCodexBridge(); }
 }

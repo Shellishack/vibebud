@@ -39,7 +39,7 @@ export class RemoteClaudeBridge implements ClaudeCodeBridge {
   private listeners = new Set<(buddyId: string, event: ClaudeEvent) => void>();
   private closed = false;
 
-  constructor(private cfg: RemoteClaudeConfig) {}
+  constructor(private cfg: RemoteClaudeConfig, private agent: 'claude' | 'codex' = 'claude') {}
 
   private connect(): Promise<void> {
     if (this.ready) return this.ready;
@@ -76,9 +76,10 @@ export class RemoteClaudeBridge implements ClaudeCodeBridge {
   }
 
   private handleMessage(data: string): void {
-    let msg: { type?: string; id?: number; result?: unknown; buddyId?: string; event?: ClaudeEvent; message?: string };
+    let msg: { type?: string; id?: number; result?: unknown; buddyId?: string; event?: ClaudeEvent; message?: string; agent?: string };
     try { msg = JSON.parse(data); } catch { return; }
     if (msg.type === 'event' && msg.buddyId && msg.event) {
+      if (msg.agent && msg.agent !== this.agent) return;
       for (const cb of this.listeners) cb(msg.buddyId, msg.event);
       return;
     }
@@ -104,7 +105,7 @@ export class RemoteClaudeBridge implements ClaudeCodeBridge {
     const id = this.nextId++;
     return new Promise<T>((resolve, reject) => {
       this.pending.set(id, { resolve: (v) => resolve(v as T), reject });
-      try { ws.send(JSON.stringify({ op, id, ...payload })); }
+      try { ws.send(JSON.stringify({ op, id, agent: this.agent, ...payload })); }
       catch (err) { this.pending.delete(id); reject(err as Error); }
     });
   }
@@ -135,11 +136,21 @@ export class RemoteClaudeBridge implements ClaudeCodeBridge {
 // Shared singleton per (url, token) pair so multiple BuddyInstance components
 // don't each open their own socket. Reset when the config changes.
 let cached: { key: string; bridge: RemoteClaudeBridge } | null = null;
+let cachedCodex: { key: string; bridge: RemoteClaudeBridge } | null = null;
 export function getRemoteClaudeBridge(): RemoteClaudeBridge | null {
   const cfg = getRemoteClaudeConfig();
   if (!cfg) { cached = null; return null; }
   const key = `${cfg.url}|${cfg.token}`;
   if (cached?.key === key) return cached.bridge;
-  cached = { key, bridge: new RemoteClaudeBridge(cfg) };
+  cached = { key, bridge: new RemoteClaudeBridge(cfg, 'claude') };
   return cached.bridge;
+}
+
+export function getRemoteCodexBridge(): RemoteClaudeBridge | null {
+  const cfg = getRemoteClaudeConfig();
+  if (!cfg) { cachedCodex = null; return null; }
+  const key = `${cfg.url}|${cfg.token}`;
+  if (cachedCodex?.key === key) return cachedCodex.bridge;
+  cachedCodex = { key, bridge: new RemoteClaudeBridge(cfg, 'codex') };
+  return cachedCodex.bridge;
 }

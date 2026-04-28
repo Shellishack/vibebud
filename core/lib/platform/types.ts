@@ -75,6 +75,10 @@ export interface PlatformAdapter {
   // before exposing the "Claude Code" toggle in the UI.
   claudeCode(): ClaudeCodeBridge | null;
 
+  // Returns the local Codex CLI session bridge, or null when the platform
+  // cannot reach a local/paired Codex CLI host.
+  codexCode(): ClaudeCodeBridge | null;
+
   // Electron-only: opens the desktop pairing-QR window (the same one the tray
   // menu's "Pair phone…" launches). Surfaced from in-app context menus so the
   // user doesn't have to hunt through the system tray. No-op elsewhere.

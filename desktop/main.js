@@ -2,6 +2,7 @@ const { app, BrowserWindow, Notification, screen, Tray, Menu, nativeImage, proto
 const path = require('path');
 const url = require('url');
 const { createClaudeHost } = require('./claudeSessions');
+const { createCodexHost } = require('./codexSessions');
 const { startBridgeServer } = require('./claude-bridge-server');
 const { getOrCreateToken, showPairingWindow, refreshPairingWindow, DEFAULT_PORT } = require('./pairing');
 
@@ -12,6 +13,11 @@ const { getOrCreateToken, showPairingWindow, refreshPairingWindow, DEFAULT_PORT 
 const localClaude = createClaudeHost({
   emit: (buddyId, event) => {
     win?.webContents.send('claude:event', { buddyId, event });
+  },
+});
+const localCodex = createCodexHost({
+  emit: (buddyId, event) => {
+    win?.webContents.send('codex:event', { buddyId, event });
   },
 });
 
@@ -176,6 +182,20 @@ app.whenReady().then(() => {
   });
   ipcMain.handle('claude:list', () => localClaude.list());
 
+  ipcMain.handle('codex:start', (_event, payload) => {
+    if (!payload || typeof payload.buddyId !== 'string') return { ok: false, error: 'bad-payload' };
+    return localCodex.start(payload.buddyId, payload.opts || {});
+  });
+  ipcMain.handle('codex:send', (_event, payload) => {
+    if (!payload || typeof payload.buddyId !== 'string') return { ok: false, error: 'bad-payload' };
+    return localCodex.send(payload.buddyId, payload.text || '');
+  });
+  ipcMain.handle('codex:stop', (_event, payload) => {
+    if (!payload || typeof payload.buddyId !== 'string') return { ok: false, error: 'bad-payload' };
+    return localCodex.stop(payload.buddyId);
+  });
+  ipcMain.handle('codex:list', () => localCodex.list());
+
   // WS bridge: lets paired vibemoji clients (Android, web) drive a `claude`
   // subprocess running on this PC. Token is auto-generated and persisted in
   // userData; phone pairs by scanning the QR from the tray menu (deep link
@@ -195,7 +215,8 @@ app.whenReady().then(() => {
           notifyDesktop('Phone connected', `vibemoji bridge accepted a client from ${info.peer}`);
         } else if (kind === 'session-start') {
           const buddy = info.buddyId ? ` for ${String(info.buddyId).slice(0, 8)}` : '';
-          notifyDesktop('Claude session started', `Bridge launched a Claude Code subprocess${buddy}.`);
+          const agent = info.agent === 'codex' ? 'Codex' : 'Claude Code';
+          notifyDesktop(`${agent} session started`, `Bridge launched ${agent}${buddy}.`);
         }
       },
     });
@@ -207,10 +228,11 @@ app.whenReady().then(() => {
 
 app.on('window-all-closed', () => {
   localClaude.stopAll();
+  localCodex.stopAll();
   if (process.platform !== 'darwin') app.quit();
 });
 
-app.on('before-quit', () => { localClaude.stopAll(); });
+app.on('before-quit', () => { localClaude.stopAll(); localCodex.stopAll(); });
 
 app.on('activate', () => {
   if (BrowserWindow.getAllWindows().length === 0) createWindow();

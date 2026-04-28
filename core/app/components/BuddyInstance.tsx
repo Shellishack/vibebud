@@ -19,6 +19,7 @@ const Lottie = dynamic(() => import('lottie-react'), { ssr: false });
 
 export type Toast = { id: number; title: string; body: string; tone: 'info' | 'action' | 'success' };
 export type ChatMsg = { id: number; from: 'buddy' | 'you'; text: string };
+type CodeAgent = 'claude' | 'codex';
 
 const SCRIPTED_TOASTS: Omit<Toast, 'id'>[] = [
   { title: 'Agent dispatched', body: 'Started work on issue #42 — "Add dark mode toggle"', tone: 'info' },
@@ -126,6 +127,7 @@ export default function BuddyInstance({ state, anchor, canRemove, onChange, onSp
   // HTTP provider. claudeBusy mirrors `busy` for the bridge path.
   const [claudeBridgeTick, setClaudeBridgeTick] = useState(0);
   const claudeBridge = useMemo(() => adapter.claudeCode(), [adapter, claudeBridgeTick]);
+  const codexBridge = useMemo(() => adapter.codexCode(), [adapter, claudeBridgeTick]);
   useEffect(() => {
     const onPaired = () => setClaudeBridgeTick((n) => n + 1);
     window.addEventListener('vibemoji:paired', onPaired);
@@ -133,7 +135,13 @@ export default function BuddyInstance({ state, anchor, canRemove, onChange, onSp
   }, []);
   const [claudeActive, setClaudeActive] = useState(false);
   const [claudeBusy, setClaudeBusy] = useState(false);
+  const [activeCodeAgent, setActiveCodeAgent] = useState<CodeAgent | null>(null);
   const claudeReplyIdRef = useRef<number | null>(null);
+  const activeCodeBridge = useMemo(
+    () => activeCodeAgent === 'codex' ? codexBridge : activeCodeAgent === 'claude' ? claudeBridge : null,
+    [activeCodeAgent, codexBridge, claudeBridge],
+  );
+  const activeCodeLabel = activeCodeAgent === 'codex' ? 'Codex' : 'Claude Code';
   const [providerDraft, setProviderDraft] = useState<ProviderId>('openai');
   const [keyDraft, setKeyDraft] = useState('');
   const [modelDraft, setModelDraft] = useState('');
@@ -370,14 +378,13 @@ export default function BuddyInstance({ state, anchor, canRemove, onChange, onSp
   }, [open]);
   const update = (patch: Partial<BuddyInstanceState>) => onChange({ ...stateRef.current, ...patch });
 
-  // Subscribe to Claude Code stream events for this buddy. Each event is one
-  // line of stream-json from `claude --output-format stream-json`. We extract
-  // user-visible text from `assistant` (and partial-message) events and
+  // Subscribe to active code-agent stream events for this buddy. We extract
+  // user-visible text from assistant/delta events and
   // append it to the current reply bubble; tool-use blocks are surfaced as
-  // bracketed status lines so the user can see what Claude is doing.
+  // bracketed status lines so the user can see what the agent is doing.
   useEffect(() => {
-    if (!claudeBridge) return;
-    const off = claudeBridge.onEvent((bid, evt) => {
+    if (!activeCodeBridge || !activeCodeAgent) return;
+    const off = activeCodeBridge.onEvent((bid, evt) => {
       if (bid !== state.id) return;
       const replyId = claudeReplyIdRef.current;
       const t = evt && typeof evt === 'object' ? (evt as { type?: string }).type : undefined;
@@ -410,17 +417,23 @@ export default function BuddyInstance({ state, anchor, canRemove, onChange, onSp
         // Partial-message variant carries deltas at the top level
         const delta = (evt as { delta?: { type?: string; text?: string } }).delta;
         if (delta?.type === 'text_delta' && delta.text) appendToReply(delta.text);
+      } else if (t === 'assistant_delta') {
+        const delta = (evt as { delta?: { text?: string } }).delta;
+        if (delta?.text) appendToReply(delta.text);
+      } else if (t === 'tool_use') {
+        const name = (evt as { name?: string }).name || 'tool';
+        appendToReply(`\n[tool: ${name}]\n`);
       } else if (t === 'result') {
         setClaudeBusy(false);
         claudeReplyIdRef.current = null;
         feel('happy', 1500);
       } else if (t === 'error' || t === 'stderr' || t === 'raw') {
-        const text = (evt as { text?: string }).text || 'claude error';
+        const text = (evt as { text?: string }).text || `${activeCodeLabel} error`;
         // Always surface to chat — even if no reply is in flight (covers the
         // common "binary not found" / "auth missing" case where the process
         // dies before any user turn is sent).
         if (replyId != null) appendToReply(`\n(${text.trim()})`);
-        else appendStatus(`(claude: ${text.trim()})`);
+        else appendStatus(`(${activeCodeLabel}: ${text.trim()})`);
       } else if (t === 'closed') {
         const code = (evt as { code?: number }).code;
         const stderr = (evt as { stderr?: string }).stderr;
@@ -429,8 +442,8 @@ export default function BuddyInstance({ state, anchor, canRemove, onChange, onSp
         if (code !== 0) {
           const detail = stderr
             ? stderr.trim()
-            : `no stderr — likely '${bin || 'claude'}' is not on PATH or not authenticated (cwd: ${cwd || '?'}). Try 'claude auth' in a terminal, or set VIBEMOJI_CLAUDE_BIN to the full path.`;
-          appendStatus(`(claude exited with code ${code ?? '?'}: ${detail})`);
+            : `no stderr - likely '${bin || (activeCodeAgent === 'codex' ? 'codex' : 'claude')}' is not on PATH or not authenticated (cwd: ${cwd || '?'}). Try authenticating in a terminal, or set ${activeCodeAgent === 'codex' ? 'VIBEMOJI_CODEX_BIN' : 'VIBEMOJI_CLAUDE_BIN'} to the full path.`;
+          appendStatus(`(${activeCodeLabel} exited with code ${code ?? '?'}: ${detail})`);
         }
         setClaudeBusy(false);
         setClaudeActive(false);
@@ -439,12 +452,13 @@ export default function BuddyInstance({ state, anchor, canRemove, onChange, onSp
     });
     return off;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [claudeBridge, state.id]);
+  }, [activeCodeBridge, activeCodeAgent, state.id]);
 
   // Tear down the subprocess if the buddy is removed mid-session.
   useEffect(() => {
     return () => {
       if (claudeBridge && claudeActive) void claudeBridge.stop(state.id).catch(() => {});
+      if (codexBridge && claudeActive) void codexBridge.stop(state.id).catch(() => {});
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -493,6 +507,32 @@ export default function BuddyInstance({ state, anchor, canRemove, onChange, onSp
     setTimeout(() => setToasts((cur) => cur.filter((x) => x.id !== id)), 5200);
   };
 
+  const toggleCodeAgent = async (agent: CodeAgent) => {
+    const bridge = agent === 'codex' ? codexBridge : claudeBridge;
+    if (!bridge) return;
+    const label = agent === 'codex' ? 'Codex' : 'Claude Code';
+    if (claudeActive && activeCodeAgent === agent) {
+      await bridge.stop(state.id).catch(() => {});
+      setClaudeActive(false);
+      setActiveCodeAgent(null);
+      setClaudeBusy(false);
+      claudeReplyIdRef.current = null;
+      return;
+    }
+    if (claudeActive && activeCodeBridge) {
+      await activeCodeBridge.stop(state.id).catch(() => {});
+    }
+    const r = await bridge.start(state.id).catch((e) => ({ ok: false, error: String(e) } as const));
+    if (r.ok) {
+      setActiveCodeAgent(agent);
+      setClaudeActive(true);
+      setClaudeBusy(false);
+      claudeReplyIdRef.current = null;
+    } else {
+      pushToast({ title: `${label} unavailable`, body: r.error || 'unknown error', tone: 'action' });
+    }
+  };
+
   const triggerScriptedToast = () => {
     const t = SCRIPTED_TOASTS[Math.floor(Math.random() * SCRIPTED_TOASTS.length)];
     routePing(adapter, { title: t.title, body: t.body, tone: t.tone }, () => pushToast(t));
@@ -506,10 +546,10 @@ export default function BuddyInstance({ state, anchor, canRemove, onChange, onSp
     const text = input.trim();
     if (!text || busy || claudeBusy) return;
 
-    // Claude Code branch: pipe the user turn into the local `claude`
-    // subprocess via the platform bridge. The event subscription above
+    // Code-agent branch: pipe the user turn into the local/paired CLI
+    // process via the platform bridge. The event subscription above
     // handles streaming the assistant reply back into the chat bubble.
-    if (claudeActive && claudeBridge) {
+    if (claudeActive && activeCodeBridge) {
       const userMsg: ChatMsg = { id: msgIdRef.current++, from: 'you', text };
       const replyId = msgIdRef.current++;
       const baseMessages = [...stateRef.current.messages, userMsg];
@@ -518,7 +558,7 @@ export default function BuddyInstance({ state, anchor, canRemove, onChange, onSp
       setClaudeBusy(true);
       claudeReplyIdRef.current = replyId;
       feel('thinking', 1400);
-      const r = await claudeBridge.send(state.id, text);
+      const r = await activeCodeBridge.send(state.id, text);
       if (!r.ok) {
         const errText = r.error || 'send failed';
         const cur = stateRef.current.messages;
@@ -927,32 +967,37 @@ export default function BuddyInstance({ state, anchor, canRemove, onChange, onSp
                       onClick={() => setFamilyMenu((m) => (m === 'noto' ? null : 'noto'))}
                     />
                   </div>
-                  {claudeBridge && (
+                  {(claudeBridge || codexBridge) && (
+                    <div className="ml-auto flex gap-1">
+                    {claudeBridge && (
                     <button
                       data-buddy-interactive
-                      onClick={async () => {
-                        if (claudeActive) {
-                          await claudeBridge.stop(state.id).catch(() => {});
-                          setClaudeActive(false);
-                          setClaudeBusy(false);
-                          claudeReplyIdRef.current = null;
-                        } else {
-                          const r = await claudeBridge.start(state.id).catch((e) => ({ ok: false, error: String(e) } as const));
-                          if (r.ok) setClaudeActive(true);
-                          else {
-                            pushToast({ title: 'Claude Code unavailable', body: r.error || 'unknown error', tone: 'action' });
-                          }
-                        }
-                      }}
-                      className={`ml-auto rounded-full px-2.5 py-0.5 text-[11px] font-medium transition-colors ${
-                        claudeActive
+                      onClick={() => void toggleCodeAgent('claude')}
+                      className={`rounded-full px-2.5 py-0.5 text-[11px] font-medium transition-colors ${
+                        claudeActive && activeCodeAgent === 'claude'
                           ? 'bg-emerald-600 text-white'
                           : 'bg-zinc-100 text-zinc-700 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700'
                       }`}
-                      title={claudeActive ? 'Claude Code session running — click to stop' : 'Start a local Claude Code session for this buddy'}
+                      title={claudeActive && activeCodeAgent === 'claude' ? 'Claude Code session running - click to stop' : 'Start a local Claude Code session for this buddy'}
                     >
-                      {claudeActive ? '● Claude Code' : 'Claude Code'}
+                      {claudeActive && activeCodeAgent === 'claude' ? '● Claude' : 'Claude'}
                     </button>
+                    )}
+                    {codexBridge && (
+                    <button
+                      data-buddy-interactive
+                      onClick={() => void toggleCodeAgent('codex')}
+                      className={`rounded-full px-2.5 py-0.5 text-[11px] font-medium transition-colors ${
+                        claudeActive && activeCodeAgent === 'codex'
+                          ? 'bg-emerald-600 text-white'
+                          : 'bg-zinc-100 text-zinc-700 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700'
+                      }`}
+                      title={claudeActive && activeCodeAgent === 'codex' ? 'Codex session running - click to stop' : 'Start a local Codex CLI session for this buddy'}
+                    >
+                      {claudeActive && activeCodeAgent === 'codex' ? '● Codex' : 'Codex'}
+                    </button>
+                    )}
+                    </div>
                   )}
                 </div>
                 {familyMenu === 'buddy' && (
@@ -1111,13 +1156,18 @@ export default function BuddyInstance({ state, anchor, canRemove, onChange, onSp
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
                   onKeyDown={(e) => { if (e.key === 'Enter') void send(); }}
-                  disabled={busy}
-                  placeholder={busy ? `${personality.name} is typing…` : `talk to ${personality.name}…`}
+                  disabled={busy || claudeBusy}
+                  placeholder={busy || claudeBusy ? `${personality.name} is typing…` : `talk to ${personality.name}…`}
                   className="flex-1 rounded-full border border-zinc-200 bg-white px-3 py-1.5 text-sm outline-none focus:border-violet-400 disabled:opacity-60 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
                 />
-                {busy ? (
+                {busy || claudeBusy ? (
                   <button
-                    onClick={() => abortRef.current?.abort()}
+                    onClick={() => {
+                      abortRef.current?.abort();
+                      if (claudeActive && activeCodeBridge) void activeCodeBridge.stop(state.id).catch(() => {});
+                      setClaudeBusy(false);
+                      claudeReplyIdRef.current = null;
+                    }}
                     className="rounded-full bg-zinc-200 px-3 py-1.5 text-sm font-medium text-zinc-800 hover:bg-zinc-300 dark:bg-zinc-700 dark:text-zinc-100 dark:hover:bg-zinc-600"
                   >
                     stop

@@ -35,4 +35,17 @@ contextBridge.exposeInMainWorld('vibemoji', {
       return () => ipcRenderer.off('claude:event', handler);
     },
   },
+  codex: {
+    start: (buddyId, opts) => ipcRenderer.invoke('codex:start', { buddyId, opts }),
+    send: (buddyId, text) => ipcRenderer.invoke('codex:send', { buddyId, text }),
+    stop: (buddyId) => ipcRenderer.invoke('codex:stop', { buddyId }),
+    list: () => ipcRenderer.invoke('codex:list'),
+    onEvent: (cb) => {
+      const handler = (_e, payload) => {
+        if (payload && typeof payload.buddyId === 'string') cb(payload.buddyId, payload.event);
+      };
+      ipcRenderer.on('codex:event', handler);
+      return () => ipcRenderer.off('codex:event', handler);
+    },
+  },
 });

@@ -1,5 +1,5 @@
 import type { ClaudeCodeBridge, InteractiveRect, NotificationPayload, PlatformAdapter } from './types';
-import { getRemoteClaudeBridge } from './remoteClaude';
+import { getRemoteClaudeBridge, getRemoteCodexBridge } from './remoteClaude';
 
 type VibemojiNative = {
   setTouchableRegion?: (json: string) => void;
@@ -288,6 +288,7 @@ export class CapacitorAdapter implements PlatformAdapter {
   // we relay over WebSocket to a `claude` subprocess on that machine. With no
   // config, returns null and the UI hides the Claude Code toggle.
   claudeCode(): ClaudeCodeBridge | null { return getRemoteClaudeBridge(); }
+  codexCode(): ClaudeCodeBridge | null { return getRemoteCodexBridge(); }
 
   onOutsideTap(cb: () => void): () => void {
     if (typeof window === 'undefined') return () => {};

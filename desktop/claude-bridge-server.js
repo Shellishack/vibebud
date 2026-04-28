@@ -17,6 +17,7 @@
 // Each socket gets its own host: subprocesses are torn down when the socket
 // closes so a dropped phone doesn't leave orphan claude processes around.
 const { createClaudeHost } = require('./claudeSessions');
+const { createCodexHost } = require('./codexSessions');
 
 // onEvent is an optional callback fired for bridge-level lifecycle events
 // (paired, session-start). main.js uses this to raise desktop notifications
@@ -40,13 +41,24 @@ function startBridgeServer({ port, host = '0.0.0.0', token, onEvent }) {
   wss.on('connection', (ws, req) => {
     const peer = req.socket.remoteAddress;
     let authed = false;
-    const claude = createClaudeHost({
-      emit: (buddyId, event) => {
-        if (ws.readyState !== ws.OPEN) return;
-        try { ws.send(JSON.stringify({ type: 'event', buddyId, event })); } catch { /* noop */ }
-      },
-    });
-
+    const hosts = {
+      claude: createClaudeHost({
+        emit: (buddyId, event) => {
+          if (ws.readyState !== ws.OPEN) return;
+          try { ws.send(JSON.stringify({ type: 'event', buddyId, event, agent: 'claude' })); } catch { /* noop */ }
+        },
+      }),
+      codex: createCodexHost({
+        emit: (buddyId, event) => {
+          if (ws.readyState !== ws.OPEN) return;
+          try { ws.send(JSON.stringify({ type: 'event', buddyId, event, agent: 'codex' })); } catch { /* noop */ }
+        },
+      }),
+    };
+    const hostFor = (msg) => {
+      const agent = msg.agent === 'codex' || msg.opts?.agent === 'codex' ? 'codex' : 'claude';
+      return { agent, host: hosts[agent] };
+    };
     const replyAck = (id, result) => {
       try { ws.send(JSON.stringify({ type: 'ack', id, result })); } catch { /* noop */ }
     };
@@ -71,19 +83,30 @@ function startBridgeServer({ port, host = '0.0.0.0', token, onEvent }) {
       switch (msg.op) {
         case 'start': {
           const buddyId = String(msg.buddyId);
-          const result = claude.start(buddyId, msg.opts || {});
-          if (result.ok && !result.alreadyRunning) emit('session-start', { buddyId, peer });
+          const { agent, host } = hostFor(msg);
+          const result = host.start(buddyId, msg.opts || {});
+          if (result.ok && !result.alreadyRunning) emit('session-start', { buddyId, peer, agent });
           return replyAck(msg.id, result);
         }
-        case 'send':  return replyAck(msg.id, claude.send(String(msg.buddyId), String(msg.text || '')));
-        case 'stop':  return replyAck(msg.id, claude.stop(String(msg.buddyId)));
-        case 'list':  return replyAck(msg.id, claude.list());
+        case 'send': {
+          const { host } = hostFor(msg);
+          return replyAck(msg.id, host.send(String(msg.buddyId), String(msg.text || '')));
+        }
+        case 'stop': {
+          const { host } = hostFor(msg);
+          return replyAck(msg.id, host.stop(String(msg.buddyId)));
+        }
+        case 'list': {
+          const { host } = hostFor(msg);
+          return replyAck(msg.id, host.list());
+        }
         default:      return replyError(`unknown-op:${msg.op}`);
       }
     });
 
     ws.on('close', () => {
-      claude.stopAll();
+      hosts.claude.stopAll();
+      hosts.codex.stopAll();
       console.log(`[vibemoji-bridge] connection from ${peer} closed; sessions stopped.`);
     });
   });
