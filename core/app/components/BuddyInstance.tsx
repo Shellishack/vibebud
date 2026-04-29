@@ -46,6 +46,11 @@ const SCRIPTED_TOASTS: Omit<Toast, 'id'>[] = [
   { title: 'Needs your input', body: 'Agent is unsure: should empty state link to /docs or /onboarding?', tone: 'action' },
 ];
 
+const DESKTOP_PANEL_W = 320;
+const DESKTOP_PANEL_H = 380;
+const DESKTOP_PANEL_GAP = 8;
+const VIEWPORT_PAD = 12;
+
 export type BuddyInstanceState = {
   id: string;
   variantId: string;
@@ -178,6 +183,7 @@ export default function BuddyInstance({ state, anchor, canRemove, onChange, onSp
   const abortRef = useRef<AbortController | null>(null);
   const modelsAbortRef = useRef<AbortController | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
+  const rootRef = useRef<HTMLDivElement | null>(null);
   const teammatesRef = useRef<Teammate[]>(teammates ?? []);
   useEffect(() => { teammatesRef.current = teammates ?? []; }, [teammates]);
 
@@ -282,6 +288,7 @@ export default function BuddyInstance({ state, anchor, canRemove, onChange, onSp
   const dragRef = useRef<{ startScreenX: number; startScreenY: number; baseX: number; baseY: number; moved: boolean } | null>(null);
   const draggingRef = useRef(false);
   const [isDragging, setIsDragging] = useState(false);
+  const [desktopPanelPos, setDesktopPanelPos] = useState<{ left: number; top: number } | null>(null);
   const justDraggedRef = useRef(false);
   const toastIdRef = useRef(100);
   const msgIdRef = useRef(state.messages.reduce((m, x) => Math.max(m, x.id), 0) + 1);
@@ -869,8 +876,44 @@ export default function BuddyInstance({ state, anchor, canRemove, onChange, onSp
     }
   })();
 
+  useEffect(() => {
+    if (!open || isMobile) return;
+    const positionPanel = () => {
+      const el = rootRef.current;
+      if (!el) return;
+      const rect = el.getBoundingClientRect();
+      const vv = window.visualViewport;
+      const vw = vv?.width ?? window.innerWidth;
+      const vh = vv?.height ?? window.innerHeight;
+      const offsetLeft = vv?.offsetLeft ?? 0;
+      const offsetTop = vv?.offsetTop ?? 0;
+      const minLeft = offsetLeft + VIEWPORT_PAD;
+      const maxLeft = offsetLeft + vw - DESKTOP_PANEL_W - VIEWPORT_PAD;
+      const minTop = offsetTop + VIEWPORT_PAD;
+      const maxTop = offsetTop + vh - DESKTOP_PANEL_H - VIEWPORT_PAD;
+      const preferredLeft = rect.right - DESKTOP_PANEL_W;
+      const aboveTop = rect.top - DESKTOP_PANEL_H - DESKTOP_PANEL_GAP;
+      const belowTop = rect.bottom + DESKTOP_PANEL_GAP;
+      const preferredTop = aboveTop >= minTop || belowTop > maxTop ? aboveTop : belowTop;
+      setDesktopPanelPos({
+        left: Math.min(Math.max(preferredLeft, minLeft), Math.max(minLeft, maxLeft)),
+        top: Math.min(Math.max(preferredTop, minTop), Math.max(minTop, maxTop)),
+      });
+    };
+    positionPanel();
+    window.addEventListener('resize', positionPanel);
+    window.visualViewport?.addEventListener('resize', positionPanel);
+    window.visualViewport?.addEventListener('scroll', positionPanel);
+    return () => {
+      window.removeEventListener('resize', positionPanel);
+      window.visualViewport?.removeEventListener('resize', positionPanel);
+      window.visualViewport?.removeEventListener('scroll', positionPanel);
+    };
+  }, [open, isMobile, renderedPos.x, renderedPos.y]);
+
   return (
     <div
+      ref={rootRef}
       data-buddy-member
       data-group={state.groupId || undefined}
       data-buddy-minimized={state.minimized?.edge || undefined}
@@ -985,11 +1028,16 @@ export default function BuddyInstance({ state, anchor, canRemove, onChange, onSp
             data-buddy-interactive
             className={isMobile
               ? "pointer-events-auto fixed left-3 right-3 bottom-3 z-[60] flex flex-col rounded-3xl border border-zinc-200 bg-white/95 shadow-2xl backdrop-blur-md dark:border-zinc-700 dark:bg-zinc-900/95"
-              : "pointer-events-auto mb-2 flex w-80 flex-col rounded-3xl border border-zinc-200 bg-white/95 shadow-2xl backdrop-blur-md dark:border-zinc-700 dark:bg-zinc-900/95"
+              : "pointer-events-auto fixed z-[60] flex w-80 flex-col rounded-3xl border border-zinc-200 bg-white/95 shadow-2xl backdrop-blur-md dark:border-zinc-700 dark:bg-zinc-900/95"
             }
             style={isMobile
               ? { maxHeight: '85vh', animation: 'buddy-bubble-in 220ms ease-out' }
-              : { height: 380, animation: 'buddy-bubble-in 220ms ease-out' }
+              : {
+                left: desktopPanelPos?.left ?? -9999,
+                top: desktopPanelPos?.top ?? -9999,
+                height: DESKTOP_PANEL_H,
+                animation: 'buddy-bubble-in 220ms ease-out',
+              }
             }
           >
             <div className="border-b border-zinc-200 px-4 py-3 dark:border-zinc-700">
@@ -1354,7 +1402,7 @@ export default function BuddyInstance({ state, anchor, canRemove, onChange, onSp
               document.body,
             );
           }
-          return panel;
+          return typeof document !== 'undefined' ? createPortal(panel, document.body) : null;
         })()}
 
         <div className="relative">
