@@ -8,6 +8,15 @@ import {
   getRemoteClaudeConfig, setRemoteClaudeConfig, type RemoteClaudeConfig,
 } from '../../lib/platform/remoteClaude';
 import { getPhysicsMode, setPhysicsMode, type PhysicsMode, getRotationEnabled, setRotationEnabled } from './physics';
+import {
+  bondXpForLevel,
+  levelProgress,
+  loadGamificationStore,
+  subscribeGamification,
+  unlockedMilestonesFor,
+  type BuddySnapshot,
+} from './gamification';
+import { getPersonality } from './personalities';
 
 type Props = { open: boolean; onClose: () => void };
 
@@ -26,6 +35,7 @@ function AppSettingsBody({ onClose }: { onClose: () => void }) {
     setPhysicsMode(next);
   };
   const [rotationOn, setRotationOnState] = useState<boolean>(() => getRotationEnabled());
+  const [collectionOpen, setCollectionOpen] = useState(false);
   const toggleRotation = () => {
     const next = !rotationOn;
     setRotationOnState(next);
@@ -266,6 +276,15 @@ function AppSettingsBody({ onClose }: { onClose: () => void }) {
                 </span>
               </span>
             </label>
+            <button
+              onClick={() => setCollectionOpen(true)}
+              className="mt-3 w-full rounded-2xl border border-zinc-200 bg-white px-3 py-2.5 text-left text-sm font-medium text-zinc-900 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50 dark:hover:bg-zinc-800"
+            >
+              Collection
+              <span className="mt-0.5 block text-xs font-normal text-zinc-500 dark:text-zinc-400">
+                Levels, daily tasks, bond, milestones, and team stats.
+              </span>
+            </button>
           </section>
 
           <section>
@@ -318,9 +337,124 @@ function AppSettingsBody({ onClose }: { onClose: () => void }) {
           </section>
         </div>
       </div>
+      {collectionOpen && <CollectionModal onClose={() => setCollectionOpen(false)} />}
     </>,
     document.body,
   );
+}
+
+function CollectionModal({ onClose }: { onClose: () => void }) {
+  const [tick, setTick] = useState(0);
+  void tick;
+  useEffect(() => subscribeGamification(() => setTick((n) => n + 1)), []);
+  const store = loadGamificationStore();
+  const buddies = loadBuddySnapshots();
+  const favoriteTeams = Object.entries(store.collection.favoriteTeams).sort((a, b) => b[1] - a[1]);
+
+  return (
+    <div
+      data-buddy-interactive
+      className="fixed inset-0 z-[90] flex items-center justify-center bg-black/45 p-4 backdrop-blur-sm"
+      onClick={onClose}
+    >
+      <div
+        className="flex max-h-[calc(100vh-2rem)] w-full max-w-2xl flex-col overflow-hidden rounded-3xl border border-zinc-200 bg-white shadow-2xl dark:border-zinc-700 dark:bg-zinc-900"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between border-b border-zinc-200 px-5 py-4 dark:border-zinc-700">
+          <div>
+            <h2 className="text-base font-semibold text-zinc-900 dark:text-zinc-50">Collection</h2>
+            <p className="text-xs text-zinc-500 dark:text-zinc-400">Daily goals and buddy growth</p>
+          </div>
+          <button onClick={onClose} className="grid h-8 w-8 place-items-center rounded-full text-zinc-500 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800" aria-label="Close collection">
+            <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round">
+              <path d="M6 6l12 12M18 6 6 18" />
+            </svg>
+          </button>
+        </div>
+
+        <div className="min-h-0 overflow-y-auto px-5 py-4">
+          <section className="mb-5">
+            <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">Today</h3>
+            <div className="grid gap-2">
+              {store.dailyTasks.map((task) => (
+                <div key={task.id} className="rounded-2xl border border-zinc-200 bg-zinc-50 px-3 py-2 dark:border-zinc-700 dark:bg-zinc-800/70">
+                  <div className="flex items-center justify-between gap-3">
+                    <p className={`text-sm font-medium text-zinc-900 dark:text-zinc-50 ${task.completedAt ? 'line-through opacity-60' : ''}`}>{task.title}</p>
+                    <span className="text-xs text-zinc-500 dark:text-zinc-400">{task.progress}/{task.target}</span>
+                  </div>
+                  <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-zinc-200 dark:bg-zinc-700">
+                    <div className="h-full rounded-full bg-emerald-500" style={{ width: `${Math.min(100, (task.progress / task.target) * 100)}%` }} />
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
+
+          <section className="mb-5">
+            <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">Buddies</h3>
+            <div className="grid gap-3 sm:grid-cols-2">
+              {buddies.map((buddy) => {
+                const p = getPersonality(buddy.variantId);
+                const progress = levelProgress(buddy);
+                const bond = store.bonds[buddy.id] ?? { bondXp: 0, bondLevel: 1, mood: 'curious', lastInteractionSummary: '', memories: [] };
+                const milestones = unlockedMilestonesFor(buddy.id);
+                return (
+                  <div key={buddy.id} className="rounded-2xl border border-zinc-200 bg-white p-3 dark:border-zinc-700 dark:bg-zinc-950/40">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-semibold text-zinc-900 dark:text-zinc-50">{p.name}</p>
+                        <p className="truncate text-xs text-zinc-500 dark:text-zinc-400">{p.role || 'no role'}</p>
+                      </div>
+                      <span className="rounded-full bg-violet-600 px-2 py-0.5 text-[10px] font-bold text-white">Lv {progress.level}</span>
+                    </div>
+                    <p className="mt-2 text-xs text-zinc-600 dark:text-zinc-300">Bond Lv {bond.bondLevel} · {bond.mood}</p>
+                    <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-zinc-200 dark:bg-zinc-800">
+                      <div className="h-full rounded-full bg-violet-500" style={{ width: `${Math.min(100, (bond.bondXp / bondXpForLevel(bond.bondLevel)) * 100)}%` }} />
+                    </div>
+                    <p className="mt-2 text-[10px] text-zinc-500 dark:text-zinc-400">{progress.stats.chats} chats · {progress.stats.tasksCompleted} tasks · {progress.stats.pings} pings</p>
+                    {milestones.length > 0 && (
+                      <div className="mt-2 flex flex-wrap gap-1">
+                        {milestones.map((m) => (
+                          <span key={m.level} className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] text-amber-800 dark:bg-amber-500/15 dark:text-amber-200">{m.title}</span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </section>
+
+          <section>
+            <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">Teams</h3>
+            {favoriteTeams.length === 0 ? (
+              <p className="rounded-2xl bg-zinc-50 p-3 text-sm text-zinc-500 dark:bg-zinc-800/70 dark:text-zinc-400">Group buddies and complete an agent task to start tracking teams.</p>
+            ) : (
+              <div className="space-y-2">
+                {favoriteTeams.slice(0, 5).map(([team, count]) => (
+                  <div key={team} className="flex items-center justify-between rounded-2xl bg-zinc-50 px-3 py-2 text-sm dark:bg-zinc-800/70">
+                    <span className="truncate text-zinc-700 dark:text-zinc-200">{team.split('+').map((id) => getPersonality(buddies.find((b) => b.id === id)?.variantId ?? 'violet').name).join(' + ')}</span>
+                    <span className="text-xs text-zinc-500 dark:text-zinc-400">{count} uses</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function loadBuddySnapshots(): BuddySnapshot[] {
+  if (typeof window === 'undefined') return [];
+  try {
+    const parsed = JSON.parse(localStorage.getItem('vibemoji.buddies.v2') || 'null') as { buddies?: BuddySnapshot[] } | null;
+    return Array.isArray(parsed?.buddies) ? parsed.buddies : [];
+  } catch {
+    return [];
+  }
 }
 
 function Option({ selected, label, desc, onClick, status }: {

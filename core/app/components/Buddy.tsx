@@ -5,6 +5,7 @@ import BuddyInstance, { type BuddyInstanceState } from './BuddyInstance';
 import BuddyGroup from './BuddyGroup';
 import AppSettings from './AppSettings';
 import { VARIANTS } from './avatars';
+import { normalizeGamification } from './gamification';
 import { nextUnusedPersonality, PERSONALITY_BY_VARIANT, getPersonality } from './personalities';
 import type { Teammate } from './llm';
 import { usePlatform } from './hooks/usePlatform';
@@ -223,7 +224,7 @@ type Group = {
 type Persisted = { buddies: BuddyInstanceState[]; groups: Group[] };
 
 const initialBuddies = (): BuddyInstanceState[] => [
-  { id: 'buddy-1', variantId: 'violet', pos: { x: 0, y: 0 }, messages: [] },
+  normalizeGamification<BuddyInstanceState>({ id: 'buddy-1', variantId: 'violet', pos: { x: 0, y: 0 }, messages: [] }),
 ];
 
 function loadFromStorage(): Persisted | null {
@@ -784,10 +785,10 @@ export default function Buddy() {
           const g = groupById.get(b.groupId)!;
           const i = g.memberIds.indexOf(b.id);
           if (i >= 0) {
-            return { ...b, pos: { x: g.pos.x + i * COLLAPSED_STRIDE, y: g.pos.y } };
+            return normalizeGamification<BuddyInstanceState>({ ...b, pos: { x: g.pos.x + i * COLLAPSED_STRIDE, y: g.pos.y } });
           }
         }
-        return { ...b, pos: clampBuddyPos(b.pos) };
+        return normalizeGamification<BuddyInstanceState>({ ...b, pos: clampBuddyPos(b.pos) });
       }));
       setGroups(clampedGroups);
       const maxN = stored.buddies.reduce((m, b) => {
@@ -881,12 +882,12 @@ export default function Buddy() {
       const candidate = { x: -cur.length * (AVATAR_SIZE + gap), y: 0 };
       return [
         ...cur,
-        {
+        normalizeGamification<BuddyInstanceState>({
           id: `buddy-${idRef.current++}`,
           variantId: personality.variantId,
           pos: clampBuddyPos(candidate),
           messages: [],
-        },
+        }),
       ];
     });
   };
@@ -1851,6 +1852,7 @@ export default function Buddy() {
         magnetState={magnetState}
         edgeMagnet={edgeMagnet?.kind === 'buddy' && edgeMagnet.id === b.id ? edgeMagnet.edge : null}
         teammates={teammatesFor(b)}
+        groupMemberIds={b.groupId ? groups.find((g) => g.id === b.groupId)?.memberIds : undefined}
         isGroupExpanded={!!(b.groupId && expanded[b.groupId])}
         isGroupMinimized={!!(b.groupId && groups.find((g) => g.id === b.groupId)?.minimized)}
         onGroupTap={onGroupTap}

@@ -12,6 +12,24 @@ import {
   PROVIDERS,
   type ChatTurn, type Teammate, type ProviderId,
 } from './llm';
+import {
+  XP_REWARDS,
+  advanceDailyTask,
+  applyBuddyXp,
+  applyBondUpdate,
+  applyMilestoneUnlocks,
+  getActiveTeamBonus,
+  getBuddyBond,
+  loadGamificationStore,
+  levelProgress,
+  normalizeGamification,
+  parseBondJson,
+  recordFavoriteTeam,
+  subscribeGamification,
+  unlockedMilestonesFor,
+  xpForLevel,
+  type BuddyStats,
+} from './gamification';
 import { routePing } from './notify';
 import { getCachedLottie, loadLottie } from '../../lib/notoEmoji';
 
@@ -47,6 +65,9 @@ export type BuddyInstanceState = {
   // It's resampled on emotion change (or set by the LLM) and persisted with
   // the rest of the buddy state.
   avatar?: { kind: 'noto'; group: NotoGroup; composition?: FacesWithHandsComposition };
+  xp?: number;
+  level?: number;
+  stats?: BuddyStats;
 };
 
 type Props = {
@@ -65,6 +86,7 @@ type Props = {
   // zone" cue.
   edgeMagnet?: 'left' | 'right' | 'top' | 'bottom' | null;
   teammates?: Teammate[];
+  groupMemberIds?: string[];
   isGroupExpanded?: boolean;
   isGroupMinimized?: boolean;
   onGroupTap?: (gid: string) => void;
@@ -106,7 +128,7 @@ type Props = {
   onOpenAppSettings?: () => void;
 };
 
-export default function BuddyInstance({ state, anchor, canRemove, onChange, onSpawn, onRemove, onOpenChange, onDragMove, onDragEnd, magnetState, edgeMagnet, teammates, isGroupExpanded, isGroupMinimized, onGroupTap, onRestore, onGroupRestore, dockPeeked, groupDockPeeked, onDockPeek, onDockUnpeek, onGroupDockPeek, onGroupDockUnpeek, bumpTick, groupBumpTick, rotation, rotationActive, grabPivot, onDragStart, onOpenAppSettings }: Props) {
+export default function BuddyInstance({ state, anchor, canRemove, onChange, onSpawn, onRemove, onOpenChange, onDragMove, onDragEnd, magnetState, edgeMagnet, teammates, groupMemberIds, isGroupExpanded, isGroupMinimized, onGroupTap, onRestore, onGroupRestore, dockPeeked, groupDockPeeked, onDockPeek, onDockUnpeek, onGroupDockPeek, onGroupDockUnpeek, bumpTick, groupBumpTick, rotation, rotationActive, grabPivot, onDragStart, onOpenAppSettings }: Props) {
   const personality: Personality =
     PERSONALITY_BY_VARIANT[state.variantId] ?? PERSONALITY_BY_VARIANT.violet;
 
@@ -147,6 +169,7 @@ export default function BuddyInstance({ state, anchor, canRemove, onChange, onSp
   const [modelDraft, setModelDraft] = useState('');
   const [modelList, setModelList] = useState<string[]>([]);
   const [loadingModels, setLoadingModels] = useState(false);
+  const [gamificationTick, setGamificationTick] = useState(0);
 
   // Right-click context menu (desktop / web). Coords are viewport-relative;
   // the menu is portal'd to document.body so positioning isn't affected by the
@@ -203,6 +226,11 @@ export default function BuddyInstance({ state, anchor, canRemove, onChange, onSp
   // one of the 6 built-in color variants for rendering.
   const variant = VARIANTS.find((v) => v.id === personality.colorId) ?? VARIANTS[0];
   const variantAnim = useMemo(() => buildAnimation(variant, emotion), [variant, emotion]);
+  const progress = levelProgress(state);
+  const bond = useMemo(() => getBuddyBond(state.id), [state.id, gamificationTick]);
+  const unlockedMilestones = useMemo(() => unlockedMilestonesFor(state.id), [state.id, gamificationTick]);
+  const dailyTasks = useMemo(() => loadGamificationStore().dailyTasks, [gamificationTick]);
+  const activeTeamBonus = useMemo(() => getActiveTeamBonus(groupMemberIds), [groupMemberIds]);
   const isComposite = state.avatar?.kind === 'noto' && state.avatar.group === 'facesWithHands';
   const composition = isComposite ? state.avatar?.composition : undefined;
   const notoCp = state.avatar?.kind === 'noto' && !isComposite
@@ -366,6 +394,7 @@ export default function BuddyInstance({ state, anchor, canRemove, onChange, onSp
     if (!open) return;
     messagesEndRef.current?.scrollIntoView({ block: 'end', behavior: 'smooth' });
   }, [open, state.messages]);
+  useEffect(() => subscribeGamification(() => setGamificationTick((n) => n + 1)), []);
 
   // Android system BACK while the chat popup is open: close the popup.
   // Native overlay only forwards this event while it has focus (popup open),
@@ -377,6 +406,64 @@ export default function BuddyInstance({ state, anchor, canRemove, onChange, onSp
     return () => window.removeEventListener('vibemoji:back', onBack);
   }, [open]);
   const update = (patch: Partial<BuddyInstanceState>) => onChange({ ...stateRef.current, ...patch });
+  const withXp = (
+    base: BuddyInstanceState,
+    amount: number,
+    stat?: 'chats' | 'tasksCompleted' | 'pings',
+  ) => applyBuddyXp(normalizeGamification(base), amount, stat);
+
+  const showProgressRewards = (buddy: BuddyInstanceState, leveledUp: boolean) => {
+    if (leveledUp) {
+      feel('celebrating', 2200);
+      pushToast({
+        title: `${personality.name} reached level ${buddy.level ?? 1}`,
+        body: `${buddy.xp ?? 0} / ${xpForLevel(buddy.level ?? 1)} XP toward the next level`,
+        tone: 'success',
+      });
+    }
+    for (const milestone of applyMilestoneUnlocks(buddy)) {
+      pushToast({
+        title: `${personality.name} unlocked ${milestone.title}`,
+        body: milestone.aura ? `${milestone.aura} aura is now available.` : `Level ${milestone.level} milestone reached.`,
+        tone: 'success',
+      });
+    }
+  };
+
+  const awardXp = (amount: number, stat?: 'chats' | 'tasksCompleted' | 'pings') => {
+    const awarded = withXp(stateRef.current, amount, stat);
+    onChange(awarded.buddy);
+    showProgressRewards(awarded.buddy, awarded.leveledUp);
+  };
+
+  const dailyRewardFor = (event: 'chat' | 'task-complete' | 'team-use', buddyIds: string[]) => {
+    const completed = advanceDailyTask(event, buddyIds).completed;
+    for (const task of completed) {
+      pushToast({ title: 'Daily task complete', body: `${task.title} +${task.rewardXp} XP`, tone: 'success' });
+      for (const id of buddyIds) applyBondUpdate(id, task.rewardBond);
+    }
+    return completed.reduce((sum, task) => sum + task.rewardXp, 0);
+  };
+
+  const updateBondFromChat = async (userText: string, assistantText: string) => {
+    if (!getApiKey()) {
+      applyBondUpdate(state.id, 4, { summary: 'Had a chat with the user.' });
+      return;
+    }
+    try {
+      const chunks: string[] = [];
+      for await (const chunk of streamChat({
+        system: 'Return only compact JSON with keys mood, bondDelta, memory, summary. bondDelta must be 0-12. No markdown.',
+        messages: [{
+          role: 'user',
+          content: `Buddy: ${personality.name}\nRole: ${personality.role}\nUser said: ${userText}\nBuddy replied: ${assistantText}\nSummarize the relationship update.`,
+        }],
+      })) chunks.push(chunk);
+      applyBondUpdate(state.id, 4, parseBondJson(chunks.join('')));
+    } catch {
+      applyBondUpdate(state.id, 4, { summary: 'Had a chat with the user.' });
+    }
+  };
 
   // Subscribe to active code-agent stream events for this buddy. We extract
   // user-visible text from assistant/delta events and
@@ -426,6 +513,13 @@ export default function BuddyInstance({ state, anchor, canRemove, onChange, onSp
       } else if (t === 'result') {
         setClaudeBusy(false);
         claudeReplyIdRef.current = null;
+        const teamIds = groupMemberIds?.length ? groupMemberIds : [state.id];
+        const teamBonus = getActiveTeamBonus(groupMemberIds);
+        const teamXp = Math.round(XP_REWARDS.taskComplete * (teamBonus?.multiplier ?? 1));
+        const dailyXp = dailyRewardFor('task-complete', [state.id])
+          + (teamBonus ? dailyRewardFor('team-use', teamIds) : 0);
+        if (teamBonus) recordFavoriteTeam(teamIds);
+        awardXp(teamXp + dailyXp, 'tasksCompleted');
         feel('happy', 1500);
       } else if (t === 'error' || t === 'stderr' || t === 'raw') {
         const text = (evt as { text?: string }).text || `${activeCodeLabel} error`;
@@ -536,10 +630,21 @@ export default function BuddyInstance({ state, anchor, canRemove, onChange, onSp
   const triggerScriptedToast = () => {
     const t = SCRIPTED_TOASTS[Math.floor(Math.random() * SCRIPTED_TOASTS.length)];
     routePing(adapter, { title: t.title, body: t.body, tone: t.tone }, () => pushToast(t));
+    awardXp(XP_REWARDS.ping, 'pings');
   };
 
-  const writeMessages = (msgs: ChatMsg[]) => {
-    update({ messages: msgs });
+  const writeMessages = (
+    msgs: ChatMsg[],
+    xp?: { amount: number; stat?: 'chats' | 'tasksCompleted' | 'pings' },
+  ) => {
+    const base = { ...stateRef.current, messages: msgs };
+    if (!xp) {
+      onChange(base);
+      return;
+    }
+    const awarded = withXp(base, xp.amount, xp.stat);
+    onChange(awarded.buddy);
+    showProgressRewards(awarded.buddy, awarded.leveledUp);
   };
 
   const send = async () => {
@@ -553,7 +658,8 @@ export default function BuddyInstance({ state, anchor, canRemove, onChange, onSp
       const userMsg: ChatMsg = { id: msgIdRef.current++, from: 'you', text };
       const replyId = msgIdRef.current++;
       const baseMessages = [...stateRef.current.messages, userMsg];
-      writeMessages([...baseMessages, { id: replyId, from: 'buddy', text: '' }]);
+      const dailyXp = dailyRewardFor('chat', [state.id]);
+      writeMessages([...baseMessages, { id: replyId, from: 'buddy', text: '' }], { amount: XP_REWARDS.chat + dailyXp, stat: 'chats' });
       setInput('');
       setClaudeBusy(true);
       claudeReplyIdRef.current = replyId;
@@ -581,7 +687,8 @@ export default function BuddyInstance({ state, anchor, canRemove, onChange, onSp
     const userMsg: ChatMsg = { id: msgIdRef.current++, from: 'you', text };
     const replyId = msgIdRef.current++;
     const baseMessages = [...stateRef.current.messages, userMsg];
-    writeMessages([...baseMessages, { id: replyId, from: 'buddy', text: '' }]);
+    const dailyXp = dailyRewardFor('chat', [state.id]);
+    writeMessages([...baseMessages, { id: replyId, from: 'buddy', text: '' }], { amount: XP_REWARDS.chat + dailyXp, stat: 'chats' });
     setInput('');
     setBusy(true);
     feel('thinking', 1400);
@@ -604,6 +711,8 @@ export default function BuddyInstance({ state, anchor, canRemove, onChange, onSp
         acc += chunk;
         writeMessages([...baseMessages, { id: replyId, from: 'buddy', text: acc }]);
       }
+      writeMessages([...baseMessages, { id: replyId, from: 'buddy', text: acc }], { amount: XP_REWARDS.llmComplete });
+      void updateBondFromChat(text, acc);
       feel('happy', 1500);
     } catch (e: unknown) {
       if (ac.signal.aborted) return;
@@ -887,7 +996,7 @@ export default function BuddyInstance({ state, anchor, canRemove, onChange, onSp
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">{personality.name} · {variant.name}</p>
-                  <p className="text-xs text-emerald-600 dark:text-emerald-400">● {personality.role}</p>
+                  <p className="text-xs text-emerald-600 dark:text-emerald-400">Lv {progress.level} · {personality.role}</p>
                 </div>
                 <div className="flex items-center gap-1">
                   {adapter.id === 'capacitor-android' && (
@@ -948,6 +1057,53 @@ export default function BuddyInstance({ state, anchor, canRemove, onChange, onSp
                       <path d="M6 6l12 12M18 6 6 18" />
                     </svg>
                   </button>
+                </div>
+              </div>
+              <div className="mt-2">
+                <div className="mb-1 flex items-center justify-between text-[10px] font-medium uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
+                  <span>Level {progress.level}</span>
+                  <span>{progress.xp} / {progress.next} XP</span>
+                </div>
+                <div className="h-1.5 overflow-hidden rounded-full bg-zinc-200 dark:bg-zinc-800">
+                  <div
+                    className="h-full rounded-full bg-gradient-to-r from-emerald-400 to-violet-500 transition-[width] duration-500"
+                    style={{ width: `${progress.pct}%` }}
+                  />
+                </div>
+                <p className="mt-1 text-[10px] text-zinc-500 dark:text-zinc-400">
+                  {progress.stats.chats} chats · {progress.stats.tasksCompleted} tasks · {progress.stats.pings} pings
+                </p>
+                <div className="mt-2 grid grid-cols-2 gap-2 text-[10px] text-zinc-600 dark:text-zinc-300">
+                  <div className="rounded-xl bg-zinc-50 px-2 py-1.5 dark:bg-zinc-800/70">
+                    <p className="font-semibold uppercase tracking-wider text-zinc-400">Bond</p>
+                    <p className="mt-0.5">Lv {bond.bondLevel} · {bond.mood}</p>
+                  </div>
+                  <div className="rounded-xl bg-zinc-50 px-2 py-1.5 dark:bg-zinc-800/70">
+                    <p className="font-semibold uppercase tracking-wider text-zinc-400">Team</p>
+                    <p className="mt-0.5">{activeTeamBonus?.label ?? 'No active bonus'}</p>
+                  </div>
+                </div>
+                {(unlockedMilestones.length > 0 || bond.memories.length > 0) && (
+                  <div className="mt-2 flex flex-wrap gap-1">
+                    {unlockedMilestones.slice(-3).map((m) => (
+                      <span key={m.level} className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-medium text-amber-800 dark:bg-amber-500/15 dark:text-amber-200">
+                        {m.title}
+                      </span>
+                    ))}
+                    {bond.memories.slice(-1).map((memory) => (
+                      <span key={memory} className="max-w-full truncate rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-medium text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-200">
+                        {memory}
+                      </span>
+                    ))}
+                  </div>
+                )}
+                <div className="mt-2 space-y-1">
+                  {dailyTasks.map((task) => (
+                    <div key={task.id} className="flex items-center justify-between gap-2 text-[10px] text-zinc-500 dark:text-zinc-400">
+                      <span className={task.completedAt ? 'line-through opacity-60' : ''}>{task.title}</span>
+                      <span className="shrink-0">{task.progress}/{task.target}</span>
+                    </div>
+                  ))}
                 </div>
               </div>
               <div className="mt-3">
@@ -1301,6 +1457,12 @@ export default function BuddyInstance({ state, anchor, canRemove, onChange, onSp
             }`}
             aria-label={`open ${personality.name}`}
           >
+            <span
+              aria-hidden
+              className="pointer-events-none absolute right-0 top-1 z-10 rounded-full bg-zinc-950/85 px-2 py-0.5 text-[10px] font-bold leading-4 text-white shadow-lg ring-1 ring-white/70 dark:bg-white/90 dark:text-zinc-950 dark:ring-zinc-900/30"
+            >
+              Lv {progress.level}
+            </span>
             <div className="h-full w-full" style={{ animation: shaking ? 'buddy-shake 420ms ease-out' : 'buddy-bob 3s ease-in-out infinite' }}>
               {isComposite && composition ? (
                 <CompositeFace composition={composition} fetched={notoFetched} />
