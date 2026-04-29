@@ -32,6 +32,11 @@
     "files": [
       "main.js",
       "preload.js",
+      "claude-bridge-server.js",
+      "claudeSessions.js",
+      "codexSessions.js",
+      "pairing.js",
+      "pairing-preload.js",
       "core-out/**/*",
       "build/tray.png",
       "build/tray@2x.png",
