@@ -150,6 +150,10 @@ AI coding agents are becoming part of everyday development, but the interface ar
 
 Contributions are welcome around UI polish, agent integrations, buddy behaviors, desktop/mobile shells, accessibility, docs, and product ideas.
 
+## Star History
+
+[![Star History Chart](https://api.star-history.com/svg?repos=shellishack/vibebud&type=Date)](https://www.star-history.com/#shellishack/vibebud&Date)
+
 ## Name
 
 The app is called **Vibebud**: your buddy during vibe coding.

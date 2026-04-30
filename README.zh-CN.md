@@ -149,6 +149,10 @@ AI 编程智能体正在进入日常开发，但围绕它们的界面还很早�
 
 欢迎围绕 UI 打磨、智能体集成、小伙伴行为、桌面/移动端外壳、可访问性、文档和产品想法参与贡献。
 
+## Star History
+
+[![Star History Chart](https://api.star-history.com/svg?repos=shellishack/vibebud&type=Date)](https://www.star-history.com/#shellishack/vibebud&Date)
+
 ## 名字
 
 这个应用叫 **Vibebud**：你在氛围编程时的小伙伴。
