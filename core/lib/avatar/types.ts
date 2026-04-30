@@ -41,6 +41,18 @@ export type ShimejiAvatar = {
   characterId?: string;
 };
 
+export type Model3DAvatar = {
+  kind: 'model3d';
+  id: string;
+  name: string;
+  modelSrc: string;
+  scale?: number;
+  yOffset?: number;
+  cameraZ?: number;
+  animations?: Partial<Record<ShimejiAction, string[]>>;
+};
+
 export type AvatarSelection =
   | { kind: 'noto'; group: string; composition?: unknown }
-  | ShimejiAvatar;
+  | ShimejiAvatar
+  | Model3DAvatar;

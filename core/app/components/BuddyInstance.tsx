@@ -33,6 +33,7 @@ import {
 import { routePing } from './notify';
 import { getCachedLottie, loadLottie } from '../../lib/notoEmoji';
 import ShimejiAvatarView from './ShimejiAvatar';
+import Model3DAvatarView, { MODEL_3D_AVATARS } from './Model3DAvatar';
 import {
   fetchShimejiCatalog,
   getShimejiCharacter,
@@ -43,7 +44,7 @@ import {
   resolveShimejiAsset,
   subscribeShimejiPacks,
 } from '../../lib/avatar/shimeji';
-import type { InstalledShimejiPack, ShimejiAction, ShimejiAvatar, ShimejiPackManifest } from '../../lib/avatar/types';
+import type { InstalledShimejiPack, Model3DAvatar, ShimejiAction, ShimejiAvatar, ShimejiPackManifest } from '../../lib/avatar/types';
 
 const Lottie = dynamic(() => import('lottie-react'), { ssr: false });
 
@@ -81,7 +82,7 @@ export type BuddyInstanceState = {
   // For 'facesWithHands', `composition` is the resolved 5-emoji composite.
   // It's resampled on emotion change (or set by the LLM) and persisted with
   // the rest of the buddy state.
-  avatar?: { kind: 'noto'; group: NotoGroup; composition?: FacesWithHandsComposition } | ShimejiAvatar;
+  avatar?: { kind: 'noto'; group: NotoGroup; composition?: FacesWithHandsComposition } | ShimejiAvatar | Model3DAvatar;
   xp?: number;
   level?: number;
   stats?: BuddyStats;
@@ -166,7 +167,7 @@ export default function BuddyInstance({ state, anchor, canRemove, onChange, onSp
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [chatDetailsOpen, setChatDetailsOpen] = useState(false);
   const [notoFetched, setNotoFetched] = useState<Record<string, unknown>>({});
-  const [familyMenu, setFamilyMenu] = useState<'buddy' | 'noto' | 'shimeji' | null>(null);
+  const [familyMenu, setFamilyMenu] = useState<'buddy' | 'noto' | 'shimeji' | 'model3d' | null>(null);
   const [shimejiPacks, setShimejiPacks] = useState<InstalledShimejiPack[]>([]);
   const [shimejiCatalog, setShimejiCatalog] = useState<Array<{ manifest: ShimejiPackManifest; baseUrl: string }>>([]);
   const [shimejiCatalogLoading, setShimejiCatalogLoading] = useState(false);
@@ -335,6 +336,7 @@ export default function BuddyInstance({ state, anchor, canRemove, onChange, onSp
   const isShimeji = state.avatar?.kind === 'shimeji';
   const notoAvatar = state.avatar?.kind === 'noto' ? state.avatar : null;
   const shimejiAvatar = state.avatar?.kind === 'shimeji' ? state.avatar : null;
+  const model3dAvatar = state.avatar?.kind === 'model3d' ? state.avatar : null;
   const isComposite = notoAvatar?.group === 'facesWithHands';
   const composition = isComposite ? notoAvatar?.composition : undefined;
   const notoCp = notoAvatar && !isComposite
@@ -398,6 +400,8 @@ export default function BuddyInstance({ state, anchor, canRemove, onChange, onSp
     ? 'drag'
     : shimejiAction ?? (open ? 'sit' : 'idle');
   const shimejiIsMoving = !!shimejiAvatar && ['walk', 'climb', 'fall', 'drag'].includes(activeShimejiAction);
+  const model3dIsMoving = !!model3dAvatar && ['walk', 'climb', 'fall', 'drag'].includes(activeShimejiAction);
+  const avatarIsMoving = shimejiIsMoving || model3dIsMoving;
   const [desktopPanelPos, setDesktopPanelPos] = useState<{ left: number; top: number } | null>(null);
   const justDraggedRef = useRef(false);
   const toastIdRef = useRef(100);
@@ -1302,6 +1306,12 @@ export default function BuddyInstance({ state, anchor, canRemove, onChange, onSp
                       open={familyMenu === 'shimeji'}
                       onClick={() => setFamilyMenu((m) => (m === 'shimeji' ? null : 'shimeji'))}
                     />
+                    <FamilyPill
+                      label="3D"
+                      active={state.avatar?.kind === 'model3d'}
+                      open={familyMenu === 'model3d'}
+                      onClick={() => setFamilyMenu((m) => (m === 'model3d' ? null : 'model3d'))}
+                    />
                   </div>
                   {(claudeBridge || codexBridge) && (
                   <div className="ml-auto flex gap-1">
@@ -1474,6 +1484,37 @@ export default function BuddyInstance({ state, anchor, canRemove, onChange, onSp
                         </div>
                       </div>
                     )}
+                  </div>
+                )}
+                {familyMenu === 'model3d' && (
+                  <div className="mt-2 flex flex-wrap items-center gap-1.5 rounded-2xl bg-zinc-50 px-2.5 py-2 dark:bg-zinc-800/60">
+                    {MODEL_3D_AVATARS.map((model) => {
+                      const selected = state.avatar?.kind === 'model3d' && state.avatar.id === model.id;
+                      return (
+                        <button
+                          key={model.id}
+                          onClick={() => {
+                            update({ avatar: model });
+                            setFamilyMenu(null);
+                          }}
+                          title={`${model.name} · GLB`}
+                          aria-label={`Use ${model.name} 3D avatar`}
+                          className={`flex items-center gap-1.5 rounded-full px-2 py-1 text-[11px] font-medium transition-colors ${
+                            selected
+                              ? 'bg-violet-600 text-white'
+                              : 'bg-white text-zinc-700 ring-1 ring-zinc-200 hover:bg-zinc-100 dark:bg-zinc-900 dark:text-zinc-200 dark:ring-zinc-700 dark:hover:bg-zinc-800'
+                          }`}
+                        >
+                          <span className="grid h-5 w-5 place-items-center rounded-full bg-zinc-900 text-[9px] font-bold text-white dark:bg-zinc-100 dark:text-zinc-900" aria-hidden>
+                            3D
+                          </span>
+                          <span>{model.name}</span>
+                        </button>
+                      );
+                    })}
+                    <p className="basis-full px-1 text-[10px] leading-relaxed text-zinc-500 dark:text-zinc-400">
+                      GLB avatars use bundled animation clips when present and fall back to idle.
+                    </p>
                   </div>
                 )}
               </div>
@@ -1731,12 +1772,12 @@ export default function BuddyInstance({ state, anchor, canRemove, onChange, onSp
               instead of swinging out from the avatar's geometric center. */}
           <div
             style={{
-              transform: !shimejiIsMoving && rotation ? `rotate(${rotation}deg)` : undefined,
+              transform: !avatarIsMoving && rotation ? `rotate(${rotation}deg)` : undefined,
               transformOrigin: grabPivot
                 ? `calc(50% + ${grabPivot.x}px) calc(50% + ${grabPivot.y}px)`
                 : '50% 50%',
-              willChange: !shimejiIsMoving && rotation ? 'transform' : undefined,
-              transition: rotationActive || shimejiIsMoving ? 'none' : 'transform 420ms cubic-bezier(0.22, 1, 0.36, 1)',
+              willChange: !avatarIsMoving && rotation ? 'transform' : undefined,
+              transition: rotationActive || avatarIsMoving ? 'none' : 'transform 420ms cubic-bezier(0.22, 1, 0.36, 1)',
             }}
           >
           <button
@@ -1802,9 +1843,11 @@ export default function BuddyInstance({ state, anchor, canRemove, onChange, onSp
             >
               Lv {progress.level}
             </span>
-            <div className="h-full w-full" style={{ animation: shaking ? 'buddy-shake 420ms ease-out' : shimejiIsMoving ? undefined : 'buddy-bob 3s ease-in-out infinite' }}>
+            <div className="h-full w-full" style={{ animation: shaking ? 'buddy-shake 420ms ease-out' : avatarIsMoving ? undefined : 'buddy-bob 3s ease-in-out infinite' }}>
               {shimejiAvatar ? (
                 <ShimejiAvatarView avatar={shimejiAvatar} action={activeShimejiAction} direction={shimejiDirection} />
+              ) : model3dAvatar ? (
+                <Model3DAvatarView avatar={model3dAvatar} action={activeShimejiAction} direction={shimejiDirection} />
               ) : isComposite && composition ? (
                 <CompositeFace composition={composition} fetched={notoFetched} />
               ) : (
@@ -1812,7 +1855,7 @@ export default function BuddyInstance({ state, anchor, canRemove, onChange, onSp
               )}
             </div>
           </button>
-          {!isShimeji && isComposite && composition && (
+          {!isShimeji && !model3dAvatar && isComposite && composition && (
             <CompositeHands composition={composition} fetched={notoFetched} />
           )}
           </div>

@@ -6,6 +6,7 @@ import BuddyGroup from './BuddyGroup';
 import AppSettings from './AppSettings';
 import LanguageSelector from './LanguageSelector';
 import GitHubLink from './GitHubLink';
+import DiscordLink from './DiscordLink';
 import SignInStatus from './SignInStatus';
 import { VARIANTS } from './avatars';
 import { normalizeGamification } from './gamification';
@@ -477,7 +478,7 @@ export default function Buddy() {
     shimejiLastTickRef.current = now;
     const dragging: Set<string> = (window as unknown as { __vibebudDragging?: Set<string> }).__vibebudDragging ?? new Set();
     const updates: Record<string, Vec2> = {};
-    let hasShimeji = false;
+    let hasActionAvatar = false;
 
     if (modeRef.current !== 'wonder') {
       setShimejiActions((cur) => (Object.keys(cur).length ? {} : cur));
@@ -487,8 +488,8 @@ export default function Buddy() {
     }
 
     for (const b of buddiesRef.current) {
-      if (b.avatar?.kind !== 'shimeji') continue;
-      hasShimeji = true;
+      if (b.avatar?.kind !== 'shimeji' && b.avatar?.kind !== 'model3d') continue;
+      hasActionAvatar = true;
       if (openBuddiesRef.current[b.id] || wonderPausedBuddiesRef.current[b.id]) {
         setShimejiAction(b.id, 'sit');
         continue;
@@ -547,7 +548,7 @@ export default function Buddy() {
     if (Object.keys(updates).length) {
       setBuddies((cur) => cur.map((b) => updates[b.id] ? { ...b, pos: updates[b.id] } : b));
     }
-    if (hasShimeji) shimejiRafRef.current = requestAnimationFrame(shimejiTick);
+    if (hasActionAvatar) shimejiRafRef.current = requestAnimationFrame(shimejiTick);
   };
   const ensureShimejiLoop = () => {
     if (shimejiRafRef.current) return;
@@ -796,7 +797,7 @@ export default function Buddy() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [physicsMode]);
   useEffect(() => {
-    if (physicsMode === 'wonder' && buddies.some((b) => b.avatar?.kind === 'shimeji')) {
+    if (physicsMode === 'wonder' && buddies.some((b) => b.avatar?.kind === 'shimeji' || b.avatar?.kind === 'model3d')) {
       ensureShimejiLoop();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -2077,6 +2078,7 @@ export default function Buddy() {
       {adapter.id !== 'electron' && !isAndroidOverlay && (
         <div className="fixed right-3 top-3 z-[70] flex items-center gap-2">
           <GitHubLink />
+          <DiscordLink />
           <LanguageSelector />
           <SignInStatus />
           {/* QR shortcut: triggers the same scanQrForPair as AppSettings,

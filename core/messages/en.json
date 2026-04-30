@@ -10,6 +10,7 @@
     "description": "vibebud sits on top of your desktop, watching what your AI agents are doing on your behalf. it talks back in chat bubbles, taps you on the shoulder with toasts, and stays out of the way otherwise.",
     "manageAvatars": "manage avatars",
     "github": "GitHub",
+    "discord": "Discord",
     "downloadMeta": "free · ~40 MB · auto-detects your OS",
     "capabilities": {
       "floating": {
