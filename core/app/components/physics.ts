@@ -5,8 +5,8 @@
 const MODE_KEY = 'vibebud.physics.mode.v1';
 const LEGACY_KEY = 'vibebud.physics.v1';
 
-export type PhysicsMode = 'off' | 'bouncy' | 'astronaut';
-const ALL_MODES: PhysicsMode[] = ['off', 'bouncy', 'astronaut'];
+export type PhysicsMode = 'off' | 'bouncy' | 'astronaut' | 'wonder';
+const ALL_MODES: PhysicsMode[] = ['off', 'bouncy', 'astronaut', 'wonder'];
 
 export function getPhysicsMode(): PhysicsMode {
   if (typeof window === 'undefined') return 'bouncy';

@@ -128,7 +128,9 @@
       "bouncy": "Bouncy",
       "bouncyDesc": "Drag-and-fling to send buddies sailing - they bounce off edges and bump into each other.",
       "astronaut": "Astronaut",
-      "astronautDesc": "Zero-g drift: buddies float and spin endlessly, ricocheting off everything."
+      "astronautDesc": "Zero-g drift: buddies float and spin endlessly, ricocheting off everything.",
+      "wonder": "Wonder",
+      "wonderDesc": "Shimeji-style wandering: characters walk, sit, fall, and climb while staying draggable."
     },
     "rotateAvatars": "Rotate avatars",
     "rotateDescription": "Off-center grabs swing the avatar; flicks add spin. Disable to keep avatars upright at all times.",

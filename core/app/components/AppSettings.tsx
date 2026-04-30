@@ -19,6 +19,17 @@ import {
 } from './gamification';
 import { getPersonality } from './personalities';
 import { useTranslations } from '../../lib/hooks/use-translations';
+import {
+  fetchShimejiCatalog,
+  getShimejiMarketplaceUrl,
+  importShimejiZip,
+  installCatalogPack,
+  listShimejiPacks,
+  removeShimejiPack,
+  resolveShimejiAsset,
+  subscribeShimejiPacks,
+} from '../../lib/avatar/shimeji';
+import type { InstalledShimejiPack, ShimejiPackManifest } from '../../lib/avatar/types';
 
 type Props = { open: boolean; onClose: () => void };
 
@@ -270,6 +281,12 @@ function AppSettingsBody({ onClose }: { onClose: () => void }) {
                 desc={t('settings.physics.astronautDesc')}
                 onClick={() => choosePhysics('astronaut')}
               />
+              <Option
+                selected={physicsMode === 'wonder'}
+                label={t('settings.physics.wonder')}
+                desc={t('settings.physics.wonderDesc')}
+                onClick={() => choosePhysics('wonder')}
+              />
             </div>
             <label className="mt-3 flex cursor-pointer items-start gap-2 rounded-2xl border border-zinc-200 bg-white px-3 py-2.5 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:hover:bg-zinc-800">
               <input
@@ -355,8 +372,37 @@ function AppSettingsBody({ onClose }: { onClose: () => void }) {
 function CollectionModal({ onClose }: { onClose: () => void }) {
   const { t } = useTranslations();
   const [tick, setTick] = useState(0);
+  const [packs, setPacks] = useState<InstalledShimejiPack[]>([]);
+  const [catalog, setCatalog] = useState<Array<{ manifest: ShimejiPackManifest; baseUrl: string }>>([]);
+  const [packError, setPackError] = useState<string | null>(null);
+  const [catalogLoading, setCatalogLoading] = useState(false);
   void tick;
   useEffect(() => subscribeGamification(() => setTick((n) => n + 1)), []);
+  useEffect(() => {
+    let cancelled = false;
+    const refresh = () => listShimejiPacks().then((next) => { if (!cancelled) setPacks(next); });
+    refresh();
+    const unsub = subscribeShimejiPacks(refresh);
+    return () => { cancelled = true; unsub(); };
+  }, []);
+  const loadCatalog = () => {
+    setPackError(null);
+    setCatalogLoading(true);
+    fetchShimejiCatalog()
+      .then(setCatalog)
+      .catch((e) => setPackError(e instanceof Error ? e.message : String(e)))
+      .finally(() => setCatalogLoading(false));
+  };
+  const onImportZip = async (file: File | null) => {
+    if (!file) return;
+    setPackError(null);
+    try {
+      await importShimejiZip(file);
+    } catch (e) {
+      setPackError(e instanceof Error ? e.message : String(e));
+    }
+  };
+  const installedIds = new Set(packs.map((p) => p.manifest.id));
   const store = loadGamificationStore();
   const buddies = loadBuddySnapshots();
   const favoriteTeams = Object.entries(store.collection.favoriteTeams).sort((a, b) => b[1] - a[1]);
@@ -433,6 +479,84 @@ function CollectionModal({ onClose }: { onClose: () => void }) {
                   </div>
                 );
               })}
+            </div>
+          </section>
+
+          <section className="mb-5">
+            <div className="mb-2 flex items-center justify-between gap-3">
+              <h3 className="text-xs font-semibold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">Shimeji packs</h3>
+              <label className="cursor-pointer rounded-full bg-violet-600 px-3 py-1 text-[11px] font-semibold text-white hover:bg-violet-700">
+                import ZIP
+                <input
+                  type="file"
+                  accept=".zip,application/zip"
+                  className="hidden"
+                  onChange={(e) => void onImportZip(e.currentTarget.files?.[0] ?? null)}
+                />
+              </label>
+            </div>
+            {packError && (
+              <p className="mb-2 rounded-xl bg-red-50 px-3 py-2 text-xs text-red-700 dark:bg-red-500/10 dark:text-red-300">{packError}</p>
+            )}
+            <div className="grid gap-2 sm:grid-cols-2">
+              {packs.map((pack) => {
+                const character = pack.manifest.characters[0];
+                return (
+                  <div key={pack.manifest.id} className="flex items-center gap-3 rounded-2xl border border-zinc-200 bg-white p-3 dark:border-zinc-700 dark:bg-zinc-950/40">
+                    <span
+                      className="h-12 w-12 shrink-0 rounded-xl bg-zinc-100"
+                      style={{ background: `center / cover no-repeat url("${resolveShimejiAsset(pack, character.preview)}")` }}
+                    />
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-semibold text-zinc-900 dark:text-zinc-50">{pack.manifest.name}</p>
+                      <p className="truncate text-xs text-zinc-500 dark:text-zinc-400">{pack.manifest.license} · {pack.source}</p>
+                    </div>
+                    {pack.source !== 'bundled' && (
+                      <button
+                        onClick={() => void removeShimejiPack(pack.manifest.id).catch((e) => setPackError(e instanceof Error ? e.message : String(e)))}
+                        className="rounded-full px-2 py-1 text-[11px] text-red-600 hover:bg-red-50 dark:text-red-300 dark:hover:bg-red-500/10"
+                      >
+                        delete
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+            <div className="mt-3 rounded-2xl border border-zinc-200 bg-zinc-50 p-3 dark:border-zinc-700 dark:bg-zinc-800/70">
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">Remote catalog</p>
+                <button
+                  onClick={loadCatalog}
+                  disabled={catalogLoading}
+                  className="rounded-full px-3 py-1 text-[11px] font-semibold text-violet-700 ring-1 ring-violet-200 hover:bg-violet-50 disabled:opacity-60 dark:text-violet-200 dark:ring-violet-500/40 dark:hover:bg-violet-500/10"
+                >
+                  {catalogLoading ? 'loading...' : 'refresh'}
+                </button>
+                <a
+                  href={getShimejiMarketplaceUrl()}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="rounded-full px-3 py-1 text-[11px] font-semibold text-zinc-700 ring-1 ring-zinc-200 hover:bg-white dark:text-zinc-200 dark:ring-zinc-700 dark:hover:bg-zinc-900"
+                >
+                  marketplace
+                </a>
+              </div>
+              {catalog.length > 0 && (
+                <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                  {catalog.map((pack) => (
+                    <button
+                      key={pack.manifest.id}
+                      disabled={installedIds.has(pack.manifest.id)}
+                      onClick={() => void installCatalogPack(pack).catch((e) => setPackError(e instanceof Error ? e.message : String(e)))}
+                      className="rounded-xl bg-white px-3 py-2 text-left text-xs ring-1 ring-zinc-200 hover:bg-zinc-100 disabled:opacity-55 dark:bg-zinc-950/50 dark:ring-zinc-700 dark:hover:bg-zinc-900"
+                    >
+                      <span className="block font-semibold text-zinc-900 dark:text-zinc-50">{pack.manifest.name}</span>
+                      <span className="block text-zinc-500 dark:text-zinc-400">{installedIds.has(pack.manifest.id) ? 'installed' : `${pack.manifest.license} · install`}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
           </section>
 

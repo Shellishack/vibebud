@@ -32,6 +32,14 @@ import {
 } from './gamification';
 import { routePing } from './notify';
 import { getCachedLottie, loadLottie } from '../../lib/notoEmoji';
+import ShimejiAvatarView from './ShimejiAvatar';
+import {
+  getShimejiCharacter,
+  listShimejiPacks,
+  resolveShimejiAsset,
+  subscribeShimejiPacks,
+} from '../../lib/avatar/shimeji';
+import type { InstalledShimejiPack, ShimejiAction, ShimejiAvatar } from '../../lib/avatar/types';
 
 const Lottie = dynamic(() => import('lottie-react'), { ssr: false });
 
@@ -69,7 +77,7 @@ export type BuddyInstanceState = {
   // For 'facesWithHands', `composition` is the resolved 5-emoji composite.
   // It's resampled on emotion change (or set by the LLM) and persisted with
   // the rest of the buddy state.
-  avatar?: { kind: 'noto'; group: NotoGroup; composition?: FacesWithHandsComposition };
+  avatar?: { kind: 'noto'; group: NotoGroup; composition?: FacesWithHandsComposition } | ShimejiAvatar;
   xp?: number;
   level?: number;
   stats?: BuddyStats;
@@ -131,9 +139,10 @@ type Props = {
   // Open the app-wide settings modal (notifications, physics mode, pairing).
   // Used by the right-click menu on Electron, where there's no gear icon.
   onOpenAppSettings?: () => void;
+  shimejiAction?: ShimejiAction;
 };
 
-export default function BuddyInstance({ state, anchor, canRemove, onChange, onSpawn, onRemove, onOpenChange, onDragMove, onDragEnd, magnetState, edgeMagnet, teammates, groupMemberIds, isGroupExpanded, isGroupMinimized, onGroupTap, onRestore, onGroupRestore, dockPeeked, groupDockPeeked, onDockPeek, onDockUnpeek, onGroupDockPeek, onGroupDockUnpeek, bumpTick, groupBumpTick, rotation, rotationActive, grabPivot, onDragStart, onOpenAppSettings }: Props) {
+export default function BuddyInstance({ state, anchor, canRemove, onChange, onSpawn, onRemove, onOpenChange, onDragMove, onDragEnd, magnetState, edgeMagnet, teammates, groupMemberIds, isGroupExpanded, isGroupMinimized, onGroupTap, onRestore, onGroupRestore, dockPeeked, groupDockPeeked, onDockPeek, onDockUnpeek, onGroupDockPeek, onGroupDockUnpeek, bumpTick, groupBumpTick, rotation, rotationActive, grabPivot, onDragStart, onOpenAppSettings, shimejiAction }: Props) {
   const personality: Personality =
     PERSONALITY_BY_VARIANT[state.variantId] ?? PERSONALITY_BY_VARIANT.violet;
 
@@ -149,7 +158,8 @@ export default function BuddyInstance({ state, anchor, canRemove, onChange, onSp
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [chatDetailsOpen, setChatDetailsOpen] = useState(false);
   const [notoFetched, setNotoFetched] = useState<Record<string, unknown>>({});
-  const [familyMenu, setFamilyMenu] = useState<'buddy' | 'noto' | null>(null);
+  const [familyMenu, setFamilyMenu] = useState<'buddy' | 'noto' | 'shimeji' | null>(null);
+  const [shimejiPacks, setShimejiPacks] = useState<InstalledShimejiPack[]>([]);
   // Per-buddy Claude Code session: when active, chat sends route through the
   // local `claude` subprocess (spawned by Electron main) instead of the LLM
   // HTTP provider. claudeBusy mirrors `busy` for the bridge path.
@@ -176,6 +186,15 @@ export default function BuddyInstance({ state, anchor, canRemove, onChange, onSp
   const [modelList, setModelList] = useState<string[]>([]);
   const [loadingModels, setLoadingModels] = useState(false);
   const [gamificationTick, setGamificationTick] = useState(0);
+  useEffect(() => {
+    let cancelled = false;
+    const refresh = () => {
+      listShimejiPacks().then((packs) => { if (!cancelled) setShimejiPacks(packs); });
+    };
+    refresh();
+    const unsub = subscribeShimejiPacks(refresh);
+    return () => { cancelled = true; unsub(); };
+  }, []);
 
   // Right-click context menu (desktop / web). Coords are viewport-relative;
   // the menu is portal'd to document.body so positioning isn't affected by the
@@ -240,10 +259,13 @@ export default function BuddyInstance({ state, anchor, canRemove, onChange, onSp
   const unlockedMilestones = useMemo(() => unlockedMilestonesFor(state.id), [state.id, gamificationTick]);
   const dailyTasks = useMemo(() => loadGamificationStore().dailyTasks, [gamificationTick]);
   const activeTeamBonus = useMemo(() => getActiveTeamBonus(groupMemberIds), [groupMemberIds]);
-  const isComposite = state.avatar?.kind === 'noto' && state.avatar.group === 'facesWithHands';
-  const composition = isComposite ? state.avatar?.composition : undefined;
-  const notoCp = state.avatar?.kind === 'noto' && !isComposite
-    ? getNotoCodepoint(state.avatar.group, emotion) : null;
+  const isShimeji = state.avatar?.kind === 'shimeji';
+  const notoAvatar = state.avatar?.kind === 'noto' ? state.avatar : null;
+  const shimejiAvatar = state.avatar?.kind === 'shimeji' ? state.avatar : null;
+  const isComposite = notoAvatar?.group === 'facesWithHands';
+  const composition = isComposite ? notoAvatar?.composition : undefined;
+  const notoCp = notoAvatar && !isComposite
+    ? getNotoCodepoint(notoAvatar.group, emotion) : null;
   const notoData = notoCp ? (notoFetched[notoCp] ?? getCachedLottie(notoCp)) : null;
   const animation = notoData ? (notoData as object) : variantAnim;
 
@@ -270,7 +292,7 @@ export default function BuddyInstance({ state, anchor, canRemove, onChange, onSp
       if (cp) void loadLottie(cp).catch(() => {});
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [emotion, state.avatar?.kind, state.avatar?.group]);
+  }, [emotion, notoAvatar?.group, state.avatar?.kind]);
 
   // Lazy-load any composite codepoints not in cache. We track them in the
   // same notoFetched map so the Lottie components below get a fresh ref.
@@ -291,6 +313,9 @@ export default function BuddyInstance({ state, anchor, canRemove, onChange, onSp
   const dragRef = useRef<{ startScreenX: number; startScreenY: number; baseX: number; baseY: number; moved: boolean } | null>(null);
   const draggingRef = useRef(false);
   const [isDragging, setIsDragging] = useState(false);
+  const activeShimejiAction: ShimejiAction = isDragging
+    ? 'drag'
+    : shimejiAction ?? (open ? 'sit' : 'idle');
   const [desktopPanelPos, setDesktopPanelPos] = useState<{ left: number; top: number } | null>(null);
   const justDraggedRef = useRef(false);
   const toastIdRef = useRef(100);
@@ -1193,6 +1218,12 @@ export default function BuddyInstance({ state, anchor, canRemove, onChange, onSp
                       open={familyMenu === 'noto'}
                       onClick={() => setFamilyMenu((m) => (m === 'noto' ? null : 'noto'))}
                     />
+                    <FamilyPill
+                      label="Shimeji"
+                      active={state.avatar?.kind === 'shimeji'}
+                      open={familyMenu === 'shimeji'}
+                      onClick={() => setFamilyMenu((m) => (m === 'shimeji' ? null : 'shimeji'))}
+                    />
                   </div>
                   {(claudeBridge || codexBridge) && (
                     <div className="ml-auto flex gap-1">
@@ -1274,6 +1305,47 @@ export default function BuddyInstance({ state, anchor, canRemove, onChange, onSp
                         >
                           <span className="text-base leading-none" aria-hidden>{cpToGlyph(cfg.preview)}</span>
                           <span>{cfg.label}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+                {familyMenu === 'shimeji' && (
+                  <div className="mt-2 flex flex-wrap items-center gap-1.5 rounded-2xl bg-zinc-50 px-2.5 py-2 dark:bg-zinc-800/60">
+                    {shimejiPacks.map((pack) => {
+                      const character = getShimejiCharacter(pack, state.avatar?.kind === 'shimeji' ? state.avatar.characterId : undefined);
+                      const selected = state.avatar?.kind === 'shimeji' && state.avatar.packId === pack.manifest.id;
+                      return (
+                        <button
+                          key={pack.manifest.id}
+                          onClick={() => {
+                            update({
+                              avatar: {
+                                kind: 'shimeji',
+                                packId: pack.manifest.id,
+                                characterId: character.id,
+                              },
+                            });
+                            setFamilyMenu(null);
+                          }}
+                          title={`${pack.manifest.name} · ${pack.manifest.license}`}
+                          aria-label={`Use ${pack.manifest.name} Shimeji avatar`}
+                          className={`flex items-center gap-1.5 rounded-full px-2 py-1 text-[11px] font-medium transition-colors ${
+                            selected
+                              ? 'bg-violet-600 text-white'
+                              : 'bg-white text-zinc-700 ring-1 ring-zinc-200 hover:bg-zinc-100 dark:bg-zinc-900 dark:text-zinc-200 dark:ring-zinc-700 dark:hover:bg-zinc-800'
+                          }`}
+                        >
+                          <span
+                            className="block h-5 w-5 overflow-hidden rounded-full bg-zinc-100"
+                            style={{
+                              backgroundImage: `url("${resolveShimejiAsset(pack, character.preview)}")`,
+                              backgroundSize: 'cover',
+                              backgroundPosition: 'center',
+                            }}
+                            aria-hidden
+                          />
+                          <span>{pack.manifest.name}</span>
                         </button>
                       );
                     })}
@@ -1544,14 +1616,16 @@ export default function BuddyInstance({ state, anchor, canRemove, onChange, onSp
               Lv {progress.level}
             </span>
             <div className="h-full w-full" style={{ animation: shaking ? 'buddy-shake 420ms ease-out' : 'buddy-bob 3s ease-in-out infinite' }}>
-              {isComposite && composition ? (
+              {shimejiAvatar ? (
+                <ShimejiAvatarView avatar={shimejiAvatar} action={activeShimejiAction} />
+              ) : isComposite && composition ? (
                 <CompositeFace composition={composition} fetched={notoFetched} />
               ) : (
                 <Lottie animationData={animation} loop autoplay />
               )}
             </div>
           </button>
-          {isComposite && composition && (
+          {!isShimeji && isComposite && composition && (
             <CompositeHands composition={composition} fetched={notoFetched} />
           )}
           </div>

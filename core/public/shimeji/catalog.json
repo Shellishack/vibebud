@@ -1,0 +1,33 @@
+{
+  "packs": [
+    {
+      "baseUrl": "/shimeji/sample-bean/",
+      "manifest": {
+        "schemaVersion": 1,
+        "id": "sample-bean",
+        "name": "Sample Bean",
+        "license": "CC0-1.0",
+        "author": "Vibebud",
+        "description": "A self-authored royalty-free sample Shimeji character with clear action poses.",
+        "characters": [
+          {
+            "id": "default",
+            "name": "Sample Bean",
+            "preview": "preview.svg",
+            "frameSize": { "w": 128, "h": 128 },
+            "scale": 1,
+            "anchor": { "x": 64, "y": 112 },
+            "animations": {
+              "idle": { "src": "idle.svg", "frames": 4, "fps": 5, "loop": true },
+              "walk": { "src": "walk.svg", "frames": 6, "fps": 9, "loop": true },
+              "climb": { "src": "climb.svg", "frames": 4, "fps": 8, "loop": true },
+              "fall": { "src": "fall.svg", "frames": 2, "fps": 8, "loop": true },
+              "sit": { "src": "sit.svg", "frames": 2, "fps": 3, "loop": true },
+              "drag": { "src": "drag.svg", "frames": 1, "fps": 1, "loop": true }
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

@@ -11,6 +11,7 @@ import { VARIANTS } from './avatars';
 import { normalizeGamification } from './gamification';
 import { nextUnusedPersonality, PERSONALITY_BY_VARIANT, getPersonality } from './personalities';
 import type { Teammate } from './llm';
+import type { ShimejiAction } from '../../lib/avatar/types';
 import { usePlatform } from './hooks/usePlatform';
 import { isMobile } from '@/lib/platform/detect';
 import type { ElectronAdapter } from '@/lib/platform/electron';
@@ -358,7 +359,7 @@ export default function Buddy() {
   useEffect(() => {
     const onChange = (e: Event) => {
       const m = (e as CustomEvent<PhysicsMode>).detail;
-      if (m === 'off' || m === 'bouncy' || m === 'astronaut') setPhysicsModeState(m);
+      if (m === 'off' || m === 'bouncy' || m === 'astronaut' || m === 'wonder') setPhysicsModeState(m);
     };
     window.addEventListener('vibebud:physicsChange', onChange);
     return () => window.removeEventListener('vibebud:physicsChange', onChange);
@@ -423,6 +424,10 @@ export default function Buddy() {
   // Bump tick: increments per id (`buddy:<id>` / `group:<id>`) on each
   // collision, so child components can react with a brief shake + emotion.
   const [bumpTicks, setBumpTicks] = useState<Record<string, number>>({});
+  const [shimejiActions, setShimejiActions] = useState<Record<string, ShimejiAction>>({});
+  const shimejiBrainRef = useRef<Map<string, { action: ShimejiAction; dir: -1 | 1; until: number }>>(new Map());
+  const shimejiRafRef = useRef<number>(0);
+  const shimejiLastTickRef = useRef<number>(0);
   // Drag velocity samples, keyed by `buddy:<id>` / `group:<id>`.
   const velSamplesRef = useRef<Map<string, Array<{ t: number; x: number; y: number }>>>(new Map());
   const recordSample = (key: string, p: Vec2) => {
@@ -452,6 +457,88 @@ export default function Buddy() {
   const flightsRef = useRef<Map<string, Flight>>(new Map());
   const flightRafRef = useRef<number>(0);
   const lastFlightTickRef = useRef<number>(0);
+  /* eslint-disable react-hooks/purity */
+  const setShimejiAction = (id: string, action: ShimejiAction) => {
+    setShimejiActions((cur) => (cur[id] === action ? cur : { ...cur, [id]: action }));
+  };
+  const shimejiTick = () => {
+    shimejiRafRef.current = 0;
+    const now = (typeof performance !== 'undefined' ? performance.now() : Date.now());
+    const dt = Math.min(48, Math.max(1, now - shimejiLastTickRef.current));
+    shimejiLastTickRef.current = now;
+    const dragging: Set<string> = (window as unknown as { __vibebudDragging?: Set<string> }).__vibebudDragging ?? new Set();
+    const updates: Record<string, Vec2> = {};
+    let hasShimeji = false;
+
+    if (modeRef.current !== 'wonder') {
+      setShimejiActions((cur) => (Object.keys(cur).length ? {} : cur));
+      shimejiBrainRef.current.clear();
+      return;
+    }
+
+    for (const b of buddiesRef.current) {
+      if (b.avatar?.kind !== 'shimeji') continue;
+      hasShimeji = true;
+      if (b.minimized || b.groupId || dragging.has(b.id)) {
+        setShimejiAction(b.id, dragging.has(b.id) ? 'drag' : 'idle');
+        continue;
+      }
+      const floor = clampBuddyPos({ ...b.pos, y: 99999 }).y;
+      const leftWall = clampBuddyPos({ ...b.pos, x: -99999 }).x;
+      const rightWall = clampBuddyPos({ ...b.pos, x: 99999 }).x;
+      const brain = shimejiBrainRef.current.get(b.id) ?? {
+        action: 'fall' as ShimejiAction,
+        dir: Math.random() < 0.5 ? -1 : 1,
+        until: now,
+      };
+      let action = brain.action;
+      let pos = b.pos;
+
+      if (b.pos.y < floor - 4) {
+        action = 'fall';
+        pos = clampBuddyPos({ x: b.pos.x, y: b.pos.y + 0.22 * dt });
+      } else {
+        if (now > brain.until || action === 'fall') {
+          const r = Math.random();
+          action = r < 0.45 ? 'walk' : r < 0.7 ? 'sit' : r < 0.86 ? 'idle' : 'climb';
+          brain.dir = Math.random() < 0.5 ? -1 : 1;
+          brain.until = now + (action === 'walk' ? 1600 + Math.random() * 2200 : 1200 + Math.random() * 2400);
+        }
+        if (action === 'walk') {
+          const next = clampBuddyPos({ x: b.pos.x + brain.dir * 0.045 * dt, y: floor });
+          if (next.x === leftWall || next.x === rightWall) {
+            brain.dir = next.x === leftWall ? 1 : -1;
+            action = Math.random() < 0.45 ? 'climb' : 'walk';
+          }
+          pos = next;
+        } else if (action === 'climb') {
+          const wall = Math.abs(b.pos.x - leftWall) < Math.abs(b.pos.x - rightWall) ? leftWall : rightWall;
+          pos = clampBuddyPos({ x: wall, y: b.pos.y - 0.035 * dt });
+          if (pos.y < floor - 180 || now > brain.until) {
+            action = 'fall';
+            brain.until = now + 800;
+          }
+        } else {
+          pos = { x: b.pos.x, y: floor };
+        }
+      }
+      brain.action = action;
+      shimejiBrainRef.current.set(b.id, brain);
+      setShimejiAction(b.id, action);
+      if (pos.x !== b.pos.x || pos.y !== b.pos.y) updates[b.id] = pos;
+    }
+
+    if (Object.keys(updates).length) {
+      setBuddies((cur) => cur.map((b) => updates[b.id] ? { ...b, pos: updates[b.id] } : b));
+    }
+    if (hasShimeji) shimejiRafRef.current = requestAnimationFrame(shimejiTick);
+  };
+  const ensureShimejiLoop = () => {
+    if (shimejiRafRef.current) return;
+    shimejiLastTickRef.current = (typeof performance !== 'undefined' ? performance.now() : Date.now());
+    shimejiRafRef.current = requestAnimationFrame(shimejiTick);
+  };
+  /* eslint-enable react-hooks/purity */
   const ensureFlightLoop = () => {
     if (flightRafRef.current) return;
     lastFlightTickRef.current = (typeof performance !== 'undefined' ? performance.now() : Date.now());
@@ -692,8 +779,15 @@ export default function Buddy() {
     if (physicsMode === 'astronaut') ensureFlightLoop();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [physicsMode]);
+  useEffect(() => {
+    if (physicsMode === 'wonder' && buddies.some((b) => b.avatar?.kind === 'shimeji')) {
+      ensureShimejiLoop();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [buddies]);
   useEffect(() => () => {
     if (flightRafRef.current) cancelAnimationFrame(flightRafRef.current);
+    if (shimejiRafRef.current) cancelAnimationFrame(shimejiRafRef.current);
     if (pendulumRafRef.current) cancelAnimationFrame(pendulumRafRef.current);
     for (const k of flightsRef.current.keys()) adapter.notifyDragEnd(`flight:${k}`);
     flightsRef.current.clear();
@@ -1874,6 +1968,7 @@ export default function Buddy() {
         grabPivot={rotationEnabled ? grabPivots[`buddy:${b.id}`] : undefined}
         onDragStart={onBuddyDragStart}
         onOpenAppSettings={() => setAppSettingsOpen(true)}
+        shimejiAction={shimejiActions[b.id]}
       />
     );
   };
