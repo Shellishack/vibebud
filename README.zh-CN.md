@@ -4,6 +4,8 @@
 
 **一个在你氛围编程时陪着你的 AI 小伙伴。**
 
+[GitHub](https://github.com/shellishack/vibebud) · [Discord](https://discord.gg/9tPu9SQhVz)
+
 Vibebud 会给你的 AI 编程智能体一个可见的存在感：它可以作为漂浮在桌面、网页或手机上的小伙伴，和你聊天、显示状态，并在需要你介入时轻轻提醒。
 
 ```text
