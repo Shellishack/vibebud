@@ -5,6 +5,7 @@ import BuddyInstance, { type BuddyInstanceState } from './BuddyInstance';
 import BuddyGroup from './BuddyGroup';
 import AppSettings from './AppSettings';
 import LanguageSelector from './LanguageSelector';
+import GitHubLink from './GitHubLink';
 import SignInStatus from './SignInStatus';
 import { VARIANTS } from './avatars';
 import { normalizeGamification } from './gamification';
@@ -1934,6 +1935,7 @@ export default function Buddy() {
           in the in-app Capacitor BridgeActivity WebView and the web build. */}
       {adapter.id !== 'electron' && !isAndroidOverlay && (
         <div className="fixed right-3 top-3 z-[70] flex items-center gap-2">
+          <GitHubLink />
           <LanguageSelector />
           <SignInStatus />
           {/* QR shortcut: triggers the same scanQrForPair as AppSettings,

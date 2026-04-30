@@ -11,7 +11,7 @@ import { usePlatform } from './hooks/usePlatform';
 
 type Target = { id: string; label: string; href: string; ext: string; directDownload?: boolean };
 
-const LATEST_RELEASE_URL = 'https://github.com/Shellishack/vibemoji/releases/latest';
+const LATEST_RELEASE_URL = 'https://github.com/shellishack/vibebud/releases/latest';
 const LATEST_RELEASE_DOWNLOAD_URL = `${LATEST_RELEASE_URL}/download`;
 
 const TARGETS: Target[] = [
@@ -52,11 +52,13 @@ export default function InstallButton() {
   const { t } = useTranslations();
   const adapter = usePlatform();
   const insideElectron = adapter.id === 'electron';
-  const [target, setTarget] = useState<Target>(TARGETS[0]);
+  const [detectedTarget, setDetectedTarget] = useState<Target | null>(null);
   const [open, setOpen] = useState(false);
+  const target = detectedTarget ?? TARGETS[0];
 
   useEffect(() => {
-    setTarget(detectTarget());
+    const id = window.setTimeout(() => setDetectedTarget(detectTarget()), 0);
+    return () => window.clearTimeout(id);
   }, []);
 
   const handleDownload = () => {

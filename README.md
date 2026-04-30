@@ -18,7 +18,7 @@ Vibebud gives your coding agents a visible presence: a floating companion on you
 
 Instead of letting AI agent work disappear into terminals, logs, and background processes, Vibebud makes it feel present and easy to follow.
 
-> Screenshot coming soon. For now: imagine a small animated avatar in the corner of your screen, blinking at you, occasionally popping a chat bubble.
+![Vibebud floating buddies preview](./assets/buds.png)
 
 ## The Idea
 
