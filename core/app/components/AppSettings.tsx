@@ -8,6 +8,7 @@ import {
   getRemoteClaudeConfig, setRemoteClaudeConfig, type RemoteClaudeConfig,
 } from '../../lib/platform/remoteClaude';
 import { getPhysicsMode, setPhysicsMode, type PhysicsMode, getRotationEnabled, setRotationEnabled } from './physics';
+import AccountPanel from './AccountPanel';
 import {
   bondXpForLevel,
   levelProgress,
@@ -130,6 +131,13 @@ function AppSettingsBody({ onClose }: { onClose: () => void }) {
               </svg>
             </button>
           </div>
+
+          <section className="mb-5">
+            <p className="text-xs font-semibold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
+              Account
+            </p>
+            <AccountPanel />
+          </section>
 
           {showPairingUi && (
             <section className="mb-5">

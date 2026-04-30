@@ -2,6 +2,7 @@ import Link from 'next/link';
 import Buddy from './components/Buddy';
 import InstallButton from './components/InstallButton';
 import OverlayButton from './components/OverlayButton';
+import TodoList from './components/TodoList';
 
 export default function Home() {
   return (
@@ -50,6 +51,8 @@ export default function Home() {
           <p className="font-medium text-zinc-900 dark:text-zinc-100">try it →</p>
           <p className="mt-1">click the buddy in the bottom-right. drag it around. hit <span className="rounded bg-violet-100 px-1.5 py-0.5 font-mono text-xs text-violet-700 dark:bg-violet-500/20 dark:text-violet-300">ping</span> to fire a toast.</p>
         </div>
+
+        <TodoList />
       </main>
 
       <Buddy />

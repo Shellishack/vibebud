@@ -46,8 +46,8 @@ const SCRIPTED_TOASTS: Omit<Toast, 'id'>[] = [
   { title: 'Needs your input', body: 'Agent is unsure: should empty state link to /docs or /onboarding?', tone: 'action' },
 ];
 
-const DESKTOP_PANEL_W = 320;
-const DESKTOP_PANEL_H = 380;
+const DESKTOP_PANEL_W = 384;
+const DESKTOP_PANEL_H = 560;
 const DESKTOP_PANEL_GAP = 8;
 const VIEWPORT_PAD = 12;
 
@@ -147,6 +147,7 @@ export default function BuddyInstance({ state, anchor, canRemove, onChange, onSp
   const [emotion, setEmotion] = useState<Emotion>('idle');
   const [busy, setBusy] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [chatDetailsOpen, setChatDetailsOpen] = useState(false);
   const [notoFetched, setNotoFetched] = useState<Record<string, unknown>>({});
   const [familyMenu, setFamilyMenu] = useState<'buddy' | 'noto' | null>(null);
   // Per-buddy Claude Code session: when active, chat sends route through the
@@ -182,7 +183,9 @@ export default function BuddyInstance({ state, anchor, canRemove, onChange, onSp
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const modelsAbortRef = useRef<AbortController | null>(null);
+  const messagesRef = useRef<HTMLDivElement | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
+  const shouldStickToLatestRef = useRef(true);
   const rootRef = useRef<HTMLDivElement | null>(null);
   const teammatesRef = useRef<Teammate[]>(teammates ?? []);
   useEffect(() => { teammatesRef.current = teammates ?? []; }, [teammates]);
@@ -399,6 +402,7 @@ export default function BuddyInstance({ state, anchor, canRemove, onChange, onSp
   }, [adapter, state.id]);
   useEffect(() => {
     if (!open) return;
+    if (!shouldStickToLatestRef.current) return;
     messagesEndRef.current?.scrollIntoView({ block: 'end', behavior: 'smooth' });
   }, [open, state.messages]);
   useEffect(() => subscribeGamification(() => setGamificationTick((n) => n + 1)), []);
@@ -657,6 +661,7 @@ export default function BuddyInstance({ state, anchor, canRemove, onChange, onSp
   const send = async () => {
     const text = input.trim();
     if (!text || busy || claudeBusy) return;
+    shouldStickToLatestRef.current = true;
 
     // Code-agent branch: pipe the user turn into the local/paired CLI
     // process via the platform bridge. The event subscription above
@@ -950,6 +955,7 @@ export default function BuddyInstance({ state, anchor, canRemove, onChange, onSp
               ...(adapter.showPairingWindow
                 ? [{ label: 'Pair phone…', onClick: () => adapter.showPairingWindow?.() }]
                 : []),
+              { label: 'Sign in', onClick: () => onOpenAppSettings?.() },
               { label: 'App settings…', onClick: () => onOpenAppSettings?.() },
               { label: 'Chat settings…', onClick: () => { setOpen(true); openSettings(); } },
               { label: 'Add buddy', onClick: () => onSpawn() },
@@ -1028,10 +1034,10 @@ export default function BuddyInstance({ state, anchor, canRemove, onChange, onSp
             data-buddy-interactive
             className={isMobile
               ? "pointer-events-auto fixed left-3 right-3 bottom-3 z-[60] flex flex-col rounded-3xl border border-zinc-200 bg-white/95 shadow-2xl backdrop-blur-md dark:border-zinc-700 dark:bg-zinc-900/95"
-              : "pointer-events-auto fixed z-[60] flex w-80 flex-col rounded-3xl border border-zinc-200 bg-white/95 shadow-2xl backdrop-blur-md dark:border-zinc-700 dark:bg-zinc-900/95"
+              : "pointer-events-auto fixed z-[60] flex w-96 flex-col rounded-3xl border border-zinc-200 bg-white/95 shadow-2xl backdrop-blur-md dark:border-zinc-700 dark:bg-zinc-900/95"
             }
             style={isMobile
-              ? { maxHeight: '85vh', animation: 'buddy-bubble-in 220ms ease-out' }
+              ? { height: 'min(92dvh, 720px)', animation: 'buddy-bubble-in 220ms ease-out' }
               : {
                 left: desktopPanelPos?.left ?? -9999,
                 top: desktopPanelPos?.top ?? -9999,
@@ -1059,9 +1065,24 @@ export default function BuddyInstance({ state, anchor, canRemove, onChange, onSp
                   <button
                     onClick={triggerScriptedToast}
                     title="Fire a sample toast"
-                    className="rounded-full bg-violet-100 px-2.5 py-1 text-xs font-medium text-violet-700 hover:bg-violet-200 dark:bg-violet-500/20 dark:text-violet-300"
+                    className="hidden rounded-full bg-violet-100 px-2.5 py-1 text-xs font-medium text-violet-700 hover:bg-violet-200 dark:bg-violet-500/20 dark:text-violet-300 sm:block"
                   >
                     ping
+                  </button>
+                  <button
+                    onClick={() => setChatDetailsOpen((v) => !v)}
+                    title={chatDetailsOpen ? 'Hide buddy details' : 'Show buddy details'}
+                    aria-label={chatDetailsOpen ? 'Hide buddy details' : 'Show buddy details'}
+                    className={`grid h-7 w-7 place-items-center rounded-full transition-colors ${
+                      chatDetailsOpen
+                        ? 'bg-violet-100 text-violet-700 dark:bg-violet-500/20 dark:text-violet-300'
+                        : 'text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100'
+                    }`}
+                  >
+                    <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                      <circle cx="12" cy="12" r="3" />
+                      <path d="M12 5v2M12 17v2M5 12h2M17 12h2M7.8 7.8l1.4 1.4M14.8 14.8l1.4 1.4M16.2 7.8l-1.4 1.4M9.2 14.8l-1.4 1.4" />
+                    </svg>
                   </button>
                   <button
                     onClick={() => (settingsOpen ? setSettingsOpen(false) : openSettings())}
@@ -1107,7 +1128,9 @@ export default function BuddyInstance({ state, anchor, canRemove, onChange, onSp
                   </button>
                 </div>
               </div>
-              <div className="mt-2">
+              {chatDetailsOpen && (
+              <>
+              <div className="mt-2 max-h-[40vh] overflow-y-auto pr-1">
                 <div className="mb-1 flex items-center justify-between text-[10px] font-medium uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
                   <span>Level {progress.level}</span>
                   <span>{progress.xp} / {progress.next} XP</span>
@@ -1257,6 +1280,8 @@ export default function BuddyInstance({ state, anchor, canRemove, onChange, onSp
                   </div>
                 )}
               </div>
+              </>
+              )}
             </div>
             {settingsOpen && (
               <div className="max-h-64 shrink-0 overflow-y-auto border-b border-zinc-200 bg-zinc-50/80 px-4 py-3 text-xs dark:border-zinc-700 dark:bg-zinc-800/50">
@@ -1333,7 +1358,14 @@ export default function BuddyInstance({ state, anchor, canRemove, onChange, onSp
 
               </div>
             )}
-            <div className="min-h-0 flex-1 space-y-2 overflow-y-auto overscroll-contain px-4 py-3">
+            <div
+              ref={messagesRef}
+              onScroll={(e) => {
+                const el = e.currentTarget;
+                shouldStickToLatestRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 48;
+              }}
+              className="min-h-0 flex-1 space-y-2 overflow-y-auto overscroll-contain px-4 py-3"
+            >
               {state.messages.length === 0 && (
                 <div className="flex justify-start">
                   <div className="max-w-[80%] whitespace-pre-wrap break-words rounded-2xl bg-zinc-100 px-3 py-2 text-sm text-zinc-900 dark:bg-zinc-800 dark:text-zinc-100">

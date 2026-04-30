@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import BuddyInstance, { type BuddyInstanceState } from './BuddyInstance';
 import BuddyGroup from './BuddyGroup';
 import AppSettings from './AppSettings';
+import SignInStatus from './SignInStatus';
 import { VARIANTS } from './avatars';
 import { normalizeGamification } from './gamification';
 import { nextUnusedPersonality, PERSONALITY_BY_VARIANT, getPersonality } from './personalities';
@@ -1932,6 +1933,7 @@ export default function Buddy() {
           in the in-app Capacitor BridgeActivity WebView and the web build. */}
       {adapter.id !== 'electron' && !isAndroidOverlay && (
         <div className="fixed right-3 top-3 z-[70] flex gap-2">
+          <SignInStatus />
           {/* QR shortcut: triggers the same scanQrForPair as AppSettings,
               but skips the modal so re-pairing is one tap. Only meaningful
               where the adapter actually exposes a scanner. */}

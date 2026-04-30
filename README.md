@@ -36,6 +36,7 @@ Drag two buddies near each other and they form a small team — a pastel "hull" 
 - **`core/`** — Next.js 16 (App Router) · React 19 · Tailwind v4 · TypeScript 5 · lottie-react. Configured for static export so the desktop shell can serve it from disk.
 - **`desktop/`** — Electron 33 · electron-builder. Transparent always-on-top window covering the full work area, with click-through enabled by default and toggled off per-element while the cursor is over a buddy or chat bubble.
 - **`android/`** — Capacitor 8 + a small native module that runs the buddy as a `WindowManager` overlay (`TYPE_APPLICATION_OVERLAY`) from a foreground service, so it floats above the home screen and other apps. Touch-passthrough mirrors the desktop click-through behavior.
+- **`../server/`** — optional dependency-free Node.js backend for login, sync snapshots, backups, subscription state, and managed AI proxy calls.
 
 ## Layout
 
@@ -47,10 +48,13 @@ vibemoji/
 ```
 
 Anything that can live in `core/` should — the platform shells stay thin.
+The optional backend lives at `../server/` from this package.
 
 ## Bring your own LLM
 
-Chat features call OpenAI, Anthropic, or OpenRouter directly from the renderer. You enter your API key in the buddy's settings panel; it's stored in `localStorage` and never leaves the device except when talking to the provider you chose. No vibemoji-side server, no telemetry.
+Chat features can still call OpenAI, Anthropic, or OpenRouter directly from the renderer. You enter your API key in the buddy's settings panel; it's stored in `localStorage` and never leaves the device except when talking to the provider you chose.
+
+For a hosted product model, `../server/` adds optional accounts, sync, backups, subscription state, and managed AI calls through server-owned provider keys. See [`../server/README.md`](../server/README.md).
 
 ## Getting started
 
@@ -60,6 +64,9 @@ npm run install-all
 
 # Web preview at http://localhost:3060
 npm run web-dev
+
+# Optional backend at http://localhost:3070
+npm run server-dev
 
 # Electron pointed at the running web dev server
 # (run alongside `npm run web-dev` in another terminal)
