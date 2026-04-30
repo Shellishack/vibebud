@@ -34,12 +34,15 @@ import { routePing } from './notify';
 import { getCachedLottie, loadLottie } from '../../lib/notoEmoji';
 import ShimejiAvatarView from './ShimejiAvatar';
 import {
+  fetchShimejiCatalog,
   getShimejiCharacter,
+  importShimejiZip,
+  installCatalogPack,
   listShimejiPacks,
   resolveShimejiAsset,
   subscribeShimejiPacks,
 } from '../../lib/avatar/shimeji';
-import type { InstalledShimejiPack, ShimejiAction, ShimejiAvatar } from '../../lib/avatar/types';
+import type { InstalledShimejiPack, ShimejiAction, ShimejiAvatar, ShimejiPackManifest } from '../../lib/avatar/types';
 
 const Lottie = dynamic(() => import('lottie-react'), { ssr: false });
 
@@ -140,9 +143,12 @@ type Props = {
   // Used by the right-click menu on Electron, where there's no gear icon.
   onOpenAppSettings?: () => void;
   shimejiAction?: ShimejiAction;
+  showLlmOnboarding?: boolean;
+  onDismissLlmOnboarding?: () => void;
+  onWonderPauseChange?: (id: string, paused: boolean) => void;
 };
 
-export default function BuddyInstance({ state, anchor, canRemove, onChange, onSpawn, onRemove, onOpenChange, onDragMove, onDragEnd, magnetState, edgeMagnet, teammates, groupMemberIds, isGroupExpanded, isGroupMinimized, onGroupTap, onRestore, onGroupRestore, dockPeeked, groupDockPeeked, onDockPeek, onDockUnpeek, onGroupDockPeek, onGroupDockUnpeek, bumpTick, groupBumpTick, rotation, rotationActive, grabPivot, onDragStart, onOpenAppSettings, shimejiAction }: Props) {
+export default function BuddyInstance({ state, anchor, canRemove, onChange, onSpawn, onRemove, onOpenChange, onDragMove, onDragEnd, magnetState, edgeMagnet, teammates, groupMemberIds, isGroupExpanded, isGroupMinimized, onGroupTap, onRestore, onGroupRestore, dockPeeked, groupDockPeeked, onDockPeek, onDockUnpeek, onGroupDockPeek, onGroupDockUnpeek, bumpTick, groupBumpTick, rotation, rotationActive, grabPivot, onDragStart, onOpenAppSettings, shimejiAction, showLlmOnboarding, onDismissLlmOnboarding, onWonderPauseChange }: Props) {
   const personality: Personality =
     PERSONALITY_BY_VARIANT[state.variantId] ?? PERSONALITY_BY_VARIANT.violet;
 
@@ -160,6 +166,9 @@ export default function BuddyInstance({ state, anchor, canRemove, onChange, onSp
   const [notoFetched, setNotoFetched] = useState<Record<string, unknown>>({});
   const [familyMenu, setFamilyMenu] = useState<'buddy' | 'noto' | 'shimeji' | null>(null);
   const [shimejiPacks, setShimejiPacks] = useState<InstalledShimejiPack[]>([]);
+  const [shimejiCatalog, setShimejiCatalog] = useState<Array<{ manifest: ShimejiPackManifest; baseUrl: string }>>([]);
+  const [shimejiCatalogLoading, setShimejiCatalogLoading] = useState(false);
+  const [shimejiPackError, setShimejiPackError] = useState<string | null>(null);
   // Per-buddy Claude Code session: when active, chat sends route through the
   // local `claude` subprocess (spawned by Electron main) instead of the LLM
   // HTTP provider. claudeBusy mirrors `busy` for the bridge path.
@@ -195,6 +204,48 @@ export default function BuddyInstance({ state, anchor, canRemove, onChange, onSp
     const unsub = subscribeShimejiPacks(refresh);
     return () => { cancelled = true; unsub(); };
   }, []);
+  const refreshShimejiCatalog = () => {
+    setShimejiPackError(null);
+    setShimejiCatalogLoading(true);
+    fetchShimejiCatalog()
+      .then(setShimejiCatalog)
+      .catch((e) => setShimejiPackError(e instanceof Error ? e.message : String(e)))
+      .finally(() => setShimejiCatalogLoading(false));
+  };
+  const useShimejiPack = (pack: InstalledShimejiPack) => {
+    const character = getShimejiCharacter(pack, state.avatar?.kind === 'shimeji' ? state.avatar.characterId : undefined);
+    update({
+      avatar: {
+        kind: 'shimeji',
+        packId: pack.manifest.id,
+        characterId: character.id,
+      },
+    });
+    setFamilyMenu(null);
+  };
+  const importShimejiPack = async (file: File | null) => {
+    if (!file) return;
+    setShimejiPackError(null);
+    try {
+      const pack = await importShimejiZip(file);
+      useShimejiPack(pack);
+    } catch (e) {
+      setShimejiPackError(e instanceof Error ? e.message : String(e));
+    }
+  };
+  const installAndUseShimejiPack = async (pack: { manifest: ShimejiPackManifest; baseUrl: string }) => {
+    setShimejiPackError(null);
+    try {
+      const installed = await installCatalogPack(pack);
+      useShimejiPack(installed);
+    } catch (e) {
+      setShimejiPackError(e instanceof Error ? e.message : String(e));
+    }
+  };
+  useEffect(() => {
+    if (familyMenu === 'shimeji' && shimejiCatalog.length === 0 && !shimejiCatalogLoading) refreshShimejiCatalog();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [familyMenu]);
 
   // Right-click context menu (desktop / web). Coords are viewport-relative;
   // the menu is portal'd to document.body so positioning isn't affected by the
@@ -247,7 +298,16 @@ export default function BuddyInstance({ state, anchor, canRemove, onChange, onSp
     setApiKey(providerDraft, k);
     setModel(providerDraft, m);
     setSettingsOpen(false);
+    onDismissLlmOnboarding?.();
   };
+
+  useEffect(() => {
+    if (!showLlmOnboarding) return;
+    setOpen(true);
+    setChatDetailsOpen(true);
+    openSettings();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showLlmOnboarding]);
 
   // Color comes from the personality's colorId, not the variantId directly —
   // a custom personality has its own variantId (e.g. `custom-abc`) but reuses
@@ -313,9 +373,18 @@ export default function BuddyInstance({ state, anchor, canRemove, onChange, onSp
   const dragRef = useRef<{ startScreenX: number; startScreenY: number; baseX: number; baseY: number; moved: boolean } | null>(null);
   const draggingRef = useRef(false);
   const [isDragging, setIsDragging] = useState(false);
+  const hoverPauseRef = useRef(false);
+  const pressPauseRef = useRef(false);
+  const publishWonderPause = (hover: boolean, press: boolean) => {
+    onWonderPauseChange?.(state.id, hover || press);
+  };
+  useEffect(() => {
+    return () => onWonderPauseChange?.(state.id, false);
+  }, [onWonderPauseChange, state.id]);
   const activeShimejiAction: ShimejiAction = isDragging
     ? 'drag'
     : shimejiAction ?? (open ? 'sit' : 'idle');
+  const shimejiIsMoving = !!shimejiAvatar && ['walk', 'climb', 'fall', 'drag'].includes(activeShimejiAction);
   const [desktopPanelPos, setDesktopPanelPos] = useState<{ left: number; top: number } | null>(null);
   const justDraggedRef = useRef(false);
   const toastIdRef = useRef(100);
@@ -767,6 +836,8 @@ export default function BuddyInstance({ state, anchor, canRemove, onChange, onSp
 
   const onPointerDown = (e: React.PointerEvent) => {
     e.preventDefault();
+    pressPauseRef.current = true;
+    publishWonderPause(hoverPauseRef.current, true);
     // Drag-from-peek commits the restore: clear minimized so subsequent
     // applyDelta updates can move freely, and start the drag from the
     // currently-rendered (peeked) position rather than the off-screen
@@ -858,6 +929,8 @@ export default function BuddyInstance({ state, anchor, canRemove, onChange, onSp
     const stop = () => {
       cancelled = true;
       if (raf) cancelAnimationFrame(raf);
+      pressPauseRef.current = false;
+      publishWonderPause(hoverPauseRef.current, false);
       const moved = !!dragRef.current?.moved;
       justDraggedRef.current = moved;
       onDragEnd?.(state.id, stateRef.current.pos, moved);
@@ -982,7 +1055,7 @@ export default function BuddyInstance({ state, anchor, canRemove, onChange, onSp
                 : []),
               { label: 'Sign in', onClick: () => onOpenAppSettings?.() },
               { label: 'App settings…', onClick: () => onOpenAppSettings?.() },
-              { label: 'Chat settings…', onClick: () => { setOpen(true); openSettings(); } },
+              { label: 'Buddy details…', onClick: () => { setOpen(true); setChatDetailsOpen(true); } },
               { label: 'Add buddy', onClick: () => onSpawn() },
               ...(canRemove ? [{ label: 'Remove buddy', onClick: () => onRemove(), danger: true }] : []),
             ].map((item, i) => (
@@ -1095,7 +1168,10 @@ export default function BuddyInstance({ state, anchor, canRemove, onChange, onSp
                     ping
                   </button>
                   <button
-                    onClick={() => setChatDetailsOpen((v) => !v)}
+                    onClick={() => setChatDetailsOpen((v) => {
+                      if (v) setSettingsOpen(false);
+                      return !v;
+                    })}
                     title={chatDetailsOpen ? 'Hide buddy details' : 'Show buddy details'}
                     aria-label={chatDetailsOpen ? 'Hide buddy details' : 'Show buddy details'}
                     className={`grid h-7 w-7 place-items-center rounded-full transition-colors ${
@@ -1107,17 +1183,6 @@ export default function BuddyInstance({ state, anchor, canRemove, onChange, onSp
                     <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
                       <circle cx="12" cy="12" r="3" />
                       <path d="M12 5v2M12 17v2M5 12h2M17 12h2M7.8 7.8l1.4 1.4M14.8 14.8l1.4 1.4M16.2 7.8l-1.4 1.4M9.2 14.8l-1.4 1.4" />
-                    </svg>
-                  </button>
-                  <button
-                    onClick={() => (settingsOpen ? setSettingsOpen(false) : openSettings())}
-                    title="LLM settings"
-                    aria-label="LLM settings"
-                    className="grid h-7 w-7 place-items-center rounded-full text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
-                  >
-                    <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <circle cx="12" cy="12" r="3" />
-                      <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9c.36.16.66.42.87.74A1.65 1.65 0 0 0 21 10h.09a2 2 0 1 1 0 4H21a1.65 1.65 0 0 0-1.51 1z" />
                     </svg>
                   </button>
                   <button
@@ -1226,35 +1291,7 @@ export default function BuddyInstance({ state, anchor, canRemove, onChange, onSp
                     />
                   </div>
                   {(claudeBridge || codexBridge) && (
-                    <div className="ml-auto flex gap-1">
-                    {claudeBridge && (
-                    <button
-                      data-buddy-interactive
-                      onClick={() => void toggleCodeAgent('claude')}
-                      className={`rounded-full px-2.5 py-0.5 text-[11px] font-medium transition-colors ${
-                        claudeActive && activeCodeAgent === 'claude'
-                          ? 'bg-emerald-600 text-white'
-                          : 'bg-zinc-100 text-zinc-700 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700'
-                      }`}
-                      title={claudeActive && activeCodeAgent === 'claude' ? 'Claude Code session running - click to stop' : 'Start a local Claude Code session for this buddy'}
-                    >
-                      {claudeActive && activeCodeAgent === 'claude' ? '● Claude' : 'Claude'}
-                    </button>
-                    )}
-                    {codexBridge && (
-                    <button
-                      data-buddy-interactive
-                      onClick={() => void toggleCodeAgent('codex')}
-                      className={`rounded-full px-2.5 py-0.5 text-[11px] font-medium transition-colors ${
-                        claudeActive && activeCodeAgent === 'codex'
-                          ? 'bg-emerald-600 text-white'
-                          : 'bg-zinc-100 text-zinc-700 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700'
-                      }`}
-                      title={claudeActive && activeCodeAgent === 'codex' ? 'Codex session running - click to stop' : 'Start a local Codex CLI session for this buddy'}
-                    >
-                      {claudeActive && activeCodeAgent === 'codex' ? '● Codex' : 'Codex'}
-                    </button>
-                    )}
+                  <div className="ml-auto flex gap-1">
                     </div>
                   )}
                 </div>
@@ -1311,125 +1348,238 @@ export default function BuddyInstance({ state, anchor, canRemove, onChange, onSp
                   </div>
                 )}
                 {familyMenu === 'shimeji' && (
-                  <div className="mt-2 flex flex-wrap items-center gap-1.5 rounded-2xl bg-zinc-50 px-2.5 py-2 dark:bg-zinc-800/60">
-                    {shimejiPacks.map((pack) => {
-                      const character = getShimejiCharacter(pack, state.avatar?.kind === 'shimeji' ? state.avatar.characterId : undefined);
-                      const selected = state.avatar?.kind === 'shimeji' && state.avatar.packId === pack.manifest.id;
-                      return (
-                        <button
-                          key={pack.manifest.id}
-                          onClick={() => {
-                            update({
-                              avatar: {
-                                kind: 'shimeji',
-                                packId: pack.manifest.id,
-                                characterId: character.id,
-                              },
-                            });
-                            setFamilyMenu(null);
+                  <div className="mt-2 space-y-2 rounded-2xl bg-zinc-50 px-2.5 py-2 dark:bg-zinc-800/60">
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <button
+                        data-buddy-interactive
+                        onClick={refreshShimejiCatalog}
+                        disabled={shimejiCatalogLoading}
+                        className="rounded-full bg-violet-600 px-2.5 py-1 text-[11px] font-medium text-white hover:bg-violet-700 disabled:opacity-60"
+                      >
+                        {shimejiCatalogLoading ? 'loading...' : shimejiCatalog.length ? 'refresh catalog' : 'add from catalog'}
+                      </button>
+                      <label className="cursor-pointer rounded-full bg-white px-2.5 py-1 text-[11px] font-medium text-violet-700 ring-1 ring-violet-200 hover:bg-violet-50 dark:bg-zinc-900 dark:text-violet-200 dark:ring-violet-500/40 dark:hover:bg-violet-500/10">
+                        import and use zip
+                        <input
+                          type="file"
+                          accept=".zip,application/zip"
+                          className="hidden"
+                          onChange={(e) => {
+                            void importShimejiPack(e.currentTarget.files?.[0] ?? null);
+                            e.currentTarget.value = '';
                           }}
-                          title={`${pack.manifest.name} · ${pack.manifest.license}`}
-                          aria-label={`Use ${pack.manifest.name} Shimeji avatar`}
-                          className={`flex items-center gap-1.5 rounded-full px-2 py-1 text-[11px] font-medium transition-colors ${
-                            selected
+                        />
+                      </label>
+                    </div>
+                    {shimejiPackError && (
+                      <p className="rounded-xl bg-red-50 px-2 py-1 text-[11px] text-red-700 dark:bg-red-500/10 dark:text-red-300">{shimejiPackError}</p>
+                    )}
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      {shimejiPacks.map((pack) => {
+                        const character = getShimejiCharacter(pack, state.avatar?.kind === 'shimeji' ? state.avatar.characterId : undefined);
+                        const selected = state.avatar?.kind === 'shimeji' && state.avatar.packId === pack.manifest.id;
+                        return (
+                          <button
+                            key={pack.manifest.id}
+                            onClick={() => {
+                              update({
+                                avatar: {
+                                  kind: 'shimeji',
+                                  packId: pack.manifest.id,
+                                  characterId: character.id,
+                                },
+                              });
+                              setFamilyMenu(null);
+                            }}
+                            title={`${pack.manifest.name} · ${pack.manifest.license}`}
+                            aria-label={`Use ${pack.manifest.name} Shimeji avatar`}
+                            className={`flex items-center gap-1.5 rounded-full px-2 py-1 text-[11px] font-medium transition-colors ${
+                              selected
+                                ? 'bg-violet-600 text-white'
+                                : 'bg-white text-zinc-700 ring-1 ring-zinc-200 hover:bg-zinc-100 dark:bg-zinc-900 dark:text-zinc-200 dark:ring-zinc-700 dark:hover:bg-zinc-800'
+                            }`}
+                          >
+                            <span
+                              className="block h-5 w-5 overflow-hidden rounded-full bg-zinc-100"
+                              style={{
+                                backgroundImage: `url("${resolveShimejiAsset(pack, character.preview)}")`,
+                                backgroundSize: 'cover',
+                                backgroundPosition: 'center',
+                              }}
+                              aria-hidden
+                            />
+                            <span>{pack.manifest.name}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                    {shimejiCatalog.length > 0 && (
+                      <div className="space-y-1.5">
+                        <div className="grid gap-1.5">
+                          {shimejiCatalog.map((pack) => {
+                            const installed = shimejiPacks.some((p) => p.manifest.id === pack.manifest.id);
+                            return (
+                              <button
+                                key={pack.manifest.id}
+                                disabled={installed}
+                                onClick={() => void installAndUseShimejiPack(pack)}
+                                className="rounded-xl bg-white px-2.5 py-1.5 text-left text-[11px] ring-1 ring-zinc-200 hover:bg-zinc-100 disabled:opacity-55 dark:bg-zinc-900 dark:ring-zinc-700 dark:hover:bg-zinc-800"
+                              >
+                                <span className="block font-semibold text-zinc-900 dark:text-zinc-50">{pack.manifest.name}</span>
+                                <span className="block text-zinc-500 dark:text-zinc-400">{installed ? 'installed' : `${pack.manifest.license} · install and use`}</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                        <div className="rounded-xl bg-white px-2.5 py-2 text-[11px] ring-1 ring-zinc-200 dark:bg-zinc-900 dark:ring-zinc-700">
+                          <p className="mb-1 font-semibold text-zinc-700 dark:text-zinc-200">Third-party libraries</p>
+                          <div className="flex flex-wrap gap-1.5">
+                            <a
+                              data-buddy-interactive
+                              href="https://shimeji.org/"
+                              target="_blank"
+                              rel="noreferrer"
+                              className="rounded-full px-2.5 py-1 font-medium text-violet-700 ring-1 ring-violet-200 hover:bg-violet-50 dark:text-violet-200 dark:ring-violet-500/40 dark:hover:bg-violet-500/10"
+                            >
+                              shimeji.org
+                            </a>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+              <div className="mt-3 rounded-2xl border border-zinc-200 bg-zinc-50/80 dark:border-zinc-700 dark:bg-zinc-800/50">
+                <button
+                  data-buddy-interactive
+                  onClick={() => (settingsOpen ? setSettingsOpen(false) : openSettings())}
+                  className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-xs font-semibold text-zinc-700 dark:text-zinc-200"
+                >
+                  <span>LLM settings</span>
+                  <span className="text-[10px] font-medium text-zinc-500 dark:text-zinc-400">
+                    {settingsOpen ? 'hide' : 'show'}
+                  </span>
+                </button>
+                {settingsOpen && (
+                  <div className="border-t border-zinc-200 px-3 py-2 text-xs dark:border-zinc-700">
+                    {showLlmOnboarding && (
+                      <div className="mb-2 rounded-xl bg-violet-50 px-3 py-2 text-[11px] text-violet-800 dark:bg-violet-500/10 dark:text-violet-200">
+                        Add an API key and model so this buddy can answer with your preferred provider.
+                        <button
+                          onClick={onDismissLlmOnboarding}
+                          className="ml-2 font-semibold underline"
+                        >
+                          dismiss
+                        </button>
+                      </div>
+                    )}
+                    <label className="mb-1 block text-zinc-600 dark:text-zinc-400">Provider</label>
+                    <div className="mb-2 flex gap-1">
+                      {(Object.keys(PROVIDERS) as ProviderId[]).map((p) => (
+                        <button
+                          key={p}
+                          onClick={() => switchProvider(p)}
+                          className={`rounded-full px-2.5 py-1 text-[11px] font-medium transition-colors ${
+                            providerDraft === p
                               ? 'bg-violet-600 text-white'
                               : 'bg-white text-zinc-700 ring-1 ring-zinc-200 hover:bg-zinc-100 dark:bg-zinc-900 dark:text-zinc-200 dark:ring-zinc-700 dark:hover:bg-zinc-800'
                           }`}
                         >
-                          <span
-                            className="block h-5 w-5 overflow-hidden rounded-full bg-zinc-100"
-                            style={{
-                              backgroundImage: `url("${resolveShimejiAsset(pack, character.preview)}")`,
-                              backgroundSize: 'cover',
-                              backgroundPosition: 'center',
-                            }}
-                            aria-hidden
-                          />
-                          <span>{pack.manifest.name}</span>
+                          {PROVIDERS[p].label}
                         </button>
-                      );
-                    })}
+                      ))}
+                    </div>
+                    {(claudeBridge || codexBridge) && (
+                      <div className="mb-2">
+                        <p className="mb-1 text-[11px] text-zinc-600 dark:text-zinc-400">Local code agent</p>
+                        <div className="flex flex-wrap gap-1">
+                          {claudeBridge && (
+                            <button
+                              data-buddy-interactive
+                              onClick={() => void toggleCodeAgent('claude')}
+                              className={`rounded-full px-2.5 py-1 text-[11px] font-medium transition-colors ${
+                                claudeActive && activeCodeAgent === 'claude'
+                                  ? 'bg-emerald-600 text-white'
+                                  : 'bg-white text-zinc-700 ring-1 ring-zinc-200 hover:bg-zinc-100 dark:bg-zinc-900 dark:text-zinc-200 dark:ring-zinc-700 dark:hover:bg-zinc-800'
+                              }`}
+                              title={claudeActive && activeCodeAgent === 'claude' ? 'Claude Code session running - click to stop' : 'Start a local Claude Code session for this buddy'}
+                            >
+                              {claudeActive && activeCodeAgent === 'claude' ? '● Claude Code' : 'Claude Code'}
+                            </button>
+                          )}
+                          {codexBridge && (
+                            <button
+                              data-buddy-interactive
+                              onClick={() => void toggleCodeAgent('codex')}
+                              className={`rounded-full px-2.5 py-1 text-[11px] font-medium transition-colors ${
+                                claudeActive && activeCodeAgent === 'codex'
+                                  ? 'bg-emerald-600 text-white'
+                                  : 'bg-white text-zinc-700 ring-1 ring-zinc-200 hover:bg-zinc-100 dark:bg-zinc-900 dark:text-zinc-200 dark:ring-zinc-700 dark:hover:bg-zinc-800'
+                              }`}
+                              title={claudeActive && activeCodeAgent === 'codex' ? 'Codex session running - click to stop' : 'Start a local Codex CLI session for this buddy'}
+                            >
+                              {claudeActive && activeCodeAgent === 'codex' ? '● Codex' : 'Codex'}
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                    <label className="mb-1 block text-zinc-600 dark:text-zinc-400">{PROVIDERS[providerDraft].label} API key</label>
+                    <input
+                      type="password"
+                      value={keyDraft}
+                      onChange={(e) => setKeyDraft(e.target.value)}
+                      onBlur={() => loadModelsFor(providerDraft, keyDraft.trim())}
+                      placeholder={PROVIDERS[providerDraft].keyPlaceholder}
+                      className="mb-2 w-full rounded-lg border border-zinc-200 bg-white px-2 py-1 outline-none focus:border-violet-400 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
+                    />
+                    <div className="mb-1 flex items-center justify-between">
+                      <label className="block text-zinc-600 dark:text-zinc-400">Model</label>
+                      <button
+                        onClick={() => loadModelsFor(providerDraft, keyDraft.trim())}
+                        className="text-[10px] text-violet-600 hover:underline disabled:opacity-50 dark:text-violet-400"
+                        disabled={loadingModels}
+                      >
+                        {loadingModels ? 'loading...' : 'refresh'}
+                      </button>
+                    </div>
+                    <input
+                      type="text"
+                      list={`buddy-models-${state.id}`}
+                      value={modelDraft}
+                      onChange={(e) => setModelDraft(e.target.value)}
+                      placeholder={PROVIDERS[providerDraft].defaultModel}
+                      className="mb-2 w-full rounded-lg border border-zinc-200 bg-white px-2 py-1 outline-none focus:border-violet-400 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
+                    />
+                    <datalist id={`buddy-models-${state.id}`}>
+                      {(modelList.length ? modelList : PROVIDERS[providerDraft].knownModels).map((m) => (
+                        <option key={m} value={m} />
+                      ))}
+                    </datalist>
+                    <div className="flex justify-end gap-2">
+                      <button
+                        onClick={() => { setSettingsOpen(false); onDismissLlmOnboarding?.(); }}
+                        className="rounded-full px-2.5 py-1 text-zinc-600 hover:bg-zinc-200 dark:text-zinc-300 dark:hover:bg-zinc-700"
+                      >
+                        cancel
+                      </button>
+                      <button
+                        onClick={saveSettings}
+                        className="rounded-full bg-violet-600 px-2.5 py-1 font-medium text-white hover:bg-violet-700"
+                      >
+                        save
+                      </button>
+                    </div>
+                    <p className="mt-2 text-[10px] leading-relaxed text-zinc-500 dark:text-zinc-400">
+                      Stored locally in this browser only. Calls go direct from your browser to {PROVIDERS[providerDraft].label}.
+                    </p>
                   </div>
                 )}
               </div>
               </>
               )}
             </div>
-            {settingsOpen && (
-              <div className="max-h-64 shrink-0 overflow-y-auto border-b border-zinc-200 bg-zinc-50/80 px-4 py-3 text-xs dark:border-zinc-700 dark:bg-zinc-800/50">
-                <p className="mb-2 font-semibold text-zinc-700 dark:text-zinc-200">LLM settings</p>
-
-                <label className="mb-1 block text-zinc-600 dark:text-zinc-400">Provider</label>
-                <div className="mb-2 flex gap-1">
-                  {(Object.keys(PROVIDERS) as ProviderId[]).map((p) => (
-                    <button
-                      key={p}
-                      onClick={() => switchProvider(p)}
-                      className={`rounded-full px-2.5 py-1 text-[11px] font-medium transition-colors ${
-                        providerDraft === p
-                          ? 'bg-violet-600 text-white'
-                          : 'bg-white text-zinc-700 ring-1 ring-zinc-200 hover:bg-zinc-100 dark:bg-zinc-900 dark:text-zinc-200 dark:ring-zinc-700 dark:hover:bg-zinc-800'
-                      }`}
-                    >
-                      {PROVIDERS[p].label}
-                    </button>
-                  ))}
-                </div>
-
-                <label className="mb-1 block text-zinc-600 dark:text-zinc-400">{PROVIDERS[providerDraft].label} API key</label>
-                <input
-                  type="password"
-                  value={keyDraft}
-                  onChange={(e) => setKeyDraft(e.target.value)}
-                  onBlur={() => loadModelsFor(providerDraft, keyDraft.trim())}
-                  placeholder={PROVIDERS[providerDraft].keyPlaceholder}
-                  className="mb-2 w-full rounded-lg border border-zinc-200 bg-white px-2 py-1 outline-none focus:border-violet-400 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
-                />
-
-                <div className="mb-1 flex items-center justify-between">
-                  <label className="block text-zinc-600 dark:text-zinc-400">Model</label>
-                  <button
-                    onClick={() => loadModelsFor(providerDraft, keyDraft.trim())}
-                    className="text-[10px] text-violet-600 hover:underline disabled:opacity-50 dark:text-violet-400"
-                    disabled={loadingModels}
-                  >
-                    {loadingModels ? 'loading…' : 'refresh'}
-                  </button>
-                </div>
-                <input
-                  type="text"
-                  list={`buddy-models-${state.id}`}
-                  value={modelDraft}
-                  onChange={(e) => setModelDraft(e.target.value)}
-                  placeholder={PROVIDERS[providerDraft].defaultModel}
-                  className="mb-2 w-full rounded-lg border border-zinc-200 bg-white px-2 py-1 outline-none focus:border-violet-400 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
-                />
-                <datalist id={`buddy-models-${state.id}`}>
-                  {(modelList.length ? modelList : PROVIDERS[providerDraft].knownModels).map((m) => (
-                    <option key={m} value={m} />
-                  ))}
-                </datalist>
-
-                <div className="flex justify-end gap-2">
-                  <button
-                    onClick={() => setSettingsOpen(false)}
-                    className="rounded-full px-2.5 py-1 text-zinc-600 hover:bg-zinc-200 dark:text-zinc-300 dark:hover:bg-zinc-700"
-                  >
-                    cancel
-                  </button>
-                  <button
-                    onClick={saveSettings}
-                    className="rounded-full bg-violet-600 px-2.5 py-1 font-medium text-white hover:bg-violet-700"
-                  >
-                    save
-                  </button>
-                </div>
-                <p className="mt-2 text-[10px] leading-relaxed text-zinc-500 dark:text-zinc-400">
-                  Stored locally in this browser only. Calls go direct from your browser to {PROVIDERS[providerDraft].label}.
-                </p>
-
-              </div>
-            )}
             <div
               ref={messagesRef}
               onScroll={(e) => {
@@ -1554,12 +1704,12 @@ export default function BuddyInstance({ state, anchor, canRemove, onChange, onSp
               instead of swinging out from the avatar's geometric center. */}
           <div
             style={{
-              transform: rotation ? `rotate(${rotation}deg)` : undefined,
+              transform: !shimejiIsMoving && rotation ? `rotate(${rotation}deg)` : undefined,
               transformOrigin: grabPivot
                 ? `calc(50% + ${grabPivot.x}px) calc(50% + ${grabPivot.y}px)`
                 : '50% 50%',
-              willChange: rotation ? 'transform' : undefined,
-              transition: rotationActive ? 'none' : 'transform 420ms cubic-bezier(0.22, 1, 0.36, 1)',
+              willChange: !shimejiIsMoving && rotation ? 'transform' : undefined,
+              transition: rotationActive || shimejiIsMoving ? 'none' : 'transform 420ms cubic-bezier(0.22, 1, 0.36, 1)',
             }}
           >
           <button
@@ -1593,6 +1743,8 @@ export default function BuddyInstance({ state, anchor, canRemove, onChange, onSp
               }
             }}
             onPointerEnter={() => {
+              hoverPauseRef.current = true;
+              publishWonderPause(true, pressPauseRef.current);
               feel('happy', 1200);
               // Desktop / web: hover on the visible half peeks the buddy
               // (or its group) out of the dock without committing the
@@ -1602,6 +1754,14 @@ export default function BuddyInstance({ state, anchor, canRemove, onChange, onSp
               if (!isMobile) {
                 if (state.minimized) onDockPeek?.();
                 else if (isGroupMinimized && state.groupId) onGroupDockPeek?.(state.groupId);
+              }
+            }}
+            onPointerLeave={() => {
+              hoverPauseRef.current = false;
+              publishWonderPause(false, pressPauseRef.current);
+              if (!isMobile) {
+                if (state.minimized) onDockUnpeek?.();
+                else if (isGroupMinimized && state.groupId) onGroupDockUnpeek?.(state.groupId);
               }
             }}
             className={`pointer-events-auto relative h-28 w-28 cursor-grab touch-none rounded-full transition-transform hover:scale-105 active:cursor-grabbing active:scale-95 ${
@@ -1615,7 +1775,7 @@ export default function BuddyInstance({ state, anchor, canRemove, onChange, onSp
             >
               Lv {progress.level}
             </span>
-            <div className="h-full w-full" style={{ animation: shaking ? 'buddy-shake 420ms ease-out' : 'buddy-bob 3s ease-in-out infinite' }}>
+            <div className="h-full w-full" style={{ animation: shaking ? 'buddy-shake 420ms ease-out' : shimejiIsMoving ? undefined : 'buddy-bob 3s ease-in-out infinite' }}>
               {shimejiAvatar ? (
                 <ShimejiAvatarView avatar={shimejiAvatar} action={activeShimejiAction} />
               ) : isComposite && composition ? (

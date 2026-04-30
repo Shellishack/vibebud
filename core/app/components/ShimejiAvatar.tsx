@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type CSSProperties } from 'react';
 import {
   getShimejiCharacter,
   getShimejiPack,
@@ -41,6 +41,15 @@ export default function ShimejiAvatarView({ avatar, action = 'idle', sizeClass =
 
   const { character, anim, src } = resolved;
   const duration = Math.max(0.1, anim.frames / Math.max(1, anim.fps));
+  const frameStyle = {
+    '--shimeji-frames': anim.frames,
+    width: `${anim.frames * 100}%`,
+    height: '100%',
+    maxWidth: 'none',
+    animation: anim.frames > 1
+      ? `shimeji-sheet ${duration}s steps(${Math.max(1, anim.frames - 1)}, end) ${anim.loop === false ? '1' : 'infinite'}`
+      : undefined,
+  } as CSSProperties;
   return (
     <span
       aria-hidden
@@ -50,17 +59,7 @@ export default function ShimejiAvatarView({ avatar, action = 'idle', sizeClass =
         transformOrigin: '50% 100%',
       }}
     >
-      <span
-        className="block h-full w-full"
-        style={{
-          backgroundImage: `url("${src}")`,
-          backgroundRepeat: 'no-repeat',
-          backgroundSize: `${anim.frames * 100}% 100%`,
-          animation: anim.frames > 1
-            ? `shimeji-frames ${duration}s steps(${anim.frames}) ${anim.loop === false ? '1' : 'infinite'}`
-            : undefined,
-        }}
-      />
+      <img src={src} alt="" draggable={false} className="block select-none" style={frameStyle} />
     </span>
   );
 }

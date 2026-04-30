@@ -125,14 +125,14 @@ function AppSettingsBody({ onClose }: { onClose: () => void }) {
     <>
       <div
         data-buddy-interactive
-        className="fixed inset-0 z-[80] flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm"
+        className="fixed inset-0 z-[80] flex min-h-0 items-center justify-center overflow-hidden bg-black/40 p-3 backdrop-blur-sm sm:p-4"
         onClick={onClose}
       >
         <div
-          className="flex max-h-[calc(100vh-2rem)] w-full max-w-md flex-col overflow-y-auto overscroll-contain rounded-3xl border border-zinc-200 bg-white/95 p-5 shadow-2xl dark:border-zinc-700 dark:bg-zinc-900/95"
+          className="flex max-h-[calc(100dvh-1.5rem)] min-h-0 w-full max-w-md flex-col overflow-hidden rounded-3xl border border-zinc-200 bg-white/95 shadow-2xl dark:border-zinc-700 dark:bg-zinc-900/95 sm:max-h-[calc(100dvh-2rem)]"
           onClick={(e) => e.stopPropagation()}
         >
-          <div className="mb-4 flex items-center justify-between">
+          <div className="flex shrink-0 items-center justify-between border-b border-zinc-200 px-5 py-4 dark:border-zinc-700">
             <h2 className="text-base font-semibold text-zinc-900 dark:text-zinc-50">{t('settings.title')}</h2>
             <button
               onClick={onClose}
@@ -145,6 +145,7 @@ function AppSettingsBody({ onClose }: { onClose: () => void }) {
             </button>
           </div>
 
+          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 py-4">
           <section className="mb-5">
             <p className="text-xs font-semibold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
               {t('settings.account')}
@@ -361,6 +362,7 @@ function AppSettingsBody({ onClose }: { onClose: () => void }) {
               </div>
             )}
           </section>
+          </div>
         </div>
       </div>
       {collectionOpen && <CollectionModal onClose={() => setCollectionOpen(false)} />}

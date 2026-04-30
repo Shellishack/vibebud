@@ -321,6 +321,8 @@ export default function Buddy() {
   const [groups, setGroups] = useState<Group[]>([]);
   const [peeked, setPeeked] = useState<Record<string, boolean>>({});
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  const [openBuddies, setOpenBuddies] = useState<Record<string, boolean>>({});
+  const [wonderPausedBuddies, setWonderPausedBuddies] = useState<Record<string, boolean>>({});
   const [magnet, setMagnet] = useState<{ draggedId: string; targetId: string; targetType: 'buddy' | 'group' } | null>(null);
   const magnetRef = useRef(magnet);
   useEffect(() => { magnetRef.current = magnet; }, [magnet]);
@@ -334,6 +336,7 @@ export default function Buddy() {
   // set — releasing without a drag re-docks; starting a drag commits.
   const [peekedDock, setPeekedDock] = useState<Record<string, boolean>>({});
   const [appSettingsOpen, setAppSettingsOpen] = useState(false);
+  const [llmOnboardingBuddyId, setLlmOnboardingBuddyId] = useState<string | null>(null);
   // True only inside the Android system-overlay WebView (where OverlayService
   // injects `vibebudNative`). The in-app Capacitor BridgeActivity WebView
   // never sees it. Resolved post-mount so SSR/static export renders the gear
@@ -351,6 +354,8 @@ export default function Buddy() {
   const expandedRef = useRef(expanded);
   const peekedRef = useRef(peeked);
   const peekedDockRef = useRef(peekedDock);
+  const openBuddiesRef = useRef(openBuddies);
+  const wonderPausedBuddiesRef = useRef(wonderPausedBuddies);
 
   // --- Drag physics ---
   const [physicsMode, setPhysicsModeState] = useState<PhysicsMode>(() => getPhysicsMode());
@@ -479,6 +484,10 @@ export default function Buddy() {
     for (const b of buddiesRef.current) {
       if (b.avatar?.kind !== 'shimeji') continue;
       hasShimeji = true;
+      if (openBuddiesRef.current[b.id] || wonderPausedBuddiesRef.current[b.id]) {
+        setShimejiAction(b.id, 'sit');
+        continue;
+      }
       if (b.minimized || b.groupId || dragging.has(b.id)) {
         setShimejiAction(b.id, dragging.has(b.id) ? 'drag' : 'idle');
         continue;
@@ -500,20 +509,21 @@ export default function Buddy() {
       } else {
         if (now > brain.until || action === 'fall') {
           const r = Math.random();
-          action = r < 0.45 ? 'walk' : r < 0.7 ? 'sit' : r < 0.86 ? 'idle' : 'climb';
-          brain.dir = Math.random() < 0.5 ? -1 : 1;
-          brain.until = now + (action === 'walk' ? 1600 + Math.random() * 2200 : 1200 + Math.random() * 2400);
+          const nearWall = Math.abs(b.pos.x - leftWall) < 8 || Math.abs(b.pos.x - rightWall) < 8;
+          action = nearWall && r > 0.72 ? 'climb' : r < 0.58 ? 'walk' : r < 0.8 ? 'sit' : 'idle';
+          if (action === 'walk' && Math.random() < 0.35) brain.dir = Math.random() < 0.5 ? -1 : 1;
+          brain.until = now + (action === 'walk' ? 2400 + Math.random() * 2600 : 1600 + Math.random() * 2600);
         }
         if (action === 'walk') {
-          const next = clampBuddyPos({ x: b.pos.x + brain.dir * 0.045 * dt, y: floor });
+          const next = clampBuddyPos({ x: b.pos.x + brain.dir * 0.028 * dt, y: floor });
           if (next.x === leftWall || next.x === rightWall) {
             brain.dir = next.x === leftWall ? 1 : -1;
-            action = Math.random() < 0.45 ? 'climb' : 'walk';
+            action = Math.random() < 0.25 ? 'climb' : 'walk';
           }
           pos = next;
         } else if (action === 'climb') {
           const wall = Math.abs(b.pos.x - leftWall) < Math.abs(b.pos.x - rightWall) ? leftWall : rightWall;
-          pos = clampBuddyPos({ x: wall, y: b.pos.y - 0.035 * dt });
+          pos = clampBuddyPos({ x: wall, y: b.pos.y - 0.024 * dt });
           if (pos.y < floor - 180 || now > brain.until) {
             action = 'fall';
             brain.until = now + 800;
@@ -800,6 +810,8 @@ export default function Buddy() {
   useEffect(() => { expandedRef.current = expanded; }, [expanded]);
   useEffect(() => { peekedRef.current = peeked; }, [peeked]);
   useEffect(() => { peekedDockRef.current = peekedDock; }, [peekedDock]);
+  useEffect(() => { openBuddiesRef.current = openBuddies; }, [openBuddies]);
+  useEffect(() => { wonderPausedBuddiesRef.current = wonderPausedBuddies; }, [wonderPausedBuddies]);
 
   const peekDockBuddy = (id: string) => {
     const b = buddiesRef.current.find((x) => x.id === id);
@@ -969,6 +981,7 @@ export default function Buddy() {
   };
 
   const spawnBuddy = () => {
+    const id = `buddy-${idRef.current++}`;
     setBuddies((cur) => {
       const taken = cur.map((b) => b.variantId);
       const personality = nextUnusedPersonality(taken);
@@ -980,15 +993,15 @@ export default function Buddy() {
       return [
         ...cur,
         normalizeGamification<BuddyInstanceState>({
-          id: `buddy-${idRef.current++}`,
+          id,
           variantId: personality.variantId,
           pos: clampBuddyPos(candidate),
           messages: [],
         }),
       ];
     });
+    setLlmOnboardingBuddyId(id);
   };
-
   useEffect(() => {
     return adapter.onSpawnRequest(() => spawnBuddy());
   }, [adapter]);
@@ -1400,11 +1413,24 @@ export default function Buddy() {
       setBuddies((bs) => bs.map((b) => (b.groupId && !surviving.has(b.groupId) ? { ...b, groupId: undefined } : b)));
       return updated;
     });
+    setWonderPausedBuddies((cur) => {
+      if (!cur[id]) return cur;
+      const next = { ...cur };
+      delete next[id];
+      return next;
+    });
   };
 
   const openSetRef = useRef<Set<string>>(new Set());
   const focusableRef = useRef(false);
   const onOpenChange = (id: string, isOpen: boolean) => {
+    setOpenBuddies((cur) => {
+      if (!!cur[id] === isOpen) return cur;
+      const next = { ...cur };
+      if (isOpen) next[id] = true;
+      else delete next[id];
+      return next;
+    });
     if (isOpen) openSetRef.current.add(id);
     else openSetRef.current.delete(id);
     const wantFocusable = openSetRef.current.size > 0;
@@ -1415,6 +1441,16 @@ export default function Buddy() {
     // Capacitor: chat-open also forces the overlay window to full screen so
     // the bottom-anchored sheet isn't clipped to the idle bottom-right box.
     adapter.setOverlayExpanded(openSetRef.current.size > 0);
+  };
+
+  const onWonderPauseChange = (id: string, paused: boolean) => {
+    setWonderPausedBuddies((cur) => {
+      if (!!cur[id] === paused) return cur;
+      const next = { ...cur };
+      if (paused) next[id] = true;
+      else delete next[id];
+      return next;
+    });
   };
 
   // Capacitor: a peeked or expanded group overflows the idle window
@@ -1944,6 +1980,7 @@ export default function Buddy() {
         onSpawn={spawnBuddy}
         onRemove={() => removeBuddy(b.id)}
         onOpenChange={onOpenChange}
+        onWonderPauseChange={onWonderPauseChange}
         onDragMove={onDragMove}
         onDragEnd={onDragEnd}
         magnetState={magnetState}
@@ -1969,6 +2006,8 @@ export default function Buddy() {
         onDragStart={onBuddyDragStart}
         onOpenAppSettings={() => setAppSettingsOpen(true)}
         shimejiAction={shimejiActions[b.id]}
+        showLlmOnboarding={llmOnboardingBuddyId === b.id}
+        onDismissLlmOnboarding={() => setLlmOnboardingBuddyId((id) => (id === b.id ? null : id))}
       />
     );
   };
