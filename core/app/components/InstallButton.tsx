@@ -9,16 +9,23 @@ import { useEffect, useState } from 'react';
 import { useTranslations } from '../../lib/hooks/use-translations';
 import { usePlatform } from './hooks/usePlatform';
 
-type Target = { id: string; label: string; file: string; ext: string };
+type Target = { id: string; label: string; href: string; ext: string; directDownload?: boolean };
+
+const LATEST_RELEASE_URL = 'https://github.com/Shellishack/vibemoji/releases/latest';
+const LATEST_RELEASE_DOWNLOAD_URL = `${LATEST_RELEASE_URL}/download`;
 
 const TARGETS: Target[] = [
-  { id: 'win',   label: 'Windows',  file: '/installers/vibebud-desktop-setup.exe', ext: 'exe' },
-  { id: 'mac',   label: 'macOS',    file: '/installers/vibebud-desktop.dmg',       ext: 'dmg' },
-  { id: 'linux', label: 'Linux',    file: '/installers/vibebud-desktop.AppImage',  ext: 'AppImage' },
-  { id: 'android', label: 'Android', file: '/installers/vibebud.apk',              ext: 'apk' },
+  {
+    id: 'win',
+    label: 'Windows',
+    href: `${LATEST_RELEASE_DOWNLOAD_URL}/vibebud-desktop-setup.exe`,
+    ext: 'exe',
+    directDownload: true,
+  },
+  { id: 'mac', label: 'macOS', href: LATEST_RELEASE_URL, ext: 'dmg' },
+  { id: 'linux', label: 'Linux', href: LATEST_RELEASE_URL, ext: 'AppImage' },
+  { id: 'android', label: 'Android', href: LATEST_RELEASE_URL, ext: 'apk' },
 ];
-
-const FALLBACK = '/installers/README.txt';
 
 function detectTarget(): Target {
   if (typeof navigator === 'undefined') return TARGETS[0];
@@ -40,21 +47,7 @@ export default function InstallButton() {
     setTarget(detectTarget());
   }, []);
 
-  const handleDownload = async (t: Target, e: React.MouseEvent<HTMLAnchorElement>) => {
-    try {
-      const res = await fetch(t.file, { method: 'HEAD' });
-      if (!res.ok) {
-        e.preventDefault();
-        const a = document.createElement('a');
-        a.href = FALLBACK;
-        a.download = `vibebud-installer-placeholder.txt`;
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-      }
-    } catch {
-      // let the browser try the direct link anyway
-    }
+  const handleDownload = () => {
     setOpen(false);
   };
 
@@ -71,9 +64,10 @@ export default function InstallButton() {
     <div className="relative inline-block">
       <div className="inline-flex overflow-hidden rounded-full shadow-lg shadow-violet-500/20">
         <a
-          href={target.file}
-          download
-          onClick={(e) => handleDownload(target, e)}
+          href={target.href}
+          download={target.directDownload ? '' : undefined}
+          onClick={handleDownload}
+          rel="noopener noreferrer"
           className="inline-flex items-center gap-2 bg-gradient-to-r from-violet-600 to-fuchsia-500 px-5 py-2.5 text-sm font-semibold text-white transition-opacity hover:opacity-95"
         >
           <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
@@ -100,9 +94,10 @@ export default function InstallButton() {
           {TARGETS.map((t) => (
             <a
               key={t.id}
-              href={t.file}
-              download
-              onClick={(e) => handleDownload(t, e)}
+              href={t.href}
+              download={t.directDownload ? '' : undefined}
+              onClick={handleDownload}
+              rel="noopener noreferrer"
               className={`flex items-center justify-between px-4 py-2.5 text-sm transition-colors hover:bg-violet-50 dark:hover:bg-violet-500/10 ${
                 t.id === target.id
                   ? 'text-violet-700 dark:text-violet-300'
