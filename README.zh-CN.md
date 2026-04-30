@@ -54,7 +54,6 @@ Vibebud 适合正在探索 AI 编程智能体、桌面陪伴应用和更有趣�
 | Electron 桌面端 - macOS / Linux | 计划中，尚未接入 |
 | Android (Capacitor 8) | 已搭建 overlay shell，通过 `OverlayService` 漂浮 |
 | iOS | 暂不支持 |
-| 可选后端 | 账号、同步、备份、订阅状态和托管 AI 调用 |
 
 ## 人格与分组
 
@@ -87,13 +86,6 @@ npm run web-dev
 npm run desktop-dev
 ```
 
-可选后端：
-
-```bash
-# 运行在 http://localhost:3070
-npm run server-dev
-```
-
 构建命令：
 
 ```bash
@@ -123,20 +115,15 @@ vibebud/
 
 能放在 `core/` 里的代码都应该放在那里。平台外壳保持尽量薄。
 
-可选后端位于当前包的 `../server/`。
-
 ## 技术栈
 
 - **`core/`** - Next.js 16 App Router、React 19、Tailwind v4、TypeScript 5、lottie-react。配置为静态导出，方便桌面端从本地文件加载。
 - **`desktop/`** - Electron 33 和 electron-builder。透明、始终置顶的窗口覆盖工作区域；默认点击穿透，当鼠标悬停在小伙伴或聊天气泡上时才接收交互。
 - **`mobile/`** - Capacitor 8，加上 Android 原生 overlay 模块，可通过前台服务把小伙伴作为 `WindowManager` overlay 运行。
-- **`../server/`** - 可选的轻量 Node.js 后端，用于登录、同步快照、备份、订阅状态和托管 AI 代理调用。
 
 ## 自带 LLM Key
 
 聊天功能可以从前端直接调用 OpenAI、Anthropic 或 OpenRouter。你可以在小伙伴设置面板中输入 API key；它会保存在 `localStorage`，除了调用你选择的模型供应商外，不会离开本机。
-
-如果要做托管产品模式，`../server/` 可以提供账号、同步、备份、订阅状态，以及通过服务端 key 发起的托管 AI 调用。详见 [`../server/README.md`](../server/README.md)。
 
 ## 为什么开源？
 

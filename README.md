@@ -55,7 +55,6 @@ Vibebud is meant for developers experimenting with AI coding agents, desktop com
 | Electron desktop - macOS / Linux | Planned, not yet wired up |
 | Android (Capacitor 8) | Scaffolded overlay shell via `OverlayService` |
 | iOS | Out of scope |
-| Optional backend | Accounts, sync, backups, subscription state, and managed AI calls |
 
 ## Personalities and Groups
 
@@ -88,13 +87,6 @@ For the desktop app:
 npm run desktop-dev
 ```
 
-Optional backend:
-
-```bash
-# Runs at http://localhost:3070
-npm run server-dev
-```
-
 Build commands:
 
 ```bash
@@ -124,20 +116,15 @@ vibebud/
 
 Anything that can live in `core/` should. The platform shells stay thin.
 
-The optional backend lives at `../server/` from this package.
-
 ## Stack
 
 - **`core/`** - Next.js 16 App Router, React 19, Tailwind v4, TypeScript 5, lottie-react. Configured for static export so the desktop shell can serve it from disk.
 - **`desktop/`** - Electron 33 and electron-builder. Transparent always-on-top window covering the full work area, with click-through enabled by default and toggled off per element while the cursor is over a buddy or chat bubble.
 - **`mobile/`** - Capacitor 8 plus a native overlay module that can run the buddy as a `WindowManager` overlay from a foreground service on Android.
-- **`../server/`** - optional dependency-free Node.js backend for login, sync snapshots, backups, subscription state, and managed AI proxy calls.
 
 ## Bring Your Own LLM
 
 Chat features can call OpenAI, Anthropic, or OpenRouter directly from the renderer. You enter your API key in the buddy settings panel; it is stored in `localStorage` and never leaves the device except when talking to the provider you chose.
-
-For a hosted product model, `../server/` adds optional accounts, sync, backups, subscription state, and managed AI calls through server-owned provider keys. See [`../server/README.md`](../server/README.md).
 
 ## Why Open Source?
 
