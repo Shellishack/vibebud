@@ -8,6 +8,14 @@ function codexBinary() {
   return process.env.VIBEBUD_CODEX_BIN || 'codex';
 }
 
+function codexBypassApprovalsAndSandbox() {
+  return process.env.VIBEBUD_CODEX_BYPASS_APPROVALS_AND_SANDBOX !== '0';
+}
+
+function codexSandboxMode() {
+  return process.env.VIBEBUD_CODEX_SANDBOX || 'danger-full-access';
+}
+
 function createCodexHost({ emit }) {
   const sessions = new Map(); // buddyId -> { cwd, proc, stdoutBuf, stderrBuf, busy, resultEmitted }
 
@@ -62,8 +70,12 @@ function createCodexHost({ emit }) {
       'exec',
       '--json',
       '--skip-git-repo-check',
-      '--sandbox', process.env.VIBEBUD_CODEX_SANDBOX || 'workspace-write',
     ];
+    if (codexBypassApprovalsAndSandbox()) {
+      args.push('--dangerously-bypass-approvals-and-sandbox');
+    } else {
+      args.push('--sandbox', codexSandboxMode());
+    }
     const model = process.env.VIBEBUD_CODEX_MODEL;
     if (model) args.push('--model', model);
     args.push('-');
