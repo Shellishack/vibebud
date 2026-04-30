@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { fetchAuthSession, signInUrl, signOutUrl, type AuthSession } from './authClient';
+import { fetchAuthSession, goToGoogleSignIn, goToSignOut, type AuthSession } from './authClient';
 
 function initials(session: AuthSession) {
   const label = session.user?.name || session.user?.email || '?';
@@ -42,7 +42,7 @@ export default function SignInStatus() {
     return (
       <button
         data-buddy-interactive
-        onClick={() => { window.location.href = signInUrl(); }}
+        onClick={() => { void goToGoogleSignIn(); }}
         aria-label="Sign in"
         title="Sign in"
         className="rounded-full bg-white/85 px-3 py-2 text-sm font-semibold text-zinc-700 shadow-md ring-1 ring-zinc-200 backdrop-blur-md hover:bg-white hover:text-zinc-900 dark:bg-zinc-900/85 dark:text-zinc-200 dark:ring-zinc-700 dark:hover:bg-zinc-800 dark:hover:text-zinc-50"
@@ -65,7 +65,7 @@ export default function SignInStatus() {
         {session.user?.name || session.user?.email || 'Signed in'}
       </span>
       <button
-        onClick={() => { window.location.href = signOutUrl(); }}
+        onClick={() => { void goToSignOut(); }}
         className="ml-1 text-xs font-medium text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-50"
       >
         Sign out

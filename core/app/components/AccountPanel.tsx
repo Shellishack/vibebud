@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { fetchAuthSession, signInUrl, signOutUrl, type AuthSession } from './authClient';
+import { fetchAuthSession, goToGoogleSignIn, goToSignOut, type AuthSession } from './authClient';
 
 export default function AccountPanel() {
   const [session, setSession] = useState<AuthSession | null>(null);
@@ -34,7 +34,7 @@ export default function AccountPanel() {
         <p className="text-sm font-medium text-zinc-900 dark:text-zinc-50">{user.name || 'Signed in'}</p>
         {user.email && <p className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">{user.email}</p>}
         <button
-          onClick={() => { window.location.href = signOutUrl(); }}
+          onClick={() => { void goToSignOut(); }}
           className="mt-3 w-full rounded-full px-3 py-1.5 text-xs font-medium text-zinc-700 ring-1 ring-zinc-200 hover:bg-white dark:text-zinc-200 dark:ring-zinc-700 dark:hover:bg-zinc-800"
         >
           Sign out
@@ -47,7 +47,7 @@ export default function AccountPanel() {
     <div className="mt-2 rounded-2xl border border-zinc-200 p-3 dark:border-zinc-700">
       <button
         onClick={() => {
-          window.location.href = signInUrl();
+          void goToGoogleSignIn();
         }}
         className="flex w-full items-center justify-center gap-2 rounded-full bg-violet-600 px-3 py-2 text-sm font-semibold text-white hover:bg-violet-700"
       >
