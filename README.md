@@ -139,12 +139,6 @@ Chat features can call OpenAI, Anthropic, or OpenRouter directly from the render
 
 For a hosted product model, `../server/` adds optional accounts, sync, backups, subscription state, and managed AI calls through server-owned provider keys. See [`../server/README.md`](../server/README.md).
 
-## Relationship to `gh-autopilot`
-
-`gh-autopilot` is the engine: it watches a GitHub repo and dispatches agents to work on issues. Vibebud is the face: it shows you what those agents are up to and lets you respond without context-switching.
-
-They are independent, but designed to be used together.
-
 ## Why Open Source?
 
 AI coding agents are becoming part of everyday development, but the interface around them is still early. Vibebud is an experiment in making agent work:

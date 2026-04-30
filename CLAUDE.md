@@ -1,6 +1,6 @@
 # vibebud
 
-A friendly "code buddy" UI that floats on the user's desktop (or Android device), surfaces what AI agents are doing on the user's behalf, and prompts for input when action is needed. Companion to `gh-autopilot` (sibling repo) but usable on its own.
+A friendly "code buddy" UI that floats on the user's desktop (or Android device), surfaces what AI agents are doing on the user's behalf, and prompts for input when action is needed.
 
 ## Product shape
 
@@ -116,4 +116,4 @@ Notes:
 ## Out of scope
 
 - iOS (explicitly excluded — see above).
-- Hosting agents or interacting directly with GitHub — that's `gh-autopilot`'s job. `vibebud` is the *face*; `gh-autopilot` is the *engine*.
+- Hosting agents or interacting directly with GitHub.
