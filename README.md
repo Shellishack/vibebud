@@ -1,5 +1,7 @@
 # Vibebud
 
+English | [中文](./README.zh-CN.md)
+
 **A little AI buddy that stays with you while you vibe code.**
 
 Vibebud gives your coding agents a visible presence: a floating companion on your desktop, web app, or phone that can chat, show status, and tap you when something needs attention.
