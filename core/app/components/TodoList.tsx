@@ -5,6 +5,7 @@ import { FormEvent, useEffect, useMemo, useState } from 'react';
 import { buildAnimation, getNotoCodepoint, VARIANTS, type FacesWithHandsComposition, type NotoGroup } from './avatars';
 import { getPersonality } from './personalities';
 import { getCachedLottie, loadLottie } from '../../lib/notoEmoji';
+import { useTranslations } from '../../lib/hooks/use-translations';
 
 const Lottie = dynamic(() => import('lottie-react'), { ssr: false });
 
@@ -26,10 +27,11 @@ type BuddySnapshot = {
   avatar?: { kind: 'noto'; group: NotoGroup; composition?: FacesWithHandsComposition };
 };
 
-const TODO_STORAGE_KEY = 'vibemoji.todos.v1';
-const BUDDY_STORAGE_KEY = 'vibemoji.buddies.v2';
+const TODO_STORAGE_KEY = 'vibebud.todos.v1';
+const BUDDY_STORAGE_KEY = 'vibebud.buddies.v2';
 
 export default function TodoList() {
+  const { t } = useTranslations();
   const [buddies, setBuddies] = useState<BuddySnapshot[]>([]);
   const [todos, setTodos] = useState<BuddyTodo[]>(() => loadTodos());
   const [title, setTitle] = useState('');
@@ -89,11 +91,11 @@ export default function TodoList() {
     <section className="w-full max-w-2xl">
       <div className="mb-3 flex items-end justify-between gap-4">
         <div>
-          <h2 className="text-xl font-semibold text-zinc-900 dark:text-zinc-50">todo board</h2>
-          <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">assign work to a buddy by choosing their avatar.</p>
+          <h2 className="text-xl font-semibold text-zinc-900 dark:text-zinc-50">{t('todo.title')}</h2>
+          <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">{t('todo.subtitle')}</p>
         </div>
         <span className="shrink-0 rounded-full border border-zinc-200 bg-white/70 px-3 py-1 text-xs font-medium text-zinc-600 backdrop-blur dark:border-zinc-800 dark:bg-zinc-900/60 dark:text-zinc-300">
-          {openTodos.length} open
+          {t('todo.openCount', { count: openTodos.length })}
         </span>
       </div>
 
@@ -102,7 +104,7 @@ export default function TodoList() {
           <input
             value={title}
             onChange={(event) => setTitle(event.target.value)}
-            placeholder="add a task"
+            placeholder={t('todo.placeholder')}
             className="min-h-11 flex-1 rounded-xl border border-zinc-200 bg-white px-3 text-sm text-zinc-900 outline-none transition-colors placeholder:text-zinc-400 focus:border-violet-400 dark:border-zinc-700 dark:bg-zinc-950/60 dark:text-zinc-50 dark:placeholder:text-zinc-500"
           />
           <button
@@ -110,13 +112,13 @@ export default function TodoList() {
             disabled={!title.trim() || !activeBuddyId}
             className="min-h-11 rounded-xl bg-zinc-900 px-4 text-sm font-semibold text-white transition-colors hover:bg-zinc-700 disabled:cursor-not-allowed disabled:bg-zinc-300 dark:bg-white dark:text-zinc-950 dark:hover:bg-zinc-200 dark:disabled:bg-zinc-700 dark:disabled:text-zinc-400"
           >
-            add
+            {t('todo.add')}
           </button>
         </div>
 
         <div className="mt-3 flex gap-2 overflow-x-auto pb-1">
           {buddies.length === 0 ? (
-            <p className="text-sm text-zinc-500 dark:text-zinc-400">create a buddy first to assign tasks.</p>
+            <p className="text-sm text-zinc-500 dark:text-zinc-400">{t('todo.createBuddyFirst')}</p>
           ) : buddies.map((buddy) => {
             const personality = getPersonality(buddy.variantId);
             const selected = activeBuddyId === buddy.id;
@@ -125,7 +127,7 @@ export default function TodoList() {
                 key={buddy.id}
                 type="button"
                 onClick={() => setSelectedBuddyId(buddy.id)}
-                aria-label={`Assign to ${personality.name}`}
+                aria-label={t('todo.assignTo', { name: personality.name })}
                 title={personality.name}
                 className={`grid h-14 w-14 shrink-0 place-items-center rounded-full border bg-white transition-all dark:bg-zinc-950 ${
                   selected
@@ -152,7 +154,7 @@ export default function TodoList() {
               <button
                 type="button"
                 onClick={() => toggleTodo(todo.id)}
-                aria-label={todo.completed ? 'Mark todo incomplete' : 'Mark todo complete'}
+                aria-label={todo.completed ? t('todo.markIncomplete') : t('todo.markComplete')}
                 className={`grid h-5 w-5 shrink-0 place-items-center rounded-full border ${
                   todo.completed
                     ? 'border-emerald-500 bg-emerald-500 text-white'
@@ -173,7 +175,7 @@ export default function TodoList() {
               <button
                 type="button"
                 onClick={() => removeTodo(todo.id)}
-                aria-label="Delete todo"
+                aria-label={t('todo.delete')}
                 className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-zinc-400 transition-colors hover:bg-zinc-100 hover:text-zinc-700 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
               >
                 <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
@@ -185,7 +187,7 @@ export default function TodoList() {
         })}
         {todos.length === 0 && (
           <div className="rounded-2xl border border-dashed border-zinc-300 bg-white/45 px-4 py-6 text-center text-sm text-zinc-500 backdrop-blur dark:border-zinc-700 dark:bg-zinc-900/35 dark:text-zinc-400">
-            no tasks yet
+            {t('todo.empty')}
           </div>
         )}
       </div>

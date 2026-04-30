@@ -50,14 +50,14 @@ export default function BuddyGroup({
   // form a containing block for `position: fixed` descendants. We don't nest
   // members anymore, but keep the wrapper "neutral" anyway. The visual hull
   // (with backdrop blur) is an inner sibling.
-  // Native-overlay drag events (vibemoji:groupDragStart/...) are only
-  // dispatched by OverlayService, which injects window.vibemojiNative. The
+  // Native-overlay drag events (vibebud:groupDragStart/...) are only
+  // dispatched by OverlayService, which injects window.vibebudNative. The
   // regular Capacitor app (BridgeActivity WebView) gets adapter.id ===
   // 'capacitor-android' too, but no overlay — so it must fall back to the
   // pointer-drag path or the group becomes undraggable in-app.
   const hasNativeOverlay = adapter.id === 'capacitor-android'
     && typeof window !== 'undefined'
-    && !!(window as unknown as { vibemojiNative?: unknown }).vibemojiNative;
+    && !!(window as unknown as { vibebudNative?: unknown }).vibebudNative;
   const isCapacitor = hasNativeOverlay;
 
   const rightCss = anchor.right - padX - (pos.x + (memberCount - 1) * stride);
@@ -95,7 +95,7 @@ export default function BuddyGroup({
       draggingRef.current = true;
       setIsDragging(true);
       adapter.notifyDragStart(dragKey);
-      const dragSet: Set<string> = ((window as unknown as { __vibemojiDragging?: Set<string> }).__vibemojiDragging
+      const dragSet: Set<string> = ((window as unknown as { __vibebudDragging?: Set<string> }).__vibebudDragging
         ||= new Set<string>());
       dragSet.add(dragKey);
       // Notify parent immediately so any "expand peeked group while
@@ -113,18 +113,18 @@ export default function BuddyGroup({
       draggingRef.current = false;
       setIsDragging(false);
       adapter.notifyDragEnd(dragKey);
-      const dragSet: Set<string> | undefined = (window as unknown as { __vibemojiDragging?: Set<string> }).__vibemojiDragging;
+      const dragSet: Set<string> | undefined = (window as unknown as { __vibebudDragging?: Set<string> }).__vibebudDragging;
       dragSet?.delete(dragKey);
       callbacksRef.current.onGroupDragEnd?.(groupId, posRef.current);
       dragBaseRef.current = null;
     };
-    window.addEventListener('vibemoji:groupDragStart', onDragStart);
-    window.addEventListener('vibemoji:groupDragMove', onDragMoveEvt);
-    window.addEventListener('vibemoji:groupDragEnd', onDragEndEvt);
+    window.addEventListener('vibebud:groupDragStart', onDragStart);
+    window.addEventListener('vibebud:groupDragMove', onDragMoveEvt);
+    window.addEventListener('vibebud:groupDragEnd', onDragEndEvt);
     return () => {
-      window.removeEventListener('vibemoji:groupDragStart', onDragStart);
-      window.removeEventListener('vibemoji:groupDragMove', onDragMoveEvt);
-      window.removeEventListener('vibemoji:groupDragEnd', onDragEndEvt);
+      window.removeEventListener('vibebud:groupDragStart', onDragStart);
+      window.removeEventListener('vibebud:groupDragMove', onDragMoveEvt);
+      window.removeEventListener('vibebud:groupDragEnd', onDragEndEvt);
     };
   }, [adapter, groupId]);
 
@@ -139,7 +139,7 @@ export default function BuddyGroup({
         y: e.clientY - (r.top + r.height / 2),
       });
     } catch { /* noop */ }
-    const dragSet: Set<string> = ((window as any).__vibemojiDragging ||= new Set<string>());
+    const dragSet: Set<string> = ((window as any).__vibebudDragging ||= new Set<string>());
     const key = `group:${groupId}`;
     dragSet.add(key);
     adapter.notifyDragStart(key);
@@ -229,7 +229,7 @@ export default function BuddyGroup({
     const startY = e.clientY;
     const startBase = { x: posRef.current.x, y: posRef.current.y };
     let movedFar = false;
-    const dragSet: Set<string> = ((window as unknown as { __vibemojiDragging?: Set<string> }).__vibemojiDragging
+    const dragSet: Set<string> = ((window as unknown as { __vibebudDragging?: Set<string> }).__vibebudDragging
       ||= new Set<string>());
     const key = `group:${groupId}`;
     const onMove = (ev: PointerEvent) => {

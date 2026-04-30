@@ -1,11 +1,11 @@
 // Shared Codex session host. Codex CLI's supported automation interface is
-// one-shot `codex exec --json`, so a vibemoji "session" tracks availability
+// one-shot `codex exec --json`, so a vibebud "session" tracks availability
 // per buddy while each user turn launches one exec process and streams JSONL.
 const { spawn } = require('child_process');
 const os = require('os');
 
 function codexBinary() {
-  return process.env.VIBEMOJI_CODEX_BIN || 'codex';
+  return process.env.VIBEBUD_CODEX_BIN || 'codex';
 }
 
 function createCodexHost({ emit }) {
@@ -13,7 +13,7 @@ function createCodexHost({ emit }) {
 
   function start(buddyId, opts = {}) {
     if (sessions.has(buddyId)) return { ok: true, alreadyRunning: true };
-    const cwd = opts.cwd || process.env.VIBEMOJI_CODEX_CWD || process.env.VIBEMOJI_CLAUDE_CWD || os.homedir();
+    const cwd = opts.cwd || process.env.VIBEBUD_CODEX_CWD || process.env.VIBEBUD_CLAUDE_CWD || os.homedir();
     sessions.set(buddyId, { cwd, proc: null, stdoutBuf: '', stderrBuf: '', busy: false, resultEmitted: false });
     emit(buddyId, { type: 'system', subtype: 'init', cwd, bin: codexBinary() });
     return { ok: true, cwd };
@@ -62,9 +62,9 @@ function createCodexHost({ emit }) {
       'exec',
       '--json',
       '--skip-git-repo-check',
-      '--sandbox', process.env.VIBEMOJI_CODEX_SANDBOX || 'workspace-write',
+      '--sandbox', process.env.VIBEBUD_CODEX_SANDBOX || 'workspace-write',
     ];
-    const model = process.env.VIBEMOJI_CODEX_MODEL;
+    const model = process.env.VIBEBUD_CODEX_MODEL;
     if (model) args.push('--model', model);
     args.push('-');
 

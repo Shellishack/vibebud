@@ -87,9 +87,9 @@ export type ChatRole = 'user' | 'assistant';
 export type ChatTurn = { role: ChatRole; content: string };
 export type Teammate = { name: string; role: string };
 
-const PROVIDER_STORAGE = 'vibemoji.provider.v1';
-const KEY_STORAGE = (p: ProviderId) => `vibemoji.llmKey.${p}.v1`;
-const MODEL_STORAGE = (p: ProviderId) => `vibemoji.llmModel.${p}.v1`;
+const PROVIDER_STORAGE = 'vibebud.provider.v1';
+const KEY_STORAGE = (p: ProviderId) => `vibebud.llmKey.${p}.v1`;
+const MODEL_STORAGE = (p: ProviderId) => `vibebud.llmModel.${p}.v1`;
 const MAX_HISTORY_MESSAGES = 30;
 
 const lsGet = (k: string) => {
@@ -115,7 +115,7 @@ export const getModel = (p: ProviderId = getProvider()): string => {
 export const setModel = (p: ProviderId, m: string) => lsSet(MODEL_STORAGE(p), m);
 
 export type NotifyMethod = 'in-app' | 'native';
-const NOTIFY_METHOD_STORAGE = 'vibemoji.notifyMethod.v1';
+const NOTIFY_METHOD_STORAGE = 'vibebud.notifyMethod.v1';
 export const getNotifyMethod = (): NotifyMethod => {
   const v = lsGet(NOTIFY_METHOD_STORAGE);
   return v === 'native' ? 'native' : 'in-app';
@@ -175,8 +175,8 @@ const buildBodyAndHeaders = (
     'Authorization': `Bearer ${apiKey}`,
   };
   if (provider === 'openrouter') {
-    headers['HTTP-Referer'] = (typeof window !== 'undefined' && window.location?.origin) || 'https://vibemoji.local';
-    headers['X-Title'] = 'vibemoji';
+    headers['HTTP-Referer'] = (typeof window !== 'undefined' && window.location?.origin) || 'https://vibebud.local';
+    headers['X-Title'] = 'vibebud';
   }
   // No token limit — let the model decide when to stop.
   return {

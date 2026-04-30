@@ -1,9 +1,11 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { useTranslations } from '../../lib/hooks/use-translations';
 import { fetchAuthSession, goToGoogleSignIn, goToSignOut, type AuthSession } from './authClient';
 
 export default function AccountPanel() {
+  const { t } = useTranslations();
   const [session, setSession] = useState<AuthSession | null>(null);
   const [status, setStatus] = useState<'loading' | 'ready'>('loading');
   const user = session?.user;
@@ -23,7 +25,7 @@ export default function AccountPanel() {
   if (status === 'loading') {
     return (
       <div className="mt-2 rounded-2xl border border-zinc-200 bg-zinc-50 p-3 text-sm text-zinc-500 dark:border-zinc-700 dark:bg-zinc-800/60 dark:text-zinc-400">
-        Checking session...
+        {t('auth.checkingSession')}
       </div>
     );
   }
@@ -31,13 +33,13 @@ export default function AccountPanel() {
   if (user) {
     return (
       <div className="mt-2 rounded-2xl border border-zinc-200 bg-zinc-50 p-3 dark:border-zinc-700 dark:bg-zinc-800/60">
-        <p className="text-sm font-medium text-zinc-900 dark:text-zinc-50">{user.name || 'Signed in'}</p>
+        <p className="text-sm font-medium text-zinc-900 dark:text-zinc-50">{user.name || t('auth.signedIn')}</p>
         {user.email && <p className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">{user.email}</p>}
         <button
           onClick={() => { void goToSignOut(); }}
           className="mt-3 w-full rounded-full px-3 py-1.5 text-xs font-medium text-zinc-700 ring-1 ring-zinc-200 hover:bg-white dark:text-zinc-200 dark:ring-zinc-700 dark:hover:bg-zinc-800"
         >
-          Sign out
+          {t('auth.signOut')}
         </button>
       </div>
     );
@@ -57,7 +59,7 @@ export default function AccountPanel() {
           <path fill="currentColor" d="M6.4 13.8a6 6 0 0 1 0-3.6V7.5H3.1a10 10 0 0 0 0 9l3.3-2.7Z" />
           <path fill="currentColor" d="M12 6.1c1.5 0 2.8.5 3.8 1.5l2.9-2.9A9.8 9.8 0 0 0 12 2a10 10 0 0 0-8.9 5.5l3.3 2.7A6 6 0 0 1 12 6.1Z" />
         </svg>
-        Sign in with Google
+        {t('auth.signInWithGoogle')}
       </button>
     </div>
   );

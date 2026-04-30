@@ -135,7 +135,7 @@ export const BUILT_IN_PERSONALITIES: Personality[] = [
 // else (spawn picker, color swatches, teammate prompts).
 // ---------------------------------------------------------------------------
 
-const CUSTOM_STORAGE_KEY = 'vibemoji.personalities.custom.v1';
+const CUSTOM_STORAGE_KEY = 'vibebud.personalities.custom.v1';
 
 let customCache: Personality[] = [];
 let hydrated = false;

@@ -1,4 +1,4 @@
-package dev.vibemoji.android;
+package dev.vibebud.android;
 
 import android.app.Notification;
 import android.app.NotificationChannel;
@@ -42,25 +42,25 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Foreground service that renders the vibemoji /buddy route as a transparent
+ * Foreground service that renders the vibebud /buddy route as a transparent
  * system overlay floating on top of every other app. The Android counterpart
  * to desktop/main.js's transparent always-on-top BrowserWindow.
  *
  * Touch passthrough mirrors the desktop click-through behavior: the overlay
  * starts with FLAG_NOT_TOUCHABLE so taps fall through to apps underneath; the
- * web layer toggles it off via the `vibemojiNative.setInteractive(true)` JS
+ * web layer toggles it off via the `vibebudNative.setInteractive(true)` JS
  * bridge whenever the cursor is over an interactive buddy element.
  */
 public class OverlayService extends Service {
 
-    public static final String ACTION_START = "dev.vibemoji.android.action.START_OVERLAY";
-    public static final String ACTION_STOP = "dev.vibemoji.android.action.STOP_OVERLAY";
-    public static final String ACTION_RELOAD = "dev.vibemoji.android.action.RELOAD_OVERLAY";
-    public static final String EXTRA_URL = "dev.vibemoji.android.extra.URL";
+    public static final String ACTION_START = "dev.vibebud.android.action.START_OVERLAY";
+    public static final String ACTION_STOP = "dev.vibebud.android.action.STOP_OVERLAY";
+    public static final String ACTION_RELOAD = "dev.vibebud.android.action.RELOAD_OVERLAY";
+    public static final String EXTRA_URL = "dev.vibebud.android.extra.URL";
 
     private static final int NOTIFICATION_ID = 4242;
-    private static final String CHANNEL_ID = "vibemoji-overlay";
-    private static final String PING_CHANNEL_ID = "vibemoji-pings";
+    private static final String CHANNEL_ID = "vibebud-overlay";
+    private static final String PING_CHANNEL_ID = "vibebud-pings";
     private static final java.util.concurrent.atomic.AtomicInteger PING_ID =
             new java.util.concurrent.atomic.AtomicInteger(5000);
 
@@ -121,7 +121,7 @@ public class OverlayService extends Service {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && nm != null) {
             NotificationChannel channel = new NotificationChannel(
                     CHANNEL_ID,
-                    "vibemoji overlay",
+                    "vibebud overlay",
                     NotificationManager.IMPORTANCE_LOW
             );
             channel.setDescription("Keeps the floating buddy alive while you use other apps.");
@@ -129,7 +129,7 @@ public class OverlayService extends Service {
         }
 
         Notification notification = new NotificationCompat.Builder(this, CHANNEL_ID)
-                .setContentTitle("vibemoji is floating")
+                .setContentTitle("vibebud is floating")
                 .setContentText("Tap the buddy to chat. Stop from inside the app.")
                 .setSmallIcon(android.R.drawable.ic_dialog_info)
                 .setOngoing(true)
@@ -232,11 +232,11 @@ public class OverlayService extends Service {
                 return assetLoader.shouldInterceptRequest(request.getUrl());
             }
         });
-        webView.addJavascriptInterface(new NativeBridge(), "vibemojiNative");
+        webView.addJavascriptInterface(new NativeBridge(), "vibebudNative");
 
         // While focus is granted to the overlay (popup open), the BACK gesture
         // would otherwise be consumed by the WebView and never reach the host
-        // app. Forward it to JS as a 'vibemoji:back' event (so the popup can
+        // app. Forward it to JS as a 'vibebud:back' event (so the popup can
         // close itself and call setInteractive(false), restoring NOT_FOCUSABLE
         // — subsequent BACKs then fall through to the underlying app).
         webView.setOnKeyListener((view, keyCode, event) -> {
@@ -247,7 +247,7 @@ public class OverlayService extends Service {
             }
             if (event.getAction() == KeyEvent.ACTION_UP) {
                 webView.evaluateJavascript(
-                        "window.dispatchEvent(new CustomEvent('vibemoji:back'))",
+                        "window.dispatchEvent(new CustomEvent('vibebud:back'))",
                         null);
             }
             return true;
@@ -264,10 +264,10 @@ public class OverlayService extends Service {
      * Creates a transparent tap-zone window for one avatar. The OnTouchListener
      * tracks the gesture and forwards bridged events to JS keyed by the buddy's
      * id:
-     *   - `vibemoji:avatarTap`        — UP without exceeding the drag threshold
-     *   - `vibemoji:avatarDragStart`  — first MOVE past the threshold
-     *   - `vibemoji:avatarDragMove`   — subsequent MOVEs (dx, dy in CSS px)
-     *   - `vibemoji:avatarDragEnd`    — UP / CANCEL after a drag
+     *   - `vibebud:avatarTap`        — UP without exceeding the drag threshold
+     *   - `vibebud:avatarDragStart`  — first MOVE past the threshold
+     *   - `vibebud:avatarDragMove`   — subsequent MOVEs (dx, dy in CSS px)
+     *   - `vibebud:avatarDragEnd`    — UP / CANCEL after a drag
      *
      * Once Android delivers ACTION_DOWN to a window, the rest of the gesture
      * (MOVE/UP) keeps coming to that same window even when the finger leaves
@@ -294,17 +294,17 @@ public class OverlayService extends Service {
                 float dyPx = ev.getRawY() - startRaw[1];
                 if (!dragging[0] && (float) Math.hypot(dxPx, dyPx) >= thresholdPx) {
                     dragging[0] = true;
-                    dispatchAvatarEvent("vibemoji:avatarDragStart", id, 0f, 0f);
+                    dispatchAvatarEvent("vibebud:avatarDragStart", id, 0f, 0f);
                 }
                 if (dragging[0]) {
-                    dispatchAvatarEvent("vibemoji:avatarDragMove", id, dxPx / density, dyPx / density);
+                    dispatchAvatarEvent("vibebud:avatarDragMove", id, dxPx / density, dyPx / density);
                 }
                 return true;
             } else if (a == MotionEvent.ACTION_UP || a == MotionEvent.ACTION_CANCEL) {
                 if (dragging[0]) {
-                    dispatchAvatarEvent("vibemoji:avatarDragEnd", id, 0f, 0f);
+                    dispatchAvatarEvent("vibebud:avatarDragEnd", id, 0f, 0f);
                 } else if (a == MotionEvent.ACTION_UP) {
-                    dispatchAvatarEvent("vibemoji:avatarTap", id, 0f, 0f);
+                    dispatchAvatarEvent("vibebud:avatarTap", id, 0f, 0f);
                 }
                 dragging[0] = false;
                 return true;
@@ -325,7 +325,7 @@ public class OverlayService extends Service {
     /**
      * Group hull tap-zone view: same gesture model as the per-avatar zones
      * (8dp drag threshold, tap-vs-drag distinction) but dispatches
-     * `vibemoji:groupTap`/`groupDragStart`/`groupDragMove`/`groupDragEnd`
+     * `vibebud:groupTap`/`groupDragStart`/`groupDragMove`/`groupDragEnd`
      * keyed by the group id, so the JS BuddyGroup component can move the
      * whole group on touch.
      */
@@ -349,17 +349,17 @@ public class OverlayService extends Service {
                 float dyPx = ev.getRawY() - startRaw[1];
                 if (!dragging[0] && (float) Math.hypot(dxPx, dyPx) >= thresholdPx) {
                     dragging[0] = true;
-                    dispatchGroupEvent("vibemoji:groupDragStart", gid, 0f, 0f);
+                    dispatchGroupEvent("vibebud:groupDragStart", gid, 0f, 0f);
                 }
                 if (dragging[0]) {
-                    dispatchGroupEvent("vibemoji:groupDragMove", gid, dxPx / density, dyPx / density);
+                    dispatchGroupEvent("vibebud:groupDragMove", gid, dxPx / density, dyPx / density);
                 }
                 return true;
             } else if (a == MotionEvent.ACTION_UP || a == MotionEvent.ACTION_CANCEL) {
                 if (dragging[0]) {
-                    dispatchGroupEvent("vibemoji:groupDragEnd", gid, 0f, 0f);
+                    dispatchGroupEvent("vibebud:groupDragEnd", gid, 0f, 0f);
                 } else if (a == MotionEvent.ACTION_UP) {
-                    dispatchGroupEvent("vibemoji:groupTap", gid, 0f, 0f);
+                    dispatchGroupEvent("vibebud:groupTap", gid, 0f, 0f);
                 }
                 dragging[0] = false;
                 return true;
@@ -442,7 +442,7 @@ public class OverlayService extends Service {
     /**
      * JS-accessible bridge installed on the overlay WebView. The web layer's
      * existing mousemove handler in core/app/components/Buddy.tsx publishes
-     * interactivity intent through window.vibemoji.setInteractive(...); the
+     * interactivity intent through window.vibebud.setInteractive(...); the
      * Capacitor plugin re-emits that as a call to setInteractive() here, which
      * toggles FLAG_NOT_TOUCHABLE on the overlay's LayoutParams. While the flag
      * is set the overlay is purely visual and touches fall through to whatever
@@ -489,7 +489,7 @@ public class OverlayService extends Service {
     }
 
     /**
-     * Posts a one-shot system notification on the "vibemoji-pings" channel.
+     * Posts a one-shot system notification on the "vibebud-pings" channel.
      * Called from the JS bridge when the user has chosen "native" as their
      * notification method (vs the default in-overlay toast). Channel is
      * created lazily on first call.
@@ -500,14 +500,14 @@ public class OverlayService extends Service {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             NotificationChannel ch = new NotificationChannel(
                     PING_CHANNEL_ID,
-                    "vibemoji pings",
+                    "vibebud pings",
                     NotificationManager.IMPORTANCE_DEFAULT
             );
             ch.setDescription("Agent activity, PR updates, and other buddy pings.");
             nm.createNotificationChannel(ch);
         }
         Notification n = new NotificationCompat.Builder(ctx, PING_CHANNEL_ID)
-                .setContentTitle(title == null ? "vibemoji" : title)
+                .setContentTitle(title == null ? "vibebud" : title)
                 .setContentText(body == null ? "" : body)
                 .setStyle(new NotificationCompat.BigTextStyle().bigText(body == null ? "" : body))
                 .setSmallIcon(android.R.drawable.ic_dialog_info)
@@ -602,7 +602,7 @@ public class OverlayService extends Service {
                             tapZones.put(id, v);
                             tapZoneParams.put(id, p);
                         } catch (Throwable t) {
-                            android.util.Log.w("vibemoji", "tap-zone add failed for " + id, t);
+                            android.util.Log.w("vibebud", "tap-zone add failed for " + id, t);
                         }
                     } else if (p != null) {
                         if (p.x != x || p.y != y || p.width != w || p.height != h) {
@@ -666,7 +666,7 @@ public class OverlayService extends Service {
                             groupZoneParams.put(gid, p);
                             addedNew = true;
                         } catch (Throwable t) {
-                            android.util.Log.w("vibemoji", "group-zone add failed for " + gid, t);
+                            android.util.Log.w("vibebud", "group-zone add failed for " + gid, t);
                         }
                     } else if (p != null) {
                         if (p.x != x || p.y != y || p.width != w || p.height != h) {
@@ -699,7 +699,7 @@ public class OverlayService extends Service {
                         catch (IllegalArgumentException ignored) { /* detached */ }
                         try { windowManager.addView(entry.getValue(), ap); }
                         catch (Throwable t) {
-                            android.util.Log.w("vibemoji", "avatar-zone re-stack failed for " + entry.getKey(), t);
+                            android.util.Log.w("vibebud", "avatar-zone re-stack failed for " + entry.getKey(), t);
                         }
                     }
                 }
@@ -792,7 +792,7 @@ public class OverlayService extends Service {
         public void showNotification(final String json) {
             try {
                 JSONObject o = new JSONObject(json == null ? "{}" : json);
-                final String title = o.optString("title", "vibemoji");
+                final String title = o.optString("title", "vibebud");
                 final String body = o.optString("body", "");
                 main.post(() -> showSystemNotification(OverlayService.this, title, body));
             } catch (Exception ignored) { /* malformed JSON */ }
@@ -846,7 +846,7 @@ public class OverlayService extends Service {
          * which is the only place @capacitor-mlkit/barcode-scanning can run
          * (Capacitor plugins are not injected into the overlay's WebView).
          * On scan completion, /scan/ writes the pairing to localStorage and
-         * finishes MainActivity via the vibemojiHost JS bridge.
+         * finishes MainActivity via the vibebudHost JS bridge.
          */
         @JavascriptInterface
         public void scanQrForPair() {

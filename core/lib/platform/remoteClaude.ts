@@ -3,14 +3,14 @@
 // clients drive a `claude` subprocess running on the user's PC, since
 // neither environment can spawn local processes itself.
 //
-// Config lives in localStorage under `vibemoji.claudeRemote.v1` as
+// Config lives in localStorage under `vibebud.claudeRemote.v1` as
 // `{"url":"ws://host:port","token":"..."}`. When absent, the adapter returns
 // `null` from claudeCode() and the UI hides the Claude Code toggle.
 import type { ClaudeCodeBridge, ClaudeEvent, ClaudeStartOpts } from './types';
 
 export type RemoteClaudeConfig = { url: string; token: string };
 
-const STORAGE_KEY = 'vibemoji.claudeRemote.v1';
+const STORAGE_KEY = 'vibebud.claudeRemote.v1';
 
 export function getRemoteClaudeConfig(): RemoteClaudeConfig | null {
   if (typeof localStorage === 'undefined') return null;

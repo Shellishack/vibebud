@@ -1,4 +1,4 @@
-# vibemoji
+# vibebud
 
 A friendly floating code buddy that surfaces what your AI agents are doing — and taps you on the shoulder when they need a hand.
 
@@ -6,7 +6,7 @@ A friendly floating code buddy that surfaces what your AI agents are doing — a
 
 ## What it is
 
-vibemoji is a desktop pet for AI-assisted development. A small avatar floats on top of your other windows, chats with you in bubbles, and fires the occasional toast when an agent finishes a PR or needs your input. It's the *face* of the [`auto-buddy`](../) workflow — the engine that runs the agents lives in the sibling repo [`gh-autopilot`](../gh-autopilot). vibemoji is usable on its own.
+vibebud is a desktop pet for AI-assisted development. A small avatar floats on top of your other windows, chats with you in bubbles, and fires the occasional toast when an agent finishes a PR or needs your input. It's the *face* of the [`auto-buddy`](../) workflow — the engine that runs the agents lives in the sibling repo [`gh-autopilot`](../gh-autopilot). vibebud is usable on its own.
 
 ## Personalities and groups
 
@@ -41,7 +41,7 @@ Drag two buddies near each other and they form a small team — a pastel "hull" 
 ## Layout
 
 ```
-vibemoji/
+vibebud/
 ├── core/        # shared Next.js UI — runs as a website, also bundled into the desktop shell
 ├── desktop/     # Electron wrapper around core/
 └── android/     # (future) Capacitor wrapper around core/
@@ -75,7 +75,7 @@ npm run desktop-dev
 # Build core, copy into desktop, launch Electron against the static export
 npm run desktop-run
 
-# Windows installer → desktop/dist/vibemoji-desktop-setup.exe
+# Windows installer → desktop/dist/vibebud-desktop-setup.exe
 npm run desktop-build
 
 # Android — one-time, after install-all:
@@ -88,4 +88,4 @@ The dev server runs on **port 3060**, not 3000. The desktop window loads the `/b
 
 ## Relationship to `gh-autopilot`
 
-`gh-autopilot` is the engine — it watches a GitHub repo and dispatches agents to work on issues. `vibemoji` is the face — it shows you what those agents are up to and lets you respond without context-switching. They're sibling repos under [`auto-buddy`](../), independent but designed to be used together.
+`gh-autopilot` is the engine — it watches a GitHub repo and dispatches agents to work on issues. `vibebud` is the face — it shows you what those agents are up to and lets you respond without context-switching. They're sibling repos under [`auto-buddy`](../), independent but designed to be used together.

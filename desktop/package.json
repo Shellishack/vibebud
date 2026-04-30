@@ -1,12 +1,12 @@
 {
-  "name": "vibemoji-desktop",
+  "name": "vibebud-desktop",
   "version": "0.1.0",
   "private": true,
-  "description": "Electron shell for vibemoji — loads core/ as a transparent floating window.",
+  "description": "Electron shell for vibebud — loads core/ as a transparent floating window.",
   "author": "Shellishack",
   "main": "main.js",
   "scripts": {
-    "dev": "cross-env VIBEMOJI_DEV_URL=http://localhost:3060 electron .",
+    "dev": "cross-env VIBEBUD_DEV_URL=http://localhost:3060 electron .",
     "start": "electron .",
     "sync-core": "node sync-core.js",
     "make-icon": "node make-icon.js",
@@ -24,8 +24,8 @@
     "sharp": "^0.33.5"
   },
   "build": {
-    "appId": "dev.vibemoji.desktop",
-    "productName": "vibemoji",
+    "appId": "dev.vibebud.desktop",
+    "productName": "vibebud",
     "directories": {
       "output": "dist"
     },
@@ -52,7 +52,7 @@
         }
       ],
       "icon": "build/icon.ico",
-      "artifactName": "vibemoji-desktop-setup.${ext}"
+      "artifactName": "vibebud-desktop-setup.${ext}"
     },
     "nsis": {
       "oneClick": true,

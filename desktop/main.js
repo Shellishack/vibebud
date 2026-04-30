@@ -21,7 +21,7 @@ const localCodex = createCodexHost({
   },
 });
 
-const DEV_URL = process.env.VIBEMOJI_DEV_URL;
+const DEV_URL = process.env.VIBEBUD_DEV_URL;
 const OUT_DIR = path.join(__dirname, 'core-out');
 
 let win = null;
@@ -78,15 +78,15 @@ function createWindow() {
 function createTray() {
   const trayIcon = nativeImage.createFromPath(path.join(__dirname, 'build', 'tray.png'));
   tray = new Tray(trayIcon.isEmpty() ? nativeImage.createEmpty() : trayIcon);
-  tray.setToolTip('vibemoji');
+  tray.setToolTip('vibebud');
   tray.setContextMenu(Menu.buildFromTemplate([
     { label: 'Show / hide', click: () => (win?.isVisible() ? win.hide() : win?.show()) },
     { label: 'Reload', click: () => win?.reload() },
     { label: 'Toggle DevTools', click: () => win?.webContents.toggleDevTools({ mode: 'detach' }) },
     { type: 'separator' },
     { label: 'Add buddy', click: () => win?.webContents.send('spawn-buddy') },
-    { label: 'Pair phone…', click: () => { void showPairingWindow({ port: Number(process.env.VIBEMOJI_BRIDGE_PORT || DEFAULT_PORT) }); } },
-    { label: 'Settings…', click: () => win?.webContents.send('vibemoji:open-settings') },
+    { label: 'Pair phone…', click: () => { void showPairingWindow({ port: Number(process.env.VIBEBUD_BRIDGE_PORT || DEFAULT_PORT) }); } },
+    { label: 'Settings…', click: () => win?.webContents.send('vibebud:open-settings') },
     {
       label: 'Clear local settings',
       click: async () => {
@@ -118,7 +118,7 @@ app.whenReady().then(() => {
       win.setIgnoreMouseEvents(true, { forward: true });
       // Always hand focus back to the previously focused OS window when the
       // cursor leaves all interactive elements, even if a chat panel is open
-      // — otherwise focus gets stuck on vibemoji after any click. The user
+      // — otherwise focus gets stuck on vibebud after any click. The user
       // can re-focus the chat input by moving the cursor back and clicking.
       win.blur();
     }
@@ -142,7 +142,7 @@ app.whenReady().then(() => {
       const iconPath = path.join(__dirname, 'build', 'tray.png');
       const icon = nativeImage.createFromPath(iconPath);
       const n = new Notification({
-        title: String(title || 'vibemoji'),
+        title: String(title || 'vibebud'),
         body: String(body || ''),
         icon: icon.isEmpty() ? undefined : icon,
         silent,
@@ -151,15 +151,15 @@ app.whenReady().then(() => {
     } catch { /* noop */ }
   }
 
-  ipcMain.on('vibemoji:notify', (_event, payload) => {
+  ipcMain.on('vibebud:notify', (_event, payload) => {
     if (!payload || typeof payload !== 'object') return;
     notifyDesktop(payload.title, payload.body);
   });
 
-  ipcMain.on('vibemoji:refresh-pair-token', () => { void refreshPairingWindow(); });
+  ipcMain.on('vibebud:refresh-pair-token', () => { void refreshPairingWindow(); });
 
-  ipcMain.on('vibemoji:show-pairing', () => {
-    void showPairingWindow({ port: Number(process.env.VIBEMOJI_BRIDGE_PORT || DEFAULT_PORT) });
+  ipcMain.on('vibebud:show-pairing', () => {
+    void showPairingWindow({ port: Number(process.env.VIBEBUD_BRIDGE_PORT || DEFAULT_PORT) });
   });
 
   ipcMain.on('set-focusable', (_event, focusable) => {
@@ -196,23 +196,23 @@ app.whenReady().then(() => {
   });
   ipcMain.handle('codex:list', () => localCodex.list());
 
-  // WS bridge: lets paired vibemoji clients (Android, web) drive a `claude`
+  // WS bridge: lets paired vibebud clients (Android, web) drive a `claude`
   // subprocess running on this PC. Token is auto-generated and persisted in
   // userData; phone pairs by scanning the QR from the tray menu (deep link
-  // encoding url + token). VIBEMOJI_BRIDGE_TOKEN env var overrides the
-  // persisted token; setting VIBEMOJI_BRIDGE_DISABLED=1 skips the bridge
+  // encoding url + token). VIBEBUD_BRIDGE_TOKEN env var overrides the
+  // persisted token; setting VIBEBUD_BRIDGE_DISABLED=1 skips the bridge
   // entirely.
-  if (!process.env.VIBEMOJI_BRIDGE_DISABLED) {
-    const port = Number(process.env.VIBEMOJI_BRIDGE_PORT || DEFAULT_PORT);
-    const host = process.env.VIBEMOJI_BRIDGE_HOST || '0.0.0.0';
-    const token = process.env.VIBEMOJI_BRIDGE_TOKEN || getOrCreateToken();
+  if (!process.env.VIBEBUD_BRIDGE_DISABLED) {
+    const port = Number(process.env.VIBEBUD_BRIDGE_PORT || DEFAULT_PORT);
+    const host = process.env.VIBEBUD_BRIDGE_HOST || '0.0.0.0';
+    const token = process.env.VIBEBUD_BRIDGE_TOKEN || getOrCreateToken();
     startBridgeServer({
       host, port, token,
       // Surface bridge-level lifecycle events as desktop notifications so the
       // user sees when their phone connects and when sessions get spun up.
       onEvent: (kind, info) => {
         if (kind === 'paired') {
-          notifyDesktop('Phone connected', `vibemoji bridge accepted a client from ${info.peer}`);
+          notifyDesktop('Phone connected', `vibebud bridge accepted a client from ${info.peer}`);
         } else if (kind === 'session-start') {
           const buddy = info.buddyId ? ` for ${String(info.buddyId).slice(0, 8)}` : '';
           const agent = info.agent === 'codex' ? 'Codex' : 'Claude Code';

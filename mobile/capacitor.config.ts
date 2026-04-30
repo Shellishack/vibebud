@@ -1,10 +1,10 @@
 import type { CapacitorConfig } from '@capacitor/cli';
 
-const devUrl = process.env.VIBEMOJI_DEV_URL;
+const devUrl = process.env.VIBEBUD_DEV_URL;
 
 const config: CapacitorConfig = {
-  appId: 'dev.vibemoji.android',
-  appName: 'vibemoji',
+  appId: 'dev.vibebud.android',
+  appName: 'vibebud',
   // Point straight at core's static export — no intermediate copy. Capacitor
   // happily accepts a webDir outside the project root, so `cap sync` reads
   // directly from `core/out/` and we don't need a separate `www/` mirror.

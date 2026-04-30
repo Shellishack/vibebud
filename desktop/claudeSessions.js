@@ -5,7 +5,7 @@ const { spawn } = require('child_process');
 const os = require('os');
 
 function claudeBinary() {
-  return process.env.VIBEMOJI_CLAUDE_BIN || 'claude';
+  return process.env.VIBEBUD_CLAUDE_BIN || 'claude';
 }
 
 function createClaudeHost({ emit }) {
@@ -13,7 +13,7 @@ function createClaudeHost({ emit }) {
 
   function start(buddyId, opts = {}) {
     if (sessions.has(buddyId)) return { ok: true, alreadyRunning: true };
-    const cwd = opts.cwd || process.env.VIBEMOJI_CLAUDE_CWD || os.homedir();
+    const cwd = opts.cwd || process.env.VIBEBUD_CLAUDE_CWD || os.homedir();
     const args = [
       '--print',
       '--input-format', 'stream-json',

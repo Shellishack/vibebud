@@ -87,8 +87,8 @@ export const XP_REWARDS = {
   ping: 2,
 } as const;
 
-const STORE_KEY = 'vibemoji.gamification.v1';
-const STORE_EVENT = 'vibemoji:gamificationChange';
+const STORE_KEY = 'vibebud.gamification.v1';
+const STORE_EVENT = 'vibebud:gamificationChange';
 const DEFAULT_BOND: BondProfile = {
   bondXp: 0,
   bondLevel: 1,

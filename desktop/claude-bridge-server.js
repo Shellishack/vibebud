@@ -1,4 +1,4 @@
-// WebSocket bridge that lets remote vibemoji clients (Android, web) drive a
+// WebSocket bridge that lets remote vibebud clients (Android, web) drive a
 // `claude` subprocess running on this machine. Same protocol the in-process
 // IPC bridge uses, just JSON over WS instead of Electron IPC.
 //
@@ -27,16 +27,16 @@ function startBridgeServer({ port, host = '0.0.0.0', token, onEvent }) {
   let WebSocketServer;
   try { ({ WebSocketServer } = require('ws')); }
   catch (err) {
-    console.warn('[vibemoji-bridge] `ws` package not installed — bridge disabled.', err?.message);
+    console.warn('[vibebud-bridge] `ws` package not installed — bridge disabled.', err?.message);
     return null;
   }
   if (!token) {
-    console.warn('[vibemoji-bridge] refusing to start without VIBEMOJI_BRIDGE_TOKEN.');
+    console.warn('[vibebud-bridge] refusing to start without VIBEBUD_BRIDGE_TOKEN.');
     return null;
   }
 
   const wss = new WebSocketServer({ host, port });
-  console.log(`[vibemoji-bridge] listening on ws://${host}:${port}`);
+  console.log(`[vibebud-bridge] listening on ws://${host}:${port}`);
 
   wss.on('connection', (ws, req) => {
     const peer = req.socket.remoteAddress;
@@ -107,7 +107,7 @@ function startBridgeServer({ port, host = '0.0.0.0', token, onEvent }) {
     ws.on('close', () => {
       hosts.claude.stopAll();
       hosts.codex.stopAll();
-      console.log(`[vibemoji-bridge] connection from ${peer} closed; sessions stopped.`);
+      console.log(`[vibebud-bridge] connection from ${peer} closed; sessions stopped.`);
     });
   });
 

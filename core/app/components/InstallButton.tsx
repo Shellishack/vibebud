@@ -6,15 +6,16 @@
 // is appropriate here.
 
 import { useEffect, useState } from 'react';
+import { useTranslations } from '../../lib/hooks/use-translations';
 import { usePlatform } from './hooks/usePlatform';
 
 type Target = { id: string; label: string; file: string; ext: string };
 
 const TARGETS: Target[] = [
-  { id: 'win',   label: 'Windows',  file: '/installers/vibemoji-desktop-setup.exe', ext: 'exe' },
-  { id: 'mac',   label: 'macOS',    file: '/installers/vibemoji-desktop.dmg',       ext: 'dmg' },
-  { id: 'linux', label: 'Linux',    file: '/installers/vibemoji-desktop.AppImage',  ext: 'AppImage' },
-  { id: 'android', label: 'Android', file: '/installers/vibemoji.apk',              ext: 'apk' },
+  { id: 'win',   label: 'Windows',  file: '/installers/vibebud-desktop-setup.exe', ext: 'exe' },
+  { id: 'mac',   label: 'macOS',    file: '/installers/vibebud-desktop.dmg',       ext: 'dmg' },
+  { id: 'linux', label: 'Linux',    file: '/installers/vibebud-desktop.AppImage',  ext: 'AppImage' },
+  { id: 'android', label: 'Android', file: '/installers/vibebud.apk',              ext: 'apk' },
 ];
 
 const FALLBACK = '/installers/README.txt';
@@ -29,6 +30,7 @@ function detectTarget(): Target {
 }
 
 export default function InstallButton() {
+  const { t } = useTranslations();
   const adapter = usePlatform();
   const insideElectron = adapter.id === 'electron';
   const [target, setTarget] = useState<Target>(TARGETS[0]);
@@ -45,7 +47,7 @@ export default function InstallButton() {
         e.preventDefault();
         const a = document.createElement('a');
         a.href = FALLBACK;
-        a.download = `vibemoji-installer-placeholder.txt`;
+        a.download = `vibebud-installer-placeholder.txt`;
         document.body.appendChild(a);
         a.click();
         a.remove();
@@ -60,7 +62,7 @@ export default function InstallButton() {
     return (
       <div className="inline-flex items-center gap-2 rounded-full border border-emerald-300 bg-emerald-50 px-4 py-2 text-sm font-medium text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300">
         <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-        running in desktop app
+        {t('install.runningDesktop')}
       </div>
     );
   }
@@ -79,12 +81,12 @@ export default function InstallButton() {
             <path d="m7 10 5 5 5-5" />
             <path d="M5 21h14" />
           </svg>
-          Install for {target.label}
+          {t('install.installFor', { platform: target.label })}
         </a>
         <button
           type="button"
           onClick={() => setOpen((o) => !o)}
-          aria-label="Choose another platform"
+          aria-label={t('install.choosePlatform')}
           className="border-l border-white/20 bg-gradient-to-r from-fuchsia-500 to-fuchsia-600 px-3 text-white transition-opacity hover:opacity-95"
         >
           <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">

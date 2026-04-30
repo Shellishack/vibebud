@@ -1,6 +1,6 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
-contextBridge.exposeInMainWorld('vibemoji', {
+contextBridge.exposeInMainWorld('vibebud', {
   platform: process.platform,
   isElectron: true,
   setInteractive: (interactive) => ipcRenderer.send('set-interactive', Boolean(interactive)),
@@ -12,12 +12,12 @@ contextBridge.exposeInMainWorld('vibemoji', {
     ipcRenderer.on('spawn-buddy', handler);
     return () => ipcRenderer.off('spawn-buddy', handler);
   },
-  showNotification: (payload) => ipcRenderer.send('vibemoji:notify', payload),
-  showPairing: () => ipcRenderer.send('vibemoji:show-pairing'),
+  showNotification: (payload) => ipcRenderer.send('vibebud:notify', payload),
+  showPairing: () => ipcRenderer.send('vibebud:show-pairing'),
   onOpenSettings: (cb) => {
     const handler = () => cb();
-    ipcRenderer.on('vibemoji:open-settings', handler);
-    return () => ipcRenderer.off('vibemoji:open-settings', handler);
+    ipcRenderer.on('vibebud:open-settings', handler);
+    return () => ipcRenderer.off('vibebud:open-settings', handler);
   },
   // Per-buddy Claude Code session bridge. The main process spawns one
   // long-running `claude` subprocess per buddyId in stream-json mode and

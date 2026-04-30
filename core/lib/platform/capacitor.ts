@@ -1,7 +1,7 @@
 import type { ClaudeCodeBridge, InteractiveRect, NotificationPayload, PlatformAdapter } from './types';
 import { getRemoteClaudeBridge, getRemoteCodexBridge } from './remoteClaude';
 
-type VibemojiNative = {
+type VibebudNative = {
   setTouchableRegion?: (json: string) => void;
   setInteractive?: (v: boolean) => void;
   setSpilledOut?: (v: boolean) => void;
@@ -15,15 +15,15 @@ type VibemojiNative = {
   scanQrForPair?: () => void;
 };
 
-const native = (): VibemojiNative | undefined => {
+const native = (): VibebudNative | undefined => {
   if (typeof window === 'undefined') return undefined;
-  return (window as unknown as { vibemojiNative?: VibemojiNative }).vibemojiNative;
+  return (window as unknown as { vibebudNative?: VibebudNative }).vibebudNative;
 };
 
 // Capacitor LocalNotifications plugin — only present in the BridgeActivity
 // WebView (MainActivity), where Capacitor injects `Capacitor.Plugins.*`.
 // In the overlay's hand-rolled WebView this is undefined and we fall back
-// to the vibemojiNative bridge.
+// to the vibebudNative bridge.
 type LocalNotificationsPlugin = {
   checkPermissions: () => Promise<{ display: 'granted' | 'denied' | 'prompt' | 'prompt-with-rationale' }>;
   requestPermissions: () => Promise<{ display: 'granted' | 'denied' | 'prompt' | 'prompt-with-rationale' }>;
@@ -146,7 +146,7 @@ export class CapacitorAdapter implements PlatformAdapter {
     // Prefer the Capacitor LocalNotifications plugin when available — that's
     // the supported path inside the MainActivity (BridgeActivity) WebView,
     // and it correctly handles channels + Android 14+ delivery rules. The
-    // overlay's hand-rolled WebView falls back to vibemojiNative.
+    // overlay's hand-rolled WebView falls back to vibebudNative.
     const ln = localNotifications();
     if (ln) {
       try {
@@ -234,12 +234,12 @@ export class CapacitorAdapter implements PlatformAdapter {
   }
 
   // Two WebViews can host this code on Android:
-  //   1. Overlay's hand-rolled WebView — has `vibemojiNative`, no Capacitor.
+  //   1. Overlay's hand-rolled WebView — has `vibebudNative`, no Capacitor.
   //      Bridge to native, which bounces MainActivity to /scan/ to call the
   //      plugin. (Overlay can't call Capacitor plugins directly.)
   //   2. MainActivity's BridgeActivity WebView — has Capacitor plugins, no
-  //      `vibemojiNative`. We call the plugin directly here, no navigation.
-  // The result of the actual scan is delivered via the `vibemoji:paired`
+  //      `vibebudNative`. We call the plugin directly here, no navigation.
+  // The result of the actual scan is delivered via the `vibebud:paired`
   // window event so AppSettings refreshes either way.
   async scanQrForPair(): Promise<{ ok: boolean; reason?: string }> {
     const n = native();
@@ -265,17 +265,17 @@ export class CapacitorAdapter implements PlatformAdapter {
       let parsed: URL;
       try { parsed = new URL(text); }
       catch { return { ok: false, reason: `Scanned text is not a URL: ${text}` }; }
-      if (parsed.protocol !== 'vibemoji:' || parsed.host !== 'pair') {
-        return { ok: false, reason: `Not a vibemoji://pair link: ${text}` };
+      if (parsed.protocol !== 'vibebud:' || parsed.host !== 'pair') {
+        return { ok: false, reason: `Not a vibebud://pair link: ${text}` };
       }
       const url = parsed.searchParams.get('url');
       const token = parsed.searchParams.get('token');
       if (!url || !token) return { ok: false, reason: 'Link missing url or token.' };
       // Persist + notify listeners (AppSettings refreshes via this event).
       try {
-        localStorage.setItem('vibemoji.claudeRemote.v1', JSON.stringify({ url, token }));
+        localStorage.setItem('vibebud.claudeRemote.v1', JSON.stringify({ url, token }));
       } catch (e) { return { ok: false, reason: `localStorage write failed: ${e}` }; }
-      window.dispatchEvent(new CustomEvent('vibemoji:paired'));
+      window.dispatchEvent(new CustomEvent('vibebud:paired'));
       return { ok: true };
     } catch (e) {
       const msg = e instanceof Error ? `${e.name}: ${e.message}` : String(e);
@@ -284,7 +284,7 @@ export class CapacitorAdapter implements PlatformAdapter {
   }
 
   // Capacitor can't spawn local processes. When the user has configured a
-  // remote bridge (vibemoji desktop running with VIBEMOJI_BRIDGE_TOKEN set),
+  // remote bridge (vibebud desktop running with VIBEBUD_BRIDGE_TOKEN set),
   // we relay over WebSocket to a `claude` subprocess on that machine. With no
   // config, returns null and the UI hides the Claude Code toggle.
   claudeCode(): ClaudeCodeBridge | null { return getRemoteClaudeBridge(); }
@@ -293,7 +293,7 @@ export class CapacitorAdapter implements PlatformAdapter {
   onOutsideTap(cb: () => void): () => void {
     if (typeof window === 'undefined') return () => {};
     const handler = () => cb();
-    window.addEventListener('vibemoji:outsideTap', handler);
-    return () => window.removeEventListener('vibemoji:outsideTap', handler);
+    window.addEventListener('vibebud:outsideTap', handler);
+    return () => window.removeEventListener('vibebud:outsideTap', handler);
   }
 }

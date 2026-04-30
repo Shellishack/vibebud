@@ -158,8 +158,8 @@ export default function BuddyInstance({ state, anchor, canRemove, onChange, onSp
   const codexBridge = useMemo(() => adapter.codexCode(), [adapter, claudeBridgeTick]);
   useEffect(() => {
     const onPaired = () => setClaudeBridgeTick((n) => n + 1);
-    window.addEventListener('vibemoji:paired', onPaired);
-    return () => window.removeEventListener('vibemoji:paired', onPaired);
+    window.addEventListener('vibebud:paired', onPaired);
+    return () => window.removeEventListener('vibebud:paired', onPaired);
   }, []);
   const [claudeActive, setClaudeActive] = useState(false);
   const [claudeBusy, setClaudeBusy] = useState(false);
@@ -323,7 +323,7 @@ export default function BuddyInstance({ state, anchor, canRemove, onChange, onSp
     adapter.setOverlayExpanded(open);
   }, [open, adapter]);
 
-  // Native tap-zone window dispatches `vibemoji:avatarTap` when the user taps
+  // Native tap-zone window dispatches `vibebud:avatarTap` when the user taps
   // the avatar's visual area. The avatar element itself can't receive pointer
   // events on Capacitor (its window is FLAG_NOT_TOUCHABLE), so we open the
   // panel from the window event instead.
@@ -389,15 +389,15 @@ export default function BuddyInstance({ state, anchor, canRemove, onChange, onSp
       adapter.notifyDragEnd(state.id);
       dragBaseRef.current = null;
     };
-    window.addEventListener('vibemoji:avatarTap', onTap);
-    window.addEventListener('vibemoji:avatarDragStart', onDragStart);
-    window.addEventListener('vibemoji:avatarDragMove', onDragMoveEvt);
-    window.addEventListener('vibemoji:avatarDragEnd', onDragEndEvt);
+    window.addEventListener('vibebud:avatarTap', onTap);
+    window.addEventListener('vibebud:avatarDragStart', onDragStart);
+    window.addEventListener('vibebud:avatarDragMove', onDragMoveEvt);
+    window.addEventListener('vibebud:avatarDragEnd', onDragEndEvt);
     return () => {
-      window.removeEventListener('vibemoji:avatarTap', onTap);
-      window.removeEventListener('vibemoji:avatarDragStart', onDragStart);
-      window.removeEventListener('vibemoji:avatarDragMove', onDragMoveEvt);
-      window.removeEventListener('vibemoji:avatarDragEnd', onDragEndEvt);
+      window.removeEventListener('vibebud:avatarTap', onTap);
+      window.removeEventListener('vibebud:avatarDragStart', onDragStart);
+      window.removeEventListener('vibebud:avatarDragMove', onDragMoveEvt);
+      window.removeEventListener('vibebud:avatarDragEnd', onDragEndEvt);
     };
   }, [adapter, state.id]);
   useEffect(() => {
@@ -413,8 +413,8 @@ export default function BuddyInstance({ state, anchor, canRemove, onChange, onSp
   useEffect(() => {
     if (!open) return;
     const onBack = () => setOpen(false);
-    window.addEventListener('vibemoji:back', onBack);
-    return () => window.removeEventListener('vibemoji:back', onBack);
+    window.addEventListener('vibebud:back', onBack);
+    return () => window.removeEventListener('vibebud:back', onBack);
   }, [open]);
   const update = (patch: Partial<BuddyInstanceState>) => onChange({ ...stateRef.current, ...patch });
   const withXp = (
@@ -547,7 +547,7 @@ export default function BuddyInstance({ state, anchor, canRemove, onChange, onSp
         if (code !== 0) {
           const detail = stderr
             ? stderr.trim()
-            : `no stderr - likely '${bin || (activeCodeAgent === 'codex' ? 'codex' : 'claude')}' is not on PATH or not authenticated (cwd: ${cwd || '?'}). Try authenticating in a terminal, or set ${activeCodeAgent === 'codex' ? 'VIBEMOJI_CODEX_BIN' : 'VIBEMOJI_CLAUDE_BIN'} to the full path.`;
+            : `no stderr - likely '${bin || (activeCodeAgent === 'codex' ? 'codex' : 'claude')}' is not on PATH or not authenticated (cwd: ${cwd || '?'}). Try authenticating in a terminal, or set ${activeCodeAgent === 'codex' ? 'VIBEBUD_CODEX_BIN' : 'VIBEBUD_CLAUDE_BIN'} to the full path.`;
           appendStatus(`(${activeCodeLabel} exited with code ${code ?? '?'}: ${detail})`);
         }
         setClaudeBusy(false);
@@ -761,7 +761,7 @@ export default function BuddyInstance({ state, anchor, canRemove, onChange, onSp
       draggingRef.current = false;
       justDraggedRef.current = false;
       setIsDragging(false);
-      ((window as any).__vibemojiDragging as Set<string> | undefined)?.delete(state.id);
+      ((window as any).__vibebudDragging as Set<string> | undefined)?.delete(state.id);
     }
     try { (e.currentTarget as Element).setPointerCapture(e.pointerId); } catch { /* noop */ }
     // Capture grab offset (cursor relative to the avatar's center, in CSS
@@ -776,7 +776,7 @@ export default function BuddyInstance({ state, anchor, canRemove, onChange, onSp
     draggingRef.current = true;
     setIsDragging(true);
     adapter.notifyDragStart(state.id);
-    const dragSet: Set<string> = ((window as any).__vibemojiDragging ||= new Set<string>());
+    const dragSet: Set<string> = ((window as any).__vibebudDragging ||= new Set<string>());
     dragSet.add(state.id);
 
     let raf = 0;

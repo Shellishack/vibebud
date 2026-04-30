@@ -6,7 +6,7 @@
 
 const LOTTIE_URL = (cp: string) => `https://fonts.gstatic.com/s/e/notoemoji/latest/${cp}/lottie.json`;
 
-const LOTTIE_CACHE_KEY = 'vibemoji.notoLottieCache.v1';
+const LOTTIE_CACHE_KEY = 'vibebud.notoLottieCache.v1';
 const LOTTIE_CACHE_MAX = 50;
 
 const lsGet = (k: string): string | null => {

@@ -87,7 +87,7 @@ export interface PlatformAdapter {
   // Capacitor-only: kicks off the in-app QR scanner. Returns a synchronous
   // status so callers can surface a visible failure when the native bridge
   // is missing the method (e.g. stale APK) instead of silently no-op'ing.
-  // Pairing itself completes asynchronously via the `vibemoji:paired` event.
+  // Pairing itself completes asynchronously via the `vibebud:paired` event.
   scanQrForPair?(): Promise<{ ok: boolean; reason?: string }>;
 }
 

@@ -2,8 +2,8 @@
 // The integrator and per-buddy/group flight state lives in Buddy.tsx, where
 // cross-body collision detection has natural access to all bodies.
 
-const MODE_KEY = 'vibemoji.physics.mode.v1';
-const LEGACY_KEY = 'vibemoji.physics.v1';
+const MODE_KEY = 'vibebud.physics.mode.v1';
+const LEGACY_KEY = 'vibebud.physics.v1';
 
 export type PhysicsMode = 'off' | 'bouncy' | 'astronaut';
 const ALL_MODES: PhysicsMode[] = ['off', 'bouncy', 'astronaut'];
@@ -23,10 +23,10 @@ export function getPhysicsMode(): PhysicsMode {
 export function setPhysicsMode(m: PhysicsMode) {
   if (typeof window === 'undefined') return;
   try { localStorage.setItem(MODE_KEY, m); } catch { /* noop */ }
-  window.dispatchEvent(new CustomEvent<PhysicsMode>('vibemoji:physicsChange', { detail: m }));
+  window.dispatchEvent(new CustomEvent<PhysicsMode>('vibebud:physicsChange', { detail: m }));
 }
 
-const ROTATION_KEY = 'vibemoji.rotation.v1';
+const ROTATION_KEY = 'vibebud.rotation.v1';
 export function getRotationEnabled(): boolean {
   if (typeof window === 'undefined') return true;
   try {
@@ -37,7 +37,7 @@ export function getRotationEnabled(): boolean {
 export function setRotationEnabled(v: boolean) {
   if (typeof window === 'undefined') return;
   try { localStorage.setItem(ROTATION_KEY, v ? '1' : '0'); } catch { /* noop */ }
-  window.dispatchEvent(new CustomEvent<boolean>('vibemoji:rotationChange', { detail: v }));
+  window.dispatchEvent(new CustomEvent<boolean>('vibebud:rotationChange', { detail: v }));
 }
 
 // Back-compat for callers still using the boolean toggle.

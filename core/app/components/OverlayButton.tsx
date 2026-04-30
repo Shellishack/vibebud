@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { useTranslations } from '../../lib/hooks/use-translations';
 import { usePlatform } from './hooks/usePlatform';
 
 type OverlayPlugin = {
@@ -18,6 +19,7 @@ const getOverlay = (): OverlayPlugin | null => {
 };
 
 export default function OverlayButton() {
+  const { t } = useTranslations();
   const adapter = usePlatform();
   const [running, setRunning] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -61,7 +63,7 @@ export default function OverlayButton() {
       disabled={busy}
       className="inline-flex items-center gap-2 rounded-full bg-violet-600 px-5 py-2.5 text-sm font-medium text-white shadow-lg shadow-violet-500/30 transition-colors hover:bg-violet-700 disabled:opacity-60"
     >
-      {running ? 'stop floating' : 'float on top of my apps'}
+      {running ? t('overlay.stopFloating') : t('overlay.floatOnTop')}
     </button>
   );
 }

@@ -1,4 +1,4 @@
-package dev.vibemoji.android;
+package dev.vibebud.android;
 
 import android.Manifest;
 import android.app.Activity;
@@ -21,7 +21,7 @@ import com.getcapacitor.annotation.CapacitorPlugin;
  * Capacitor bridge for the floating-overlay service. The renderer calls these
  * from core/ via Capacitor.Plugins.Overlay.{requestPermission,start,stop,setInteractive}.
  *
- * Counterpart to desktop/preload.js's window.vibemoji.* IPC surface.
+ * Counterpart to desktop/preload.js's window.vibebud.* IPC surface.
  */
 @CapacitorPlugin(name = "Overlay")
 public class OverlayPlugin extends Plugin {
@@ -98,7 +98,7 @@ public class OverlayPlugin extends Plugin {
      * Bridge from the host activity's WebView (the regular Capacitor one). The
      * overlay service has its own NativeBridge; this method exists so that the
      * in-app UI (not the overlay itself) can also toggle interactivity if it
-     * ever needs to. In practice the overlay's own JS calls vibemojiNative
+     * ever needs to. In practice the overlay's own JS calls vibebudNative
      * directly.
      */
     @PluginMethod
@@ -110,7 +110,7 @@ public class OverlayPlugin extends Plugin {
 
     @PluginMethod
     public void showNotification(PluginCall call) {
-        String title = call.getString("title", "vibemoji");
+        String title = call.getString("title", "vibebud");
         String body = call.getString("body", "");
         OverlayService.showSystemNotification(getContext(), title, body);
         call.resolve();

@@ -1,6 +1,6 @@
 import type { ClaudeCodeBridge, InteractiveRect, NotificationPayload, PlatformAdapter } from './types';
 
-type VibemojiBridge = {
+type VibebudBridge = {
   setInteractive?: (v: boolean) => void;
   setFocusable?: (v: boolean) => void;
   setBounds?: (b: { width: number; height: number }) => void;
@@ -14,9 +14,9 @@ type VibemojiBridge = {
   isElectron?: boolean;
 };
 
-const bridge = (): VibemojiBridge | undefined => {
+const bridge = (): VibebudBridge | undefined => {
   if (typeof window === 'undefined') return undefined;
-  return (window as unknown as { vibemoji?: VibemojiBridge }).vibemoji;
+  return (window as unknown as { vibebud?: VibebudBridge }).vibebud;
 };
 
 export class ElectronAdapter implements PlatformAdapter {

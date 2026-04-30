@@ -1,4 +1,4 @@
-package dev.vibemoji.android;
+package dev.vibebud.android;
 
 import android.app.Activity;
 import android.content.Intent;
@@ -28,10 +28,10 @@ import androidx.core.content.ContextCompat;
  * existing callers.
  */
 public class PermissionRequestActivity extends Activity {
-    private static final String TAG = "VibemojiPerm";
-    public static final String EXTRA_PERMISSION = "dev.vibemoji.android.extra.PERMISSION";
+    private static final String TAG = "VibebudPerm";
+    public static final String EXTRA_PERMISSION = "dev.vibebud.android.extra.PERMISSION";
     private static final int REQ_CODE = 0xB001;
-    private static final String PREFS = "vibemoji.perms";
+    private static final String PREFS = "vibebud.perms";
 
     private boolean dialogAttempted = false;
     private boolean dialogShown = false;

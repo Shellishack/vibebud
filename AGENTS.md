@@ -6,7 +6,7 @@ This private monorepo has three main packages:
 
 - `core/`: Next.js 16 app shared by all shells. Routes live in `core/app/`, UI in `core/app/components/`, and platform adapters in `core/lib/platform/`.
 - `desktop/`: Electron shell, pairing bridge, preload scripts, and Windows build assets. Desktop builds sync web output into `desktop/core-out/`.
-- `mobile/`: Capacitor Android wrapper. Native code lives in `mobile/android/app/src/main/java/dev/vibemoji/android/`; generated resources and launch icons are under `mobile/android/app/src/main/res/`.
+- `mobile/`: Capacitor Android wrapper. Native code lives in `mobile/android/app/src/main/java/dev/vibebud/android/`; generated resources and launch icons are under `mobile/android/app/src/main/res/`.
 
 Root PowerShell scripts provide local notification helpers. Do not commit generated build output unless intentional.
 

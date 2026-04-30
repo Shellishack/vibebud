@@ -20,7 +20,7 @@ const BUILD_MARKER = 'scan-v3-2026-04-28';
 type HostBridge = { closeScanActivity?: () => void };
 const host = (): HostBridge | undefined =>
   (typeof window !== 'undefined'
-    ? (window as unknown as { vibemojiHost?: HostBridge }).vibemojiHost
+    ? (window as unknown as { vibebudHost?: HostBridge }).vibebudHost
     : undefined);
 
 function finishScan() {
@@ -37,15 +37,15 @@ function applyPairing(raw: string): string | null {
   let parsed: URL;
   try { parsed = new URL(trimmed); }
   catch { return 'Not a valid URL.'; }
-  if (parsed.protocol !== 'vibemoji:' || parsed.host !== 'pair') {
-    return 'Not a vibemoji://pair link.';
+  if (parsed.protocol !== 'vibebud:' || parsed.host !== 'pair') {
+    return 'Not a vibebud://pair link.';
   }
   const url = parsed.searchParams.get('url');
   const token = parsed.searchParams.get('token');
   if (!url || !token) return 'Link is missing url or token.';
   setRemoteClaudeConfig({ url, token });
   if (typeof window !== 'undefined') {
-    window.dispatchEvent(new CustomEvent('vibemoji:paired'));
+    window.dispatchEvent(new CustomEvent('vibebud:paired'));
   }
   return null;
 }
@@ -149,13 +149,13 @@ export default function ScanPage() {
 
       <div className="rounded-2xl border border-zinc-200 p-3 dark:border-zinc-700">
         <p className="mb-2 text-xs text-zinc-600 dark:text-zinc-300">
-          Manual fallback: paste the <code className="rounded bg-zinc-200 px-1 dark:bg-zinc-800">vibemoji://pair?…</code> link from desktop.
+          Manual fallback: paste the <code className="rounded bg-zinc-200 px-1 dark:bg-zinc-800">vibebud://pair?…</code> link from desktop.
         </p>
         <input
           type="text"
           value={pasteValue}
           onChange={(e) => setPasteValue(e.target.value)}
-          placeholder="vibemoji://pair?url=…&token=…"
+          placeholder="vibebud://pair?url=…&token=…"
           className="mb-2 w-full rounded-lg border border-zinc-300 bg-white px-2 py-1.5 font-mono text-[11px] outline-none focus:border-violet-500 dark:border-zinc-700 dark:bg-zinc-900"
         />
         <div className="flex gap-2">

@@ -1,6 +1,6 @@
 // Pairing helpers: a persistent bridge token, the LAN address peers should
 // connect to, and a small QR-code window the user can scan with their phone's
-// regular camera app. The QR encodes a `vibemoji://pair?...` deep link; the
+// regular camera app. The QR encodes a `vibebud://pair?...` deep link; the
 // Android app registers that scheme and writes the payload to its WebView's
 // localStorage on receipt, so no in-app camera/scanner is needed.
 const { app, BrowserWindow } = require('electron');
@@ -68,7 +68,7 @@ function getPairingPayload({ port = DEFAULT_PORT } = {}) {
 }
 
 function buildPairingUri(payload) {
-  const u = new URL('vibemoji://pair');
+  const u = new URL('vibebud://pair');
   u.searchParams.set('url', payload.url);
   u.searchParams.set('token', payload.token);
   return u.toString();
@@ -94,7 +94,7 @@ async function loadPairingContent(win, port) {
 function buildPairingHtml({ payload, uri, svg }) {
   return `<!doctype html>
 <meta charset="utf-8">
-<title>Pair phone with vibemoji</title>
+<title>Pair phone with vibebud</title>
 <style>
   :root { color-scheme: light dark; }
   body {
@@ -133,13 +133,13 @@ function buildPairingHtml({ payload, uri, svg }) {
 <div class="pair-code" title="6-digit pairing token">${payload.token}</div>
 <div class="meta">${payload.url}</div>
 <div class="code">${uri}</div>
-<button onclick="window.vibemojiPair && window.vibemojiPair.refresh()" style="margin-top:4px;padding:8px 14px;border:0;border-radius:8px;background:#4c1d95;color:#fff;font:600 13px system-ui;cursor:pointer">New code</button>`;
+<button onclick="window.vibebudPair && window.vibebudPair.refresh()" style="margin-top:4px;padding:8px 14px;border:0;border-radius:8px;background:#4c1d95;color:#fff;font:600 13px system-ui;cursor:pointer">New code</button>`;
 }
 
 async function showPairingWindow({ port = DEFAULT_PORT } = {}) {
   try { require('qrcode'); }
   catch (err) {
-    console.warn('[vibemoji-pairing] `qrcode` package not installed — cannot render QR.', err?.message);
+    console.warn('[vibebud-pairing] `qrcode` package not installed — cannot render QR.', err?.message);
     return;
   }
   pairingPort = port;
@@ -150,7 +150,7 @@ async function showPairingWindow({ port = DEFAULT_PORT } = {}) {
   pairingWindow = new BrowserWindow({
     width: 420,
     height: 700,
-    title: 'Pair phone with vibemoji',
+    title: 'Pair phone with vibebud',
     resizable: false,
     minimizable: false,
     maximizable: false,

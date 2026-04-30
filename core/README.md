@@ -5,7 +5,7 @@ This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-
 First, create `core/.env.local` so the UI knows where the backend lives:
 
 ```bash
-NEXT_PUBLIC_VIBEMOJI_SERVER_URL=http://localhost:3070
+NEXT_PUBLIC_VIBEBUD_SERVER_URL=http://localhost:3070
 ```
 
 Then run the development server:

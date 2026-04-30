@@ -1,0 +1,165 @@
+{
+  "language": {
+    "label": "Language"
+  },
+  "home": {
+    "badge": "vibebud · code buddy preview",
+    "headlinePrefix": "your friendly",
+    "headlineAccent": "agent buddy",
+    "headlineSuffix": ", floating right where you work.",
+    "description": "vibebud sits on top of your desktop, watching what your AI agents are doing on your behalf. it talks back in chat bubbles, taps you on the shoulder with toasts, and stays out of the way otherwise.",
+    "manageAvatars": "manage avatars",
+    "github": "GitHub",
+    "downloadMeta": "free · ~40 MB · auto-detects your OS",
+    "capabilities": {
+      "floating": {
+        "title": "floating avatar",
+        "body": "drag the buddy anywhere on screen. swap the avatar to whatever vibe matches your day."
+      },
+      "chat": {
+        "title": "chat bubbles",
+        "body": "click to talk. ask what your agents are up to or kick off a new task."
+      },
+      "toasts": {
+        "title": "toast pings",
+        "body": "quietly surfaces PRs ready for review and moments that need your input."
+      }
+    },
+    "tryTitle": "try it ->",
+    "tryBodyPrefix": "click the buddy in the bottom-right. drag it around. hit",
+    "tryPing": "ping",
+    "tryBodySuffix": "to fire a toast."
+  },
+  "install": {
+    "runningDesktop": "running in desktop app",
+    "installFor": "Install for {platform}",
+    "choosePlatform": "Choose another platform"
+  },
+  "overlay": {
+    "stopFloating": "stop floating",
+    "floatOnTop": "float on top of my apps"
+  },
+  "auth": {
+    "checkingSession": "Checking session...",
+    "signedIn": "Signed in",
+    "signIn": "Sign in",
+    "signOut": "Sign out",
+    "signInWithGoogle": "Sign in with Google"
+  },
+  "todo": {
+    "title": "todo board",
+    "subtitle": "assign work to a buddy by choosing their avatar.",
+    "openCount": "{count} open",
+    "placeholder": "add a task",
+    "add": "add",
+    "createBuddyFirst": "create a buddy first to assign tasks.",
+    "assignTo": "Assign to {name}",
+    "markIncomplete": "Mark todo incomplete",
+    "markComplete": "Mark todo complete",
+    "delete": "Delete todo",
+    "empty": "no tasks yet"
+  },
+  "manage": {
+    "back": "<- back",
+    "title": "manage avatars",
+    "description": "the personalities your buddies can wear. spawn one from the floating buddy menu, or create a custom one below.",
+    "newAvatar": "+ new avatar",
+    "builtInTitle": "built-in",
+    "builtInSubtitle": "six hand-tuned personalities, always available",
+    "customTitle": "custom",
+    "customEmptySubtitle": "no custom avatars yet - create one to get started",
+    "customSubtitle": "your custom avatars",
+    "createFirstCustom": "create your first custom avatar",
+    "builtInBadge": "built-in",
+    "noRole": "no role",
+    "systemPrompt": "system prompt",
+    "edit": "edit",
+    "delete": "delete",
+    "deleteConfirm": "Delete \"{name}\"? Existing buddies using it will fall back to a built-in.",
+    "modalNewTitle": "new avatar",
+    "modalEditTitle": "edit {name}",
+    "avatarFallback": "avatar",
+    "fields": {
+      "name": "name",
+      "role": "role",
+      "color": "color",
+      "greeting": "greeting",
+      "systemPrompt": "system prompt",
+      "greetingHint": "first message the buddy says when chat opens",
+      "systemPromptHint": "instructions sent to the LLM on every message",
+      "namePlaceholder": "e.g. Mentor",
+      "rolePlaceholder": "e.g. patient code reviewer",
+      "greetingPlaceholder": "hi! I'm...",
+      "systemPromptPlaceholder": "You are...",
+      "useColor": "Use {name}"
+    },
+    "cancel": "cancel",
+    "create": "create",
+    "save": "save"
+  },
+  "settings": {
+    "title": "App settings",
+    "close": "Close",
+    "account": "Account",
+    "pairWithDesktop": "Pair with desktop",
+    "pairDescription": "Routes Claude Code chats to a claude subprocess on your PC. On the desktop app, right-click any buddy -> Pair phone... to show the QR.",
+    "pairedWith": "Paired with {url}",
+    "openingScanner": "Opening scanner...",
+    "unknownFailure": "Unknown failure.",
+    "rescanQr": "Re-scan QR to pair",
+    "scanQr": "Scan QR to pair",
+    "scanUnavailable": "In-app camera scan isn't available on this platform. Open vibebud://pair?... via your browser to pair.",
+    "manualTitle": "Or enter manually",
+    "hostLabel": "Host (IP, IP:port, or ws://...)",
+    "tokenLabel": "Token",
+    "hostPlaceholder": "192.168.1.42",
+    "tokenPlaceholder": "paste token from desktop",
+    "pairManual": "Pair with these values",
+    "unpair": "Unpair",
+    "tokenRequired": "Token is required.",
+    "hostRequired": "Host is required.",
+    "invalidHost": "Not a valid host or URL.",
+    "invalidProtocol": "Use ws:// or wss://.",
+    "play": "Play",
+    "playDescription": "Off-center grabs add spin in every mode - flick from the edge for a frisbee throw.",
+    "physics": {
+      "calm": "Calm",
+      "calmDesc": "Classic snap-to-edge drag, no flinging.",
+      "bouncy": "Bouncy",
+      "bouncyDesc": "Drag-and-fling to send buddies sailing - they bounce off edges and bump into each other.",
+      "astronaut": "Astronaut",
+      "astronautDesc": "Zero-g drift: buddies float and spin endlessly, ricocheting off everything."
+    },
+    "rotateAvatars": "Rotate avatars",
+    "rotateDescription": "Off-center grabs swing the avatar; flicks add spin. Disable to keep avatars upright at all times.",
+    "collection": "Collection",
+    "collectionDescription": "Levels, daily tasks, bond, milestones, and team stats.",
+    "notifications": "Notifications",
+    "notificationsDescription": "Where pings show up - agent dispatched, PR ready, needs your input, etc.",
+    "inAppToast": "In-app toast (default)",
+    "inAppToastDesc": "Card slides up next to the buddy. Only visible while the buddy window is on screen.",
+    "nativeNotification": "Native system notification",
+    "nativeElectronDesc": "Windows Action Center / macOS Notification Center.",
+    "nativeAndroidDesc": "Android system notification tray.",
+    "nativeBrowserDesc": "Browser notification banner.",
+    "allowed": "Allowed",
+    "permissionNeeded": "Permission needed",
+    "on": "on",
+    "androidPermissionHint": "Android hasn't granted notification permission yet. Tap below to open the permission prompt or app settings.",
+    "browserPermissionHint": "Notification permission isn't granted by your browser/OS.",
+    "openPermissionSettings": "Open permission settings"
+  },
+  "collection": {
+    "title": "Collection",
+    "subtitle": "Daily goals and buddy growth",
+    "close": "Close collection",
+    "today": "Today",
+    "buddies": "Buddies",
+    "level": "Lv {level}",
+    "bond": "Bond Lv {level} · {mood}",
+    "stats": "{chats} chats · {tasks} tasks · {pings} pings",
+    "teams": "Teams",
+    "teamsEmpty": "Group buddies and complete an agent task to start tracking teams.",
+    "uses": "{count} uses"
+  }
+}

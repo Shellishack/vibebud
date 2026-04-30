@@ -1,4 +1,4 @@
-package dev.vibemoji.android;
+package dev.vibebud.android;
 
 import android.content.Intent;
 import android.net.Uri;
@@ -14,7 +14,7 @@ import com.getcapacitor.BridgeActivity;
 import org.json.JSONObject;
 
 public class MainActivity extends BridgeActivity {
-    public static final String EXTRA_SCAN_PAIR = "dev.vibemoji.android.extra.SCAN_PAIR";
+    public static final String EXTRA_SCAN_PAIR = "dev.vibebud.android.extra.SCAN_PAIR";
     // `return=close` tells /scan to call closeScanActivity() after success,
     // dropping MainActivity off the back stack so the user lands on the
     // overlay (which is still on top below us).
@@ -25,11 +25,11 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(OverlayPlugin.class);
         super.onCreate(savedInstanceState);
         // Expose a host bridge so the /scan route can dismiss this activity
-        // once it's done. Mirrors the vibemojiNative pattern used by the
+        // once it's done. Mirrors the vibebudNative pattern used by the
         // overlay's WebView. Capacitor's plugin bridge isn't a fit here
         // because we just need a one-shot finish() — not a plugin lifecycle.
         WebView wv = bridge != null ? bridge.getWebView() : null;
-        if (wv != null) wv.addJavascriptInterface(new HostBridge(), "vibemojiHost");
+        if (wv != null) wv.addJavascriptInterface(new HostBridge(), "vibebudHost");
         handlePairingIntent(getIntent());
         maybeRouteToScan(getIntent());
     }
@@ -60,7 +60,7 @@ public class MainActivity extends BridgeActivity {
     }
 
     /**
-     * Handles a vibemoji://pair?url=...&token=... deep link. The desktop tray
+     * Handles a vibebud://pair?url=...&token=... deep link. The desktop tray
      * "Pair phone…" command shows a QR encoding this URI; scanning it with the
      * phone's camera fires VIEW with our intent filter, landing here. We write
      * the pair into the WebView's localStorage so RemoteClaudeBridge picks it
@@ -71,7 +71,7 @@ public class MainActivity extends BridgeActivity {
         if (intent == null) return;
         Uri data = intent.getData();
         if (data == null) return;
-        if (!"vibemoji".equals(data.getScheme()) || !"pair".equals(data.getHost())) return;
+        if (!"vibebud".equals(data.getScheme()) || !"pair".equals(data.getHost())) return;
 
         String url = data.getQueryParameter("url");
         String token = data.getQueryParameter("token");
@@ -90,9 +90,9 @@ public class MainActivity extends BridgeActivity {
 
         WebView webView = bridge != null ? bridge.getWebView() : null;
         if (webView != null) {
-            String js = "try { localStorage.setItem('vibemoji.claudeRemote.v1', "
+            String js = "try { localStorage.setItem('vibebud.claudeRemote.v1', "
                     + JSONObject.quote(json)
-                    + "); window.dispatchEvent(new CustomEvent('vibemoji:paired')); } catch(e) {}";
+                    + "); window.dispatchEvent(new CustomEvent('vibebud:paired')); } catch(e) {}";
             webView.evaluateJavascript(js, null);
         }
 

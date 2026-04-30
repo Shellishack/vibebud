@@ -34,13 +34,13 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
 
-            <!-- Pairing deep link: vibemoji://pair?url=ws://...&token=... -->
+            <!-- Pairing deep link: vibebud://pair?url=ws://...&token=... -->
             <!-- Encoded in the QR shown by desktop's tray > "Pair phone…". -->
             <intent-filter android:autoVerify="false">
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
-                <data android:scheme="vibemoji" android:host="pair" />
+                <data android:scheme="vibebud" android:host="pair" />
             </intent-filter>
 
         </activity>

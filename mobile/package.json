@@ -1,11 +1,11 @@
 {
-  "name": "vibemoji-android",
+  "name": "vibebud-android",
   "version": "0.1.0",
   "private": true,
-  "description": "Capacitor shell for vibemoji — renders core/ as a system overlay floating on top of all other apps.",
+  "description": "Capacitor shell for vibebud — renders core/ as a system overlay floating on top of all other apps.",
   "scripts": {
     "open": "cap open android",
-    "dev": "cross-env VIBEMOJI_DEV_URL=http://10.0.2.2:3060 cap run android --no-sync",
+    "dev": "cross-env VIBEBUD_DEV_URL=http://10.0.2.2:3060 cap run android --no-sync",
     "build": "cd android && gradlew.bat assembleRelease"
   },
   "dependencies": {

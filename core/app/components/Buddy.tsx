@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import BuddyInstance, { type BuddyInstanceState } from './BuddyInstance';
 import BuddyGroup from './BuddyGroup';
 import AppSettings from './AppSettings';
+import LanguageSelector from './LanguageSelector';
 import SignInStatus from './SignInStatus';
 import { VARIANTS } from './avatars';
 import { normalizeGamification } from './gamification';
@@ -50,7 +51,7 @@ const gradientFor = (variantIds: string[]) => {
   return `linear-gradient(90deg, ${parts.join(', ')})`;
 };
 
-const STORAGE_KEY = 'vibemoji.buddies.v2';
+const STORAGE_KEY = 'vibebud.buddies.v2';
 
 const AVATAR_SIZE = 112;
 const HULL_PAD_X = 10;
@@ -332,12 +333,12 @@ export default function Buddy() {
   const [peekedDock, setPeekedDock] = useState<Record<string, boolean>>({});
   const [appSettingsOpen, setAppSettingsOpen] = useState(false);
   // True only inside the Android system-overlay WebView (where OverlayService
-  // injects `vibemojiNative`). The in-app Capacitor BridgeActivity WebView
+  // injects `vibebudNative`). The in-app Capacitor BridgeActivity WebView
   // never sees it. Resolved post-mount so SSR/static export renders the gear
   // and hydration removes it in the overlay.
   const [isAndroidOverlay, setIsAndroidOverlay] = useState(false);
   useEffect(() => {
-    setIsAndroidOverlay(!!(window as unknown as { vibemojiNative?: unknown }).vibemojiNative);
+    setIsAndroidOverlay(!!(window as unknown as { vibebudNative?: unknown }).vibebudNative);
   }, []);
   const idRef = useRef(2);
   const groupIdRef = useRef(1);
@@ -358,8 +359,8 @@ export default function Buddy() {
       const m = (e as CustomEvent<PhysicsMode>).detail;
       if (m === 'off' || m === 'bouncy' || m === 'astronaut') setPhysicsModeState(m);
     };
-    window.addEventListener('vibemoji:physicsChange', onChange);
-    return () => window.removeEventListener('vibemoji:physicsChange', onChange);
+    window.addEventListener('vibebud:physicsChange', onChange);
+    return () => window.removeEventListener('vibebud:physicsChange', onChange);
   }, []);
   // Master rotation toggle. When disabled, avatars never rotate — drag-time
   // pendulum, flight angVel, and release torque are all bypassed and the
@@ -369,8 +370,8 @@ export default function Buddy() {
   useEffect(() => { rotationEnabledRef.current = rotationEnabled; }, [rotationEnabled]);
   useEffect(() => {
     const onChange = (e: Event) => setRotationEnabledState(!!(e as CustomEvent<boolean>).detail);
-    window.addEventListener('vibemoji:rotationChange', onChange);
-    return () => window.removeEventListener('vibemoji:rotationChange', onChange);
+    window.addEventListener('vibebud:rotationChange', onChange);
+    return () => window.removeEventListener('vibebud:rotationChange', onChange);
   }, []);
   // Per-body rotation in degrees, keyed by `buddy:<id>` / `group:<id>`.
   // Updated 60fps while flying or being dragged from off-center.
@@ -468,7 +469,7 @@ export default function Buddy() {
     // Cap dt — if the tab was backgrounded we don't want a giant jump.
     const dt = Math.min(48, Math.max(1, rawDt));
     const flights = flightsRef.current;
-    const dragging: Set<string> = (window as unknown as { __vibemojiDragging?: Set<string> }).__vibemojiDragging
+    const dragging: Set<string> = (window as unknown as { __vibebudDragging?: Set<string> }).__vibebudDragging
       ?? new Set();
 
     // Astronaut: top up flights so every visible free body floats.
@@ -711,7 +712,7 @@ export default function Buddy() {
     setPeekedDock((cur) => (cur[`buddy:${id}`] ? cur : { ...cur, [`buddy:${id}`]: true }));
   };
   const unpeekDockBuddy = (id: string) => {
-    const dragging: Set<string> | undefined = (window as { __vibemojiDragging?: Set<string> }).__vibemojiDragging;
+    const dragging: Set<string> | undefined = (window as { __vibebudDragging?: Set<string> }).__vibebudDragging;
     if (dragging?.has(id)) return;
     setPeekedDock((cur) => {
       if (!cur[`buddy:${id}`]) return cur;
@@ -726,7 +727,7 @@ export default function Buddy() {
     setPeekedDock((cur) => (cur[`group:${gid}`] ? cur : { ...cur, [`group:${gid}`]: true }));
   };
   const unpeekDockGroup = (gid: string) => {
-    const dragging: Set<string> | undefined = (window as { __vibemojiDragging?: Set<string> }).__vibemojiDragging;
+    const dragging: Set<string> | undefined = (window as { __vibebudDragging?: Set<string> }).__vibebudDragging;
     if (dragging?.has(`group:${gid}`)) return;
     setPeekedDock((cur) => {
       if (!cur[`group:${gid}`]) return cur;
@@ -817,7 +818,7 @@ export default function Buddy() {
   // changes — except for buddies currently being dragged (their drag owns pos).
   useEffect(() => {
     setBuddies((cur) => {
-      const dragging: Set<string> | undefined = (window as any).__vibemojiDragging;
+      const dragging: Set<string> | undefined = (window as any).__vibebudDragging;
       let changed = false;
       const next = cur.map((b) => {
         if (!b.groupId) return b;
@@ -930,7 +931,7 @@ export default function Buddy() {
       if (collapseTimers.has(k)) return;
       const t = setTimeout(() => {
         collapseTimers.delete(k);
-        const dragging: Set<string> | undefined = (window as any).__vibemojiDragging;
+        const dragging: Set<string> | undefined = (window as any).__vibebudDragging;
         if (dragging && dragging.size > 0) {
           scheduleCollapse(gid, stage);
           return;
@@ -945,7 +946,7 @@ export default function Buddy() {
       if (t) { clearTimeout(t); collapseTimers.delete(k); }
     };
     const onMove = (ev: MouseEvent) => {
-      const dragging: Set<string> | undefined = (window as any).__vibemojiDragging;
+      const dragging: Set<string> | undefined = (window as any).__vibebudDragging;
       const el = document.elementFromPoint(ev.clientX, ev.clientY) as HTMLElement | null;
       const interactiveEl = el?.closest('[data-buddy-interactive]');
       setInteractive(!!interactiveEl || (!!dragging && dragging.size > 0));
@@ -1046,7 +1047,7 @@ export default function Buddy() {
   // elements to native, which sets them as the window's touchable region —
   // touches outside fall through to whatever app is underneath. Replaces the
   // mouse-hover-driven setInteractive model on touchscreens.
-  // Native group tap-zone fires `vibemoji:groupTap` when a non-drag tap
+  // Native group tap-zone fires `vibebud:groupTap` when a non-drag tap
   // lands on the cluster zone (non-expanded group) or on the handle strip
   // (expanded group). Route to onGroupTap to toggle expansion.
   useEffect(() => {
@@ -1061,8 +1062,8 @@ export default function Buddy() {
         onGroupTap(id);
       }
     };
-    window.addEventListener('vibemoji:groupTap', handler);
-    return () => window.removeEventListener('vibemoji:groupTap', handler);
+    window.addEventListener('vibebud:groupTap', handler);
+    return () => window.removeEventListener('vibebud:groupTap', handler);
   }, [adapter]);
 
   // Tap-outside-to-dismiss: while any group is peeked/expanded, a tap that
@@ -1205,7 +1206,7 @@ export default function Buddy() {
       // the OS touch-dispatch region stuck on the previous mode's bounds, so
       // after dismissing the expanded view the cluster never receives taps.
       // Native strips the suffix before dispatching, so JS still sees the bare
-      // gid in vibemoji:groupTap / Drag* events.
+      // gid in vibebud:groupTap / Drag* events.
       const hullEls = document.querySelectorAll<HTMLElement>('[data-group][data-buddy-interactive]');
       hullEls.forEach((el) => {
         const id = el.getAttribute('data-group');
@@ -1224,7 +1225,7 @@ export default function Buddy() {
       });
       // Non-expanded groups: union member rects into one cluster zone so the
       // user can grab the whole group without first peeking it. This zone
-      // owns the cluster (tap → expand via vibemoji:groupTap; drag → move).
+      // owns the cluster (tap → expand via vibebud:groupTap; drag → move).
       for (const [gid, rects] of memberRectsByGroup) {
         if (expandedNow[gid]) continue;
         let l = Infinity, t = Infinity, rgt = -Infinity, btm = -Infinity;
@@ -1932,7 +1933,8 @@ export default function Buddy() {
           long-press a buddy → context menu → App settings…). Still shown
           in the in-app Capacitor BridgeActivity WebView and the web build. */}
       {adapter.id !== 'electron' && !isAndroidOverlay && (
-        <div className="fixed right-3 top-3 z-[70] flex gap-2">
+        <div className="fixed right-3 top-3 z-[70] flex items-center gap-2">
+          <LanguageSelector />
           <SignInStatus />
           {/* QR shortcut: triggers the same scanQrForPair as AppSettings,
               but skips the modal so re-pairing is one tap. Only meaningful

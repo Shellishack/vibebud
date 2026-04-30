@@ -9,7 +9,7 @@ export type AuthSession = {
   expires?: string;
 };
 
-export const SERVER_ORIGIN = (process.env.NEXT_PUBLIC_VIBEMOJI_SERVER_URL || 'http://localhost:3070').replace(/\/+$/, '');
+export const SERVER_ORIGIN = (process.env.NEXT_PUBLIC_VIBEBUD_SERVER_URL || 'http://localhost:3070').replace(/\/+$/, '');
 
 export async function fetchAuthSession(): Promise<AuthSession | null> {
   const res = await fetch(`${SERVER_ORIGIN}/auth/session`, { credentials: 'include' });
