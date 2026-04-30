@@ -430,6 +430,7 @@ export default function Buddy() {
   // collision, so child components can react with a brief shake + emotion.
   const [bumpTicks, setBumpTicks] = useState<Record<string, number>>({});
   const [shimejiActions, setShimejiActions] = useState<Record<string, ShimejiAction>>({});
+  const [shimejiDirections, setShimejiDirections] = useState<Record<string, -1 | 1>>({});
   const shimejiBrainRef = useRef<Map<string, { action: ShimejiAction; dir: -1 | 1; until: number }>>(new Map());
   const shimejiRafRef = useRef<number>(0);
   const shimejiLastTickRef = useRef<number>(0);
@@ -466,6 +467,9 @@ export default function Buddy() {
   const setShimejiAction = (id: string, action: ShimejiAction) => {
     setShimejiActions((cur) => (cur[id] === action ? cur : { ...cur, [id]: action }));
   };
+  const setShimejiDirection = (id: string, dir: -1 | 1) => {
+    setShimejiDirections((cur) => (cur[id] === dir ? cur : { ...cur, [id]: dir }));
+  };
   const shimejiTick = () => {
     shimejiRafRef.current = 0;
     const now = (typeof performance !== 'undefined' ? performance.now() : Date.now());
@@ -477,6 +481,7 @@ export default function Buddy() {
 
     if (modeRef.current !== 'wonder') {
       setShimejiActions((cur) => (Object.keys(cur).length ? {} : cur));
+      setShimejiDirections((cur) => (Object.keys(cur).length ? {} : cur));
       shimejiBrainRef.current.clear();
       return;
     }
@@ -535,6 +540,7 @@ export default function Buddy() {
       brain.action = action;
       shimejiBrainRef.current.set(b.id, brain);
       setShimejiAction(b.id, action);
+      setShimejiDirection(b.id, brain.dir);
       if (pos.x !== b.pos.x || pos.y !== b.pos.y) updates[b.id] = pos;
     }
 
@@ -2006,6 +2012,7 @@ export default function Buddy() {
         onDragStart={onBuddyDragStart}
         onOpenAppSettings={() => setAppSettingsOpen(true)}
         shimejiAction={shimejiActions[b.id]}
+        shimejiDirection={shimejiDirections[b.id]}
         showLlmOnboarding={llmOnboardingBuddyId === b.id}
         onDismissLlmOnboarding={() => setLlmOnboardingBuddyId((id) => (id === b.id ? null : id))}
       />

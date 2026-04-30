@@ -74,6 +74,7 @@ function changed() {
 }
 
 const cleanPath = (path: string) => path.replace(/^\.?\//, '').replace(/\\/g, '/');
+const joinZipPath = (prefix: string, path: string) => cleanPath(`${prefix}${cleanPath(path)}`);
 
 function bytesToDataUrl(bytes: Uint8Array, type: string): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -146,8 +147,13 @@ export async function getShimejiPack(id: string): Promise<InstalledShimejiPack |
 export async function importShimejiZip(file: File): Promise<InstalledShimejiPack> {
   if (file.size > MAX_ZIP_BYTES) throw new Error('ZIP is too large.');
   const entries = await readZip(file);
-  const manifestEntry = entries['manifest.json'];
-  if (!manifestEntry) throw new Error('ZIP must contain manifest.json at the root.');
+  const manifestPath = entries['manifest.json']
+    ? 'manifest.json'
+    : Object.keys(entries).find((path) => path.endsWith('/manifest.json'));
+  if (!manifestPath) return importClassicShimeji(entries, file.name);
+  const manifestEntry = manifestPath ? entries[manifestPath] : null;
+  if (!manifestEntry) throw new Error('ZIP must contain manifest.json.');
+  const assetPrefix = manifestPath === 'manifest.json' ? '' : manifestPath.slice(0, -'manifest.json'.length);
   const manifest = validateManifest(JSON.parse(textDecoder.decode(manifestEntry)));
   const files: Record<string, string> = {};
   const needed = new Set<string>();
@@ -156,7 +162,8 @@ export async function importShimejiZip(file: File): Promise<InstalledShimejiPack
     for (const anim of Object.values(c.animations)) if (anim?.src) needed.add(anim.src);
   }
   for (const path of needed) {
-    const bytes = entries[path];
+    const clean = cleanPath(path);
+    const bytes = entries[clean] ?? entries[joinZipPath(assetPrefix, clean)];
     if (!bytes) throw new Error(`Missing asset: ${path}`);
     const type = path.endsWith('.svg') ? 'image/svg+xml'
       : path.endsWith('.png') ? 'image/png'
@@ -164,12 +171,113 @@ export async function importShimejiZip(file: File): Promise<InstalledShimejiPack
       : path.endsWith('.webp') ? 'image/webp'
       : '';
     if (!type) throw new Error(`Unsupported asset type: ${path}`);
-    files[path] = await bytesToDataUrl(bytes, type);
+    files[clean] = await bytesToDataUrl(bytes, type);
   }
   const pack: InstalledShimejiPack = { manifest, files, source: 'imported', installedAt: Date.now() };
   await withStore('readwrite', (store) => store.put(pack));
   changed();
   return pack;
+}
+
+async function importClassicShimeji(entries: Record<string, Uint8Array>, fileName: string): Promise<InstalledShimejiPack> {
+  const imagePaths = Object.keys(entries)
+    .filter((path) => /(^|\/)img\/(?:[^/]+\/)?shime\d+\.png$/i.test(path))
+    .sort((a, b) => classicFrameNumber(a) - classicFrameNumber(b));
+  if (!imagePaths.length) {
+    throw new Error('ZIP must contain manifest.json or a classic img/shime*.png Shimeji folder.');
+  }
+
+  const firstPath = imagePaths[0];
+  const name = titleFromPath(classicPackageName(firstPath, fileName));
+  const id = safePackId(name);
+  const size = pngSize(entries[firstPath]) ?? { w: 128, h: 128 };
+  const byNumber = new Map(imagePaths.map((path) => [classicFrameNumber(path), path]));
+  const frame = (n: number) => byNumber.get(n) ?? firstPath;
+  const existingFrames = (frames: number[]) => frames.filter((n) => byNumber.has(n));
+  const sequences: Record<ShimejiAction, number[]> = {
+    idle: existingFrames([1, 2, 3]),
+    walk: existingFrames([1, 2, 3, 2]),
+    climb: existingFrames([13, 14]),
+    fall: existingFrames([4]),
+    sit: existingFrames([11, 12]),
+    drag: existingFrames([5]),
+  };
+  const files: Record<string, string> = {};
+  for (const [action, frames] of Object.entries(sequences) as Array<[ShimejiAction, number[]]>) {
+    const src = `${action}.svg`;
+    files[src] = await classicSpriteDataUrl(frames.length ? frames.map(frame) : [firstPath], entries, size);
+  }
+  files['preview.png'] = await bytesToDataUrl(entries[firstPath], 'image/png');
+
+  const manifest: ShimejiPackManifest = {
+    schemaVersion: 1,
+    id,
+    name,
+    license: 'Third-party',
+    description: 'Imported from a classic Shimeji ZIP package.',
+    characters: [{
+      id: 'default',
+      name,
+      preview: 'preview.png',
+      frameSize: size,
+      scale: 1,
+      anchor: { x: Math.round(size.w / 2), y: size.h },
+      animations: {
+        idle: { src: 'idle.svg', frames: Math.max(1, sequences.idle.length), fps: 4, loop: true },
+        walk: { src: 'walk.svg', frames: Math.max(1, sequences.walk.length), fps: 8, loop: true },
+        climb: { src: 'climb.svg', frames: Math.max(1, sequences.climb.length), fps: 6, loop: true },
+        fall: { src: 'fall.svg', frames: Math.max(1, sequences.fall.length), fps: 1, loop: true },
+        sit: { src: 'sit.svg', frames: Math.max(1, sequences.sit.length), fps: 3, loop: true },
+        drag: { src: 'drag.svg', frames: Math.max(1, sequences.drag.length), fps: 1, loop: true },
+      },
+    }],
+  };
+  const pack: InstalledShimejiPack = { manifest, files, source: 'imported', installedAt: Date.now() };
+  await withStore('readwrite', (store) => store.put(pack));
+  changed();
+  return pack;
+}
+
+function classicFrameNumber(path: string): number {
+  return Number(path.match(/shime(\d+)\.png$/i)?.[1] ?? 0);
+}
+
+function titleFromPath(path: string): string {
+  return path.replace(/[-_]+/g, ' ').replace(/\s+/g, ' ').trim() || 'Imported Shimeji';
+}
+
+function classicPackageName(path: string, fileName: string): string {
+  const [beforeImg, afterImg = ''] = path.split('/img/');
+  const imageParts = afterImg.split('/');
+  const characterFolder = imageParts.length > 1 ? imageParts[0] : '';
+  const packageFolder = beforeImg.split('/').filter(Boolean).at(-1);
+  return characterFolder || packageFolder || fileName.replace(/\.zip$/i, '');
+}
+
+function safePackId(name: string): string {
+  const slug = name.toLowerCase().replace(/[^a-z0-9._-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 48);
+  return `${slug || 'imported-shimeji'}-${Date.now().toString(36)}`;
+}
+
+function pngSize(bytes: Uint8Array): { w: number; h: number } | null {
+  if (
+    bytes.length < 24
+    || bytes[0] !== 0x89
+    || bytes[1] !== 0x50
+    || bytes[2] !== 0x4e
+    || bytes[3] !== 0x47
+  ) return null;
+  const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  return { w: dv.getUint32(16, false), h: dv.getUint32(20, false) };
+}
+
+async function classicSpriteDataUrl(paths: string[], entries: Record<string, Uint8Array>, size: { w: number; h: number }): Promise<string> {
+  const images = await Promise.all(paths.map(async (path, i) => {
+    const href = await bytesToDataUrl(entries[path], 'image/png');
+    return `<image href="${href}" x="${i * size.w}" y="0" width="${size.w}" height="${size.h}"/>`;
+  }));
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${size.w * paths.length}" height="${size.h}" viewBox="0 0 ${size.w * paths.length} ${size.h}">${images.join('')}</svg>`;
+  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
 }
 
 export async function fetchShimejiCatalog(): Promise<CatalogPack[]> {

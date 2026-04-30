@@ -546,15 +546,14 @@ function CollectionModal({ onClose }: { onClose: () => void }) {
               </div>
               {catalog.length > 0 && (
                 <div className="mt-2 grid gap-2 sm:grid-cols-2">
-                  {catalog.map((pack) => (
+                  {catalog.filter((pack) => !installedIds.has(pack.manifest.id)).map((pack) => (
                     <button
                       key={pack.manifest.id}
-                      disabled={installedIds.has(pack.manifest.id)}
                       onClick={() => void installCatalogPack(pack).catch((e) => setPackError(e instanceof Error ? e.message : String(e)))}
-                      className="rounded-xl bg-white px-3 py-2 text-left text-xs ring-1 ring-zinc-200 hover:bg-zinc-100 disabled:opacity-55 dark:bg-zinc-950/50 dark:ring-zinc-700 dark:hover:bg-zinc-900"
+                      className="rounded-xl bg-white px-3 py-2 text-left text-xs ring-1 ring-zinc-200 hover:bg-zinc-100 dark:bg-zinc-950/50 dark:ring-zinc-700 dark:hover:bg-zinc-900"
                     >
                       <span className="block font-semibold text-zinc-900 dark:text-zinc-50">{pack.manifest.name}</span>
-                      <span className="block text-zinc-500 dark:text-zinc-400">{installedIds.has(pack.manifest.id) ? 'installed' : `${pack.manifest.license} · install`}</span>
+                      <span className="block text-zinc-500 dark:text-zinc-400">{pack.manifest.license} · install</span>
                     </button>
                   ))}
                 </div>

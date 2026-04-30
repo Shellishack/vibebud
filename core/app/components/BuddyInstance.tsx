@@ -39,6 +39,7 @@ import {
   importShimejiZip,
   installCatalogPack,
   listShimejiPacks,
+  removeShimejiPack,
   resolveShimejiAsset,
   subscribeShimejiPacks,
 } from '../../lib/avatar/shimeji';
@@ -143,12 +144,13 @@ type Props = {
   // Used by the right-click menu on Electron, where there's no gear icon.
   onOpenAppSettings?: () => void;
   shimejiAction?: ShimejiAction;
+  shimejiDirection?: -1 | 1;
   showLlmOnboarding?: boolean;
   onDismissLlmOnboarding?: () => void;
   onWonderPauseChange?: (id: string, paused: boolean) => void;
 };
 
-export default function BuddyInstance({ state, anchor, canRemove, onChange, onSpawn, onRemove, onOpenChange, onDragMove, onDragEnd, magnetState, edgeMagnet, teammates, groupMemberIds, isGroupExpanded, isGroupMinimized, onGroupTap, onRestore, onGroupRestore, dockPeeked, groupDockPeeked, onDockPeek, onDockUnpeek, onGroupDockPeek, onGroupDockUnpeek, bumpTick, groupBumpTick, rotation, rotationActive, grabPivot, onDragStart, onOpenAppSettings, shimejiAction, showLlmOnboarding, onDismissLlmOnboarding, onWonderPauseChange }: Props) {
+export default function BuddyInstance({ state, anchor, canRemove, onChange, onSpawn, onRemove, onOpenChange, onDragMove, onDragEnd, magnetState, edgeMagnet, teammates, groupMemberIds, isGroupExpanded, isGroupMinimized, onGroupTap, onRestore, onGroupRestore, dockPeeked, groupDockPeeked, onDockPeek, onDockUnpeek, onGroupDockPeek, onGroupDockUnpeek, bumpTick, groupBumpTick, rotation, rotationActive, grabPivot, onDragStart, onOpenAppSettings, shimejiAction, shimejiDirection, showLlmOnboarding, onDismissLlmOnboarding, onWonderPauseChange }: Props) {
   const personality: Personality =
     PERSONALITY_BY_VARIANT[state.variantId] ?? PERSONALITY_BY_VARIANT.violet;
 
@@ -229,6 +231,17 @@ export default function BuddyInstance({ state, anchor, canRemove, onChange, onSp
     try {
       const pack = await importShimejiZip(file);
       useShimejiPack(pack);
+    } catch (e) {
+      setShimejiPackError(e instanceof Error ? e.message : String(e));
+    }
+  };
+  const deleteShimejiPack = async (pack: InstalledShimejiPack) => {
+    setShimejiPackError(null);
+    try {
+      await removeShimejiPack(pack.manifest.id);
+      if (state.avatar?.kind === 'shimeji' && state.avatar.packId === pack.manifest.id) {
+        update({ avatar: undefined });
+      }
     } catch (e) {
       setShimejiPackError(e instanceof Error ? e.message : String(e));
     }
@@ -1350,14 +1363,6 @@ export default function BuddyInstance({ state, anchor, canRemove, onChange, onSp
                 {familyMenu === 'shimeji' && (
                   <div className="mt-2 space-y-2 rounded-2xl bg-zinc-50 px-2.5 py-2 dark:bg-zinc-800/60">
                     <div className="flex flex-wrap items-center gap-1.5">
-                      <button
-                        data-buddy-interactive
-                        onClick={refreshShimejiCatalog}
-                        disabled={shimejiCatalogLoading}
-                        className="rounded-full bg-violet-600 px-2.5 py-1 text-[11px] font-medium text-white hover:bg-violet-700 disabled:opacity-60"
-                      >
-                        {shimejiCatalogLoading ? 'loading...' : shimejiCatalog.length ? 'refresh catalog' : 'add from catalog'}
-                      </button>
                       <label className="cursor-pointer rounded-full bg-white px-2.5 py-1 text-[11px] font-medium text-violet-700 ring-1 ring-violet-200 hover:bg-violet-50 dark:bg-zinc-900 dark:text-violet-200 dark:ring-violet-500/40 dark:hover:bg-violet-500/10">
                         import and use zip
                         <input
@@ -1379,58 +1384,80 @@ export default function BuddyInstance({ state, anchor, canRemove, onChange, onSp
                         const character = getShimejiCharacter(pack, state.avatar?.kind === 'shimeji' ? state.avatar.characterId : undefined);
                         const selected = state.avatar?.kind === 'shimeji' && state.avatar.packId === pack.manifest.id;
                         return (
-                          <button
+                          <div
                             key={pack.manifest.id}
-                            onClick={() => {
-                              update({
-                                avatar: {
-                                  kind: 'shimeji',
-                                  packId: pack.manifest.id,
-                                  characterId: character.id,
-                                },
-                              });
-                              setFamilyMenu(null);
-                            }}
-                            title={`${pack.manifest.name} · ${pack.manifest.license}`}
-                            aria-label={`Use ${pack.manifest.name} Shimeji avatar`}
                             className={`flex items-center gap-1.5 rounded-full px-2 py-1 text-[11px] font-medium transition-colors ${
                               selected
                                 ? 'bg-violet-600 text-white'
                                 : 'bg-white text-zinc-700 ring-1 ring-zinc-200 hover:bg-zinc-100 dark:bg-zinc-900 dark:text-zinc-200 dark:ring-zinc-700 dark:hover:bg-zinc-800'
                             }`}
                           >
-                            <span
-                              className="block h-5 w-5 overflow-hidden rounded-full bg-zinc-100"
-                              style={{
-                                backgroundImage: `url("${resolveShimejiAsset(pack, character.preview)}")`,
-                                backgroundSize: 'cover',
-                                backgroundPosition: 'center',
+                            <button
+                              onClick={() => {
+                                update({
+                                  avatar: {
+                                    kind: 'shimeji',
+                                    packId: pack.manifest.id,
+                                    characterId: character.id,
+                                  },
+                                });
+                                setFamilyMenu(null);
                               }}
-                              aria-hidden
-                            />
-                            <span>{pack.manifest.name}</span>
-                          </button>
+                              title={`${pack.manifest.name} · ${pack.manifest.license}`}
+                              aria-label={`Use ${pack.manifest.name} Shimeji avatar`}
+                              className="flex min-w-0 items-center gap-1.5"
+                            >
+                              <span
+                                className="block h-5 w-5 overflow-hidden rounded-full bg-zinc-100"
+                                style={{
+                                  backgroundImage: `url("${resolveShimejiAsset(pack, character.preview)}")`,
+                                  backgroundSize: 'cover',
+                                  backgroundPosition: 'center',
+                                }}
+                                aria-hidden
+                              />
+                              <span className="truncate">{pack.manifest.name}</span>
+                            </button>
+                            {pack.source === 'imported' && (
+                              <button
+                                data-buddy-interactive
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  void deleteShimejiPack(pack);
+                                }}
+                                title={`Delete ${pack.manifest.name}`}
+                                aria-label={`Delete ${pack.manifest.name} Shimeji avatar`}
+                                className={`ml-0.5 rounded-full px-1 text-[12px] leading-4 ${
+                                  selected
+                                    ? 'text-white/90 hover:bg-white/15'
+                                    : 'text-red-600 hover:bg-red-50 dark:text-red-300 dark:hover:bg-red-500/10'
+                                }`}
+                              >
+                                x
+                              </button>
+                            )}
+                          </div>
                         );
                       })}
                     </div>
                     {shimejiCatalog.length > 0 && (
                       <div className="space-y-1.5">
-                        <div className="grid gap-1.5">
-                          {shimejiCatalog.map((pack) => {
-                            const installed = shimejiPacks.some((p) => p.manifest.id === pack.manifest.id);
-                            return (
-                              <button
-                                key={pack.manifest.id}
-                                disabled={installed}
-                                onClick={() => void installAndUseShimejiPack(pack)}
-                                className="rounded-xl bg-white px-2.5 py-1.5 text-left text-[11px] ring-1 ring-zinc-200 hover:bg-zinc-100 disabled:opacity-55 dark:bg-zinc-900 dark:ring-zinc-700 dark:hover:bg-zinc-800"
-                              >
-                                <span className="block font-semibold text-zinc-900 dark:text-zinc-50">{pack.manifest.name}</span>
-                                <span className="block text-zinc-500 dark:text-zinc-400">{installed ? 'installed' : `${pack.manifest.license} · install and use`}</span>
-                              </button>
-                            );
-                          })}
-                        </div>
+                        {shimejiCatalog.some((pack) => !shimejiPacks.some((p) => p.manifest.id === pack.manifest.id)) && (
+                          <div className="grid gap-1.5">
+                            {shimejiCatalog
+                              .filter((pack) => !shimejiPacks.some((p) => p.manifest.id === pack.manifest.id))
+                              .map((pack) => (
+                                <button
+                                  key={pack.manifest.id}
+                                  onClick={() => void installAndUseShimejiPack(pack)}
+                                  className="rounded-xl bg-white px-2.5 py-1.5 text-left text-[11px] ring-1 ring-zinc-200 hover:bg-zinc-100 dark:bg-zinc-900 dark:ring-zinc-700 dark:hover:bg-zinc-800"
+                                >
+                                  <span className="block font-semibold text-zinc-900 dark:text-zinc-50">{pack.manifest.name}</span>
+                                  <span className="block text-zinc-500 dark:text-zinc-400">{pack.manifest.license} · install and use</span>
+                                </button>
+                              ))}
+                          </div>
+                        )}
                         <div className="rounded-xl bg-white px-2.5 py-2 text-[11px] ring-1 ring-zinc-200 dark:bg-zinc-900 dark:ring-zinc-700">
                           <p className="mb-1 font-semibold text-zinc-700 dark:text-zinc-200">Third-party libraries</p>
                           <div className="flex flex-wrap gap-1.5">
@@ -1777,7 +1804,7 @@ export default function BuddyInstance({ state, anchor, canRemove, onChange, onSp
             </span>
             <div className="h-full w-full" style={{ animation: shaking ? 'buddy-shake 420ms ease-out' : shimejiIsMoving ? undefined : 'buddy-bob 3s ease-in-out infinite' }}>
               {shimejiAvatar ? (
-                <ShimejiAvatarView avatar={shimejiAvatar} action={activeShimejiAction} />
+                <ShimejiAvatarView avatar={shimejiAvatar} action={activeShimejiAction} direction={shimejiDirection} />
               ) : isComposite && composition ? (
                 <CompositeFace composition={composition} fetched={notoFetched} />
               ) : (

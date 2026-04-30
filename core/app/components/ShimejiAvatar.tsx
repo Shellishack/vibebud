@@ -11,11 +11,12 @@ import type { InstalledShimejiPack, ShimejiAction, ShimejiAvatar } from '../../l
 type Props = {
   avatar: ShimejiAvatar;
   action?: ShimejiAction;
+  direction?: -1 | 1;
   sizeClass?: string;
   className?: string;
 };
 
-export default function ShimejiAvatarView({ avatar, action = 'idle', sizeClass = 'h-full w-full', className = '' }: Props) {
+export default function ShimejiAvatarView({ avatar, action = 'idle', direction = -1, sizeClass = 'h-full w-full', className = '' }: Props) {
   const [pack, setPack] = useState<InstalledShimejiPack | null>(null);
   useEffect(() => {
     let cancelled = false;
@@ -40,6 +41,7 @@ export default function ShimejiAvatarView({ avatar, action = 'idle', sizeClass =
   }
 
   const { character, anim, src } = resolved;
+  const scale = character.scale ?? 1;
   const duration = Math.max(0.1, anim.frames / Math.max(1, anim.fps));
   const frameStyle = {
     '--shimeji-frames': anim.frames,
@@ -55,7 +57,7 @@ export default function ShimejiAvatarView({ avatar, action = 'idle', sizeClass =
       aria-hidden
       className={`block overflow-hidden ${sizeClass} ${className}`}
       style={{
-        transform: `scale(${character.scale ?? 1})`,
+        transform: `scale(${direction === 1 ? -scale : scale}, ${scale})`,
         transformOrigin: '50% 100%',
       }}
     >
