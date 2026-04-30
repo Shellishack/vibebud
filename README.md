@@ -114,7 +114,7 @@ The dev server runs on **port 3060**, not 3000. The desktop window loads the `/b
 ## Repo Layout
 
 ```text
-vibemoji/
+vibebud/
 ├── core/        # shared Next.js UI: web app and bundled desktop UI
 ├── desktop/     # Electron wrapper around core/
 └── mobile/      # Capacitor wrapper around core/
