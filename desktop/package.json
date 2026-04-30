@@ -10,7 +10,9 @@
     "start": "electron .",
     "sync-core": "node sync-core.js",
     "make-icon": "node make-icon.js",
-    "build:win": "npm run sync-core && npm run make-icon && electron-builder --win --x64"
+    "build:win": "npm run sync-core && npm run make-icon && electron-builder --win --x64",
+    "build:mac": "npm run sync-core && npm run make-icon && electron-builder --mac --x64",
+    "build:linux": "npm run sync-core && npm run make-icon && electron-builder --linux --x64"
   },
   "dependencies": {
     "qrcode": "^1.5.4",
@@ -53,6 +55,30 @@
       ],
       "icon": "build/icon.ico",
       "artifactName": "vibebud-desktop-setup.${ext}"
+    },
+    "mac": {
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "artifactName": "vibebud-desktop.${ext}",
+      "category": "public.app-category.developer-tools"
+    },
+    "linux": {
+      "target": [
+        {
+          "target": "AppImage",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "artifactName": "vibebud-desktop.${ext}",
+      "category": "Development"
     },
     "nsis": {
       "oneClick": true,

@@ -22,8 +22,20 @@ const TARGETS: Target[] = [
     ext: 'exe',
     directDownload: true,
   },
-  { id: 'mac', label: 'macOS', href: LATEST_RELEASE_URL, ext: 'dmg' },
-  { id: 'linux', label: 'Linux', href: LATEST_RELEASE_URL, ext: 'AppImage' },
+  {
+    id: 'mac',
+    label: 'macOS',
+    href: `${LATEST_RELEASE_DOWNLOAD_URL}/vibebud-desktop.dmg`,
+    ext: 'dmg',
+    directDownload: true,
+  },
+  {
+    id: 'linux',
+    label: 'Linux',
+    href: `${LATEST_RELEASE_DOWNLOAD_URL}/vibebud-desktop.AppImage`,
+    ext: 'AppImage',
+    directDownload: true,
+  },
   { id: 'android', label: 'Android', href: LATEST_RELEASE_URL, ext: 'apk' },
 ];
 

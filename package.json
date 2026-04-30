@@ -2,6 +2,7 @@
   "name": "vibebud-monorepo",
   "version": "0.0.0",
   "private": true,
+  "license": "MIT",
   "description": "Top-level scripts for building and running vibebud's core (web) and desktop shells.",
   "scripts": {
     "web-dev": "npm --prefix core run dev",
@@ -9,6 +10,9 @@
     "desktop-dev": "npm --prefix desktop run dev",
     "desktop-start": "npm --prefix desktop start",
     "desktop-build": "npm --prefix core run build && npm --prefix desktop run build:win",
+    "desktop-build:win": "npm --prefix core run build && npm --prefix desktop run build:win",
+    "desktop-build:mac": "npm --prefix core run build && npm --prefix desktop run build:mac",
+    "desktop-build:linux": "npm --prefix core run build && npm --prefix desktop run build:linux",
     "desktop-run": "npm run web-build && npm --prefix desktop run sync-core && npm --prefix desktop start",
     "server-dev": "npm --prefix ../server run dev",
     "server-start": "npm --prefix ../server start",

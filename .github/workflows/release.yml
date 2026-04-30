@@ -14,10 +14,32 @@ on:
 permissions:
   contents: write
 
+env:
+  CSC_IDENTITY_AUTO_DISCOVERY: false
+
 jobs:
-  windows:
-    name: Build Windows installer
-    runs-on: windows-latest
+  desktop:
+    name: Build ${{ matrix.name }} desktop package
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Windows
+            os: windows-latest
+            build_script: desktop-build:win
+            files: desktop/dist/vibebud-desktop-setup.exe
+            artifact: vibebud-desktop-windows
+          - name: macOS
+            os: macos-13
+            build_script: desktop-build:mac
+            files: desktop/dist/vibebud-desktop.dmg
+            artifact: vibebud-desktop-macos
+          - name: Linux
+            os: ubuntu-latest
+            build_script: desktop-build:linux
+            files: desktop/dist/vibebud-desktop.AppImage
+            artifact: vibebud-desktop-linux
 
     steps:
       - name: Check out repository
@@ -38,8 +60,27 @@ jobs:
       - name: Install desktop dependencies
         run: npm ci --prefix desktop
 
-      - name: Build Windows installer
-        run: npm run desktop-build
+      - name: Build desktop package
+        run: npm run ${{ matrix.build_script }}
+
+      - name: Upload desktop package
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: ${{ matrix.files }}
+          if-no-files-found: error
+
+  release:
+    name: Publish GitHub release
+    runs-on: ubuntu-latest
+    needs: desktop
+
+    steps:
+      - name: Download desktop packages
+        uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+          merge-multiple: true
 
       - name: Publish GitHub release
         uses: softprops/action-gh-release@v2
@@ -47,5 +88,4 @@ jobs:
           tag_name: ${{ github.event.inputs.tag_name || github.ref_name }}
           name: Vibebud ${{ github.event.inputs.tag_name || github.ref_name }}
           generate_release_notes: true
-          files: |
-            desktop/dist/vibebud-desktop-setup.exe
+          files: release-assets/*
