@@ -66,9 +66,6 @@ jobs:
       - name: Build desktop package
         run: npm run ${{ matrix.build_script }}
 
-      - name: List desktop package outputs
-        run: node -e "const fs = require('fs'); for (const file of fs.readdirSync('desktop/dist')) { const stat = fs.statSync(`desktop/dist/${file}`); console.log(`${stat.size} ${file}`); }"
-
       - name: Upload desktop package
         uses: actions/upload-artifact@v4
         with:
