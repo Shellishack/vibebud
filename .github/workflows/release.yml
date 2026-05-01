@@ -28,17 +28,20 @@ jobs:
           - name: Windows
             os: windows-latest
             build_script: desktop-build:win
-            files: desktop/dist/vibebud-desktop-setup.exe
+            files: |
+              desktop/dist/vibebud-desktop-setup.exe
             artifact: vibebud-desktop-windows
           - name: macOS
             os: macos-13
             build_script: desktop-build:mac
-            files: desktop/dist/vibebud-desktop.dmg
+            files: |
+              desktop/dist/vibebud-desktop.dmg
             artifact: vibebud-desktop-macos
           - name: Linux
             os: ubuntu-latest
             build_script: desktop-build:linux
-            files: desktop/dist/vibebud-desktop.AppImage
+            files: |
+              desktop/dist/vibebud-desktop.AppImage
             artifact: vibebud-desktop-linux
 
     steps:
@@ -62,6 +65,9 @@ jobs:
 
       - name: Build desktop package
         run: npm run ${{ matrix.build_script }}
+
+      - name: List desktop package outputs
+        run: ls -la desktop/dist
 
       - name: Upload desktop package
         uses: actions/upload-artifact@v4
