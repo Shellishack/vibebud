@@ -9,7 +9,7 @@
 // user navigates away before reading) was the worst possible UX.
 
 import { useEffect, useRef, useState } from 'react';
-import { setRemoteClaudeConfig } from '../../lib/platform/remoteClaude';
+import { setRemoteClaudeConfig } from '../../lib/platform/remote-claude';
 
 // Hard-coded marker bumped on each iteration. If you don't see this string
 // at the top of /scan/, the device is loading a stale bundle and you need

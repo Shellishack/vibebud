@@ -1,4 +1,4 @@
-import Buddy from '../components/dashboard/BuddyDashboard';
+import Buddy from '../components/dashboard/buddy-dashboard';
 
 export default function BuddyOnly() {
   return (

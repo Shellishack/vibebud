@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useTranslations } from '../../lib/hooks/use-translations';
-import { fetchAuthSession, goToGoogleSignIn, goToSignOut, type AuthSession } from './authClient';
+import { fetchAuthSession, goToGoogleSignIn, goToSignOut, type AuthSession } from './auth-client';
 
 function initials(session: AuthSession) {
   const label = session.user?.name || session.user?.email || '?';

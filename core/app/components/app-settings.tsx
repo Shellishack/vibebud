@@ -6,9 +6,9 @@ import { usePlatform } from '@/lib/hooks/use-platform';
 import { getNotifyMethod, setNotifyMethod, type NotifyMethod } from './llm';
 import {
   getRemoteClaudeConfig, setRemoteClaudeConfig, type RemoteClaudeConfig,
-} from '../../lib/platform/remoteClaude';
+} from '../../lib/platform/remote-claude';
 import { getPhysicsMode, setPhysicsMode, type PhysicsMode, getRotationEnabled, setRotationEnabled } from './physics';
-import AccountPanel from './AccountPanel';
+import AccountPanel from './account-panel';
 import {
   bondXpForLevel,
   levelProgress,

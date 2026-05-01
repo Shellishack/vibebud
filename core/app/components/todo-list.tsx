@@ -4,9 +4,9 @@ import dynamic from 'next/dynamic';
 import { FormEvent, useEffect, useMemo, useState } from 'react';
 import { buildAnimation, getNotoCodepoint, VARIANTS, type FacesWithHandsComposition, type NotoGroup } from './avatars';
 import { getPersonality } from './personalities';
-import { getCachedLottie, loadLottie } from '../../lib/notoEmoji';
+import { getCachedLottie, loadLottie } from '../../lib/noto-emoji';
 import { useTranslations } from '../../lib/hooks/use-translations';
-import ShimejiAvatarView from './avatar/shimeji/ShimejiAvatar';
+import ShimejiAvatarView from './avatar/shimeji/shimeji-avatar';
 import type { ShimejiAvatar } from '../../lib/avatar/types';
 
 const Lottie = dynamic(() => import('lottie-react'), { ssr: false });

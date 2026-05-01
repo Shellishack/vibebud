@@ -5,8 +5,8 @@ import type { ProviderId } from '../llm';
 import type { AvatarInstanceState } from '../avatar/avatar-instance.types';
 import type { AvatarCategory } from '../avatar/types';
 import type { CodeAgentDescriptor } from '../../../lib/platform/types';
-import AvatarFamilyPicker from './AvatarFamilyPicker';
-import BuddyLlmSettings from './BuddyLlmSettings';
+import AvatarFamilyPicker from './avatar-family-picker';
+import BuddyLlmSettings from './buddy-llm-settings';
 
 type Progress = {
   level: number;

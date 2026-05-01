@@ -1,5 +1,5 @@
 import type { ClaudeCodeBridge, CodeAgentDescriptor, InteractiveRect, NotificationPayload, PlatformAdapter, PlatformId } from './types';
-import { getRemoteClaudeBridge, getRemoteCodexBridge } from './remoteClaude';
+import { getRemoteClaudeBridge, getRemoteCodexBridge } from './remote-claude';
 
 export class WebAdapter implements PlatformAdapter {
   readonly id: PlatformId;

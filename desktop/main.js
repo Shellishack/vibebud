@@ -1,9 +1,9 @@
 const { app, BrowserWindow, Notification, screen, Tray, Menu, nativeImage, protocol, net, ipcMain } = require('electron');
 const path = require('path');
 const url = require('url');
-const { createClaudeHost } = require('./claudeSessions');
-const { createCodexHost } = require('./codexSessions');
-const { createGenericAgentHost, agentDescriptors } = require('./genericAgentSessions');
+const { createClaudeHost } = require('./claude-sessions');
+const { createCodexHost } = require('./codex-sessions');
+const { createGenericAgentHost, agentDescriptors } = require('./generic-agent-sessions');
 const { startBridgeServer } = require('./claude-bridge-server');
 const { getOrCreateToken, showPairingWindow, refreshPairingWindow, DEFAULT_PORT } = require('./pairing');
 

@@ -1,5 +1,5 @@
 import type { ClaudeCodeBridge, CodeAgentDescriptor, InteractiveRect, NotificationPayload, PlatformAdapter } from './types';
-import { getRemoteClaudeBridge, getRemoteCodexBridge } from './remoteClaude';
+import { getRemoteClaudeBridge, getRemoteCodexBridge } from './remote-claude';
 
 type VibebudNative = {
   setTouchableRegion?: (json: string) => void;

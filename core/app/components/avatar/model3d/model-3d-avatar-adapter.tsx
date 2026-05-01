@@ -1,7 +1,7 @@
 'use client';
 
 import type { AvatarAdapter } from '../types';
-import Model3DAvatarView, { MODEL_3D_AVATARS } from './Model3DAvatar';
+import Model3DAvatarView, { MODEL_3D_AVATARS } from './model-3d-avatar';
 
 const MOVING_ACTIONS = new Set(['walk', 'climb', 'fall', 'drag']);
 

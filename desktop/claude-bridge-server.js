@@ -16,8 +16,8 @@
 //
 // Each socket gets its own host: subprocesses are torn down when the socket
 // closes so a dropped phone doesn't leave orphan claude processes around.
-const { createClaudeHost } = require('./claudeSessions');
-const { createCodexHost } = require('./codexSessions');
+const { createClaudeHost } = require('./claude-sessions');
+const { createCodexHost } = require('./codex-sessions');
 
 // onEvent is an optional callback fired for bridge-level lifecycle events
 // (paired, session-start). main.js uses this to raise desktop notifications

@@ -3,7 +3,7 @@
 import AvatarInstance from '../avatar/avatar-instance';
 import type { AvatarInstanceState } from '../avatar/avatar-instance.types';
 import type { Teammate } from '../llm';
-import BuddyGroup from './BuddyGroup';
+import BuddyGroup from './buddy-group';
 import {
   ANCHOR,
   AVATAR_SIZE,

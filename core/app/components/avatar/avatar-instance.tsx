@@ -31,11 +31,11 @@ import {
 import { routePing } from '../notify';
 import { useAvatarRuntime } from './adapters';
 import type { AvatarCategory } from './types';
-import BuddyChatInput from '../popup/BuddyChatInput';
-import BuddyChatMessages from '../popup/BuddyChatMessages';
-import BuddyContextMenu from '../popup/BuddyContextMenu';
-import BuddyDetailsPanel from '../popup/BuddyDetailsPanel';
-import ToastStack from '../popup/ToastStack';
+import BuddyChatInput from '../popup/buddy-chat-input';
+import BuddyChatMessages from '../popup/buddy-chat-messages';
+import BuddyContextMenu from '../popup/buddy-context-menu';
+import BuddyDetailsPanel from '../popup/buddy-details-panel';
+import ToastStack from '../popup/toast-stack';
 import type { ShimejiAction } from '../../../lib/avatar/types';
 import type { AvatarInstanceProps, AvatarInstanceState, ChatMsg, Toast } from './avatar-instance.types';
 

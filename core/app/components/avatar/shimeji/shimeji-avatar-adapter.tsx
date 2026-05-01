@@ -13,7 +13,7 @@ import {
 } from '@/lib/avatar/shimeji';
 import type { InstalledShimejiPack, ShimejiPackManifest } from '@/lib/avatar/types';
 import type { AvatarAdapter } from '../types';
-import ShimejiAvatarView from './ShimejiAvatar';
+import ShimejiAvatarView from './shimeji-avatar';
 
 const MOVING_ACTIONS = new Set(['walk', 'climb', 'fall', 'drag']);
 

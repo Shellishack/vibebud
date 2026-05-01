@@ -1,10 +1,10 @@
 'use client';
 
 import Link from 'next/link';
-import Buddy from './components/dashboard/BuddyDashboard';
-import InstallButton from './components/InstallButton';
-import OverlayButton from './components/OverlayButton';
-import TodoList from './components/TodoList';
+import Buddy from './components/dashboard/buddy-dashboard';
+import InstallButton from './components/install-button';
+import OverlayButton from './components/overlay-button';
+import TodoList from './components/todo-list';
 import { useTranslations } from '../lib/hooks/use-translations';
 
 export default function Home() {

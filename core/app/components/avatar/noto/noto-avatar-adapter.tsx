@@ -3,7 +3,7 @@
 import dynamic from 'next/dynamic';
 import { useEffect, useMemo, useState } from 'react';
 import { buildAnimation, getNotoCodepoint, NOTO_GROUPS, sampleFacesWithHands, VARIANTS, type FacesWithHandsComposition, type NotoGroup } from '../../avatars';
-import { getCachedLottie, loadLottie } from '@/lib/notoEmoji';
+import { getCachedLottie, loadLottie } from '@/lib/noto-emoji';
 import type { AvatarAdapter } from '../types';
 
 const Lottie = dynamic(() => import('lottie-react'), { ssr: false });

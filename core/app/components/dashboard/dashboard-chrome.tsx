@@ -1,8 +1,8 @@
-import AppSettings from '../AppSettings';
-import DiscordLink from '../DiscordLink';
-import GitHubLink from '../GitHubLink';
-import LanguageSelector from '../LanguageSelector';
-import SignInStatus from '../SignInStatus';
+import AppSettings from '../app-settings';
+import DiscordLink from '../discord-link';
+import GitHubLink from '../github-link';
+import LanguageSelector from '../language-selector';
+import SignInStatus from '../sign-in-status';
 import type { PlatformAdapter } from '@/lib/platform/types';
 
 type Props = {

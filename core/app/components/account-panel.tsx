@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useTranslations } from '../../lib/hooks/use-translations';
-import { fetchAuthSession, goToGoogleSignIn, goToSignOut, type AuthSession } from './authClient';
+import { fetchAuthSession, goToGoogleSignIn, goToSignOut, type AuthSession } from './auth-client';
 
 export default function AccountPanel() {
   const { t } = useTranslations();

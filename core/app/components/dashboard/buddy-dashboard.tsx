@@ -17,9 +17,9 @@ import {
   ROTATION_EASE_MS,
   type Vec2, type PhysicsMode,
 } from '../physics';
-import DashboardChrome from './DashboardChrome';
-import DashboardStage from './DashboardStage';
-import DashboardStyles from './DashboardStyles';
+import DashboardChrome from './dashboard-chrome';
+import DashboardStage from './dashboard-stage';
+import DashboardStyles from './dashboard-styles';
 import {
   ANCHOR,
   AVATAR_SIZE,
@@ -43,13 +43,13 @@ import {
 } from './geometry';
 import { initialBuddies } from './storage';
 import type { Edge, Group } from './types';
-import { useBuddyActions } from '../../../lib/hooks/useBuddyActions';
-import { useBuddyPersistence } from '../../../lib/hooks/useBuddyPersistence';
-import { useDesktopGroupHover } from '../../../lib/hooks/useDesktopGroupHover';
-import { useDragRotation } from '../../../lib/hooks/useDragRotation';
-import { useGroupExpansion } from '../../../lib/hooks/useGroupExpansion';
-import { useNativeTouchRegions } from '../../../lib/hooks/useNativeTouchRegions';
-import { useWonderAvatarBrain } from '../../../lib/hooks/useWonderAvatarBrain';
+import { useBuddyActions } from '../../../lib/hooks/use-buddy-actions';
+import { useBuddyPersistence } from '../../../lib/hooks/use-buddy-persistence';
+import { useDesktopGroupHover } from '../../../lib/hooks/use-desktop-group-hover';
+import { useDragRotation } from '../../../lib/hooks/use-drag-rotation';
+import { useGroupExpansion } from '../../../lib/hooks/use-group-expansion';
+import { useNativeTouchRegions } from '../../../lib/hooks/use-native-touch-regions';
+import { useWonderAvatarBrain } from '../../../lib/hooks/use-wonder-avatar-brain';
 
 export default function Buddy() {
   const adapter = usePlatform();

@@ -1,7 +1,7 @@
-import { buddyAvatarAdapter } from './buddy/BuddyAvatarAdapter';
-import { notoAvatarAdapter } from './noto/NotoAvatarAdapter';
-import { shimejiAvatarAdapter } from './shimeji/ShimejiAvatarAdapter';
-import { model3dAvatarAdapter } from './model3d/Model3DAvatarAdapter';
+import { buddyAvatarAdapter } from './buddy/buddy-avatar-adapter';
+import { notoAvatarAdapter } from './noto/noto-avatar-adapter';
+import { shimejiAvatarAdapter } from './shimeji/shimeji-avatar-adapter';
+import { model3dAvatarAdapter } from './model3d/model-3d-avatar-adapter';
 import type { AvatarAdapter } from './types';
 
 export const AVATAR_ADAPTERS: AvatarAdapter[] = [
