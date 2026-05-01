@@ -7,6 +7,7 @@
   "scripts": {
     "web-dev": "npm --prefix core run dev",
     "web-build": "npm --prefix core run build",
+    "web-start": "npm --prefix core start",
     "desktop-dev": "npm --prefix desktop run dev",
     "desktop-start": "npm --prefix desktop start",
     "desktop-build": "npm --prefix core run build && npm --prefix desktop run build:win",
