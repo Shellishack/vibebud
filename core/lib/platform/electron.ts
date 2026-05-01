@@ -9,6 +9,7 @@ type VibebudBridge = {
   showNotification?: (payload: NotificationPayload) => void;
   onOpenSettings?: (cb: () => void) => () => void;
   showPairing?: () => void;
+  openExternal?: (url: string) => void;
   claude?: ClaudeCodeBridge;
   codex?: ClaudeCodeBridge;
   codeAgents?: {
@@ -45,6 +46,10 @@ export class ElectronAdapter implements PlatformAdapter {
 
   setFocusable(focusable: boolean): void {
     bridge()?.setFocusable?.(focusable);
+  }
+
+  openExternal(url: string): void {
+    bridge()?.openExternal?.(url);
   }
 
   onOutsideTap(_cb: () => void): () => void { return () => {}; }

@@ -1,4 +1,4 @@
-const { app, BrowserWindow, Notification, screen, Tray, Menu, nativeImage, protocol, net, ipcMain } = require('electron');
+const { app, BrowserWindow, Notification, screen, Tray, Menu, nativeImage, protocol, net, ipcMain, shell } = require('electron');
 const path = require('path');
 const url = require('url');
 const { createClaudeHost } = require('./claude-sessions');
@@ -77,6 +77,9 @@ function createWindow() {
 
   if (DEV_URL) {
     win.loadURL(`${DEV_URL.replace(/\/$/, '')}/buddy`);
+    win.webContents.once('did-finish-load', () => {
+      win?.webContents.openDevTools({ mode: 'detach' });
+    });
   } else {
     win.loadURL('app://local/buddy/');
   }
@@ -167,6 +170,15 @@ app.whenReady().then(() => {
 
   ipcMain.on('vibebud:show-pairing', () => {
     void showPairingWindow({ port: Number(process.env.VIBEBUD_BRIDGE_PORT || DEFAULT_PORT) });
+  });
+
+  ipcMain.on('vibebud:open-external', (_event, rawUrl) => {
+    if (typeof rawUrl !== 'string') return;
+    try {
+      const parsed = new URL(rawUrl);
+      if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') return;
+      void shell.openExternal(parsed.toString());
+    } catch { /* noop */ }
   });
 
   ipcMain.on('set-focusable', (_event, focusable) => {

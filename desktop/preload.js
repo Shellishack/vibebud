@@ -14,6 +14,7 @@ contextBridge.exposeInMainWorld('vibebud', {
   },
   showNotification: (payload) => ipcRenderer.send('vibebud:notify', payload),
   showPairing: () => ipcRenderer.send('vibebud:show-pairing'),
+  openExternal: (url) => ipcRenderer.send('vibebud:open-external', url),
   onOpenSettings: (cb) => {
     const handler = () => cb();
     ipcRenderer.on('vibebud:open-settings', handler);

@@ -22,6 +22,11 @@ export class WebAdapter implements PlatformAdapter {
 
   setFocusable(_focusable: boolean): void { /* noop */ }
 
+  openExternal(url: string): void {
+    if (typeof window === 'undefined') return;
+    window.open(url, '_blank', 'noopener,noreferrer');
+  }
+
   onSpawnRequest(_cb: () => void): () => void { return () => {}; }
   onOutsideTap(_cb: () => void): () => void { return () => {}; }
   stopOverlay(): void { /* noop */ }

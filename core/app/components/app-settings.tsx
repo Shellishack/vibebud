@@ -29,7 +29,16 @@ import {
   resolveShimejiAsset,
   subscribeShimejiPacks,
 } from '../../lib/avatar/shimeji';
-import type { InstalledShimejiPack, ShimejiPackManifest } from '../../lib/avatar/types';
+import {
+  fetchModel3DCatalog,
+  getModel3DCommunityLibraries,
+  importModel3D,
+  installCatalogModel,
+  listModel3D,
+  removeModel3D,
+  subscribeModel3D,
+} from '../../lib/avatar/model3d';
+import type { InstalledModel3D, InstalledShimejiPack, Model3DAvatar, ShimejiPackManifest } from '../../lib/avatar/types';
 
 type Props = { open: boolean; onClose: () => void };
 
@@ -373,11 +382,16 @@ function AppSettingsBody({ onClose }: { onClose: () => void }) {
 
 function CollectionModal({ onClose }: { onClose: () => void }) {
   const { t } = useTranslations();
+  const adapter = usePlatform();
   const [tick, setTick] = useState(0);
   const [packs, setPacks] = useState<InstalledShimejiPack[]>([]);
+  const [models, setModels] = useState<InstalledModel3D[]>([]);
   const [catalog, setCatalog] = useState<Array<{ manifest: ShimejiPackManifest; baseUrl: string }>>([]);
+  const [modelCatalog, setModelCatalog] = useState<Array<{ avatar: Model3DAvatar; license?: string; author?: string; description?: string }>>([]);
   const [packError, setPackError] = useState<string | null>(null);
+  const [modelError, setModelError] = useState<string | null>(null);
   const [catalogLoading, setCatalogLoading] = useState(false);
+  const [modelCatalogLoading, setModelCatalogLoading] = useState(false);
   void tick;
   useEffect(() => subscribeGamification(() => setTick((n) => n + 1)), []);
   useEffect(() => {
@@ -385,6 +399,13 @@ function CollectionModal({ onClose }: { onClose: () => void }) {
     const refresh = () => listShimejiPacks().then((next) => { if (!cancelled) setPacks(next); });
     refresh();
     const unsub = subscribeShimejiPacks(refresh);
+    return () => { cancelled = true; unsub(); };
+  }, []);
+  useEffect(() => {
+    let cancelled = false;
+    const refresh = () => listModel3D().then((next) => { if (!cancelled) setModels(next); });
+    refresh();
+    const unsub = subscribeModel3D(refresh);
     return () => { cancelled = true; unsub(); };
   }, []);
   const loadCatalog = () => {
@@ -404,7 +425,25 @@ function CollectionModal({ onClose }: { onClose: () => void }) {
       setPackError(e instanceof Error ? e.message : String(e));
     }
   };
+  const loadModelCatalog = () => {
+    setModelError(null);
+    setModelCatalogLoading(true);
+    fetchModel3DCatalog()
+      .then(setModelCatalog)
+      .catch((e) => setModelError(e instanceof Error ? e.message : String(e)))
+      .finally(() => setModelCatalogLoading(false));
+  };
+  const onImportModel = async (file: File | null) => {
+    if (!file) return;
+    setModelError(null);
+    try {
+      await importModel3D(file);
+    } catch (e) {
+      setModelError(e instanceof Error ? e.message : String(e));
+    }
+  };
   const installedIds = new Set(packs.map((p) => p.manifest.id));
+  const installedModelIds = new Set(models.map((model) => model.avatar.id));
   const store = loadGamificationStore();
   const buddies = loadBuddySnapshots();
   const favoriteTeams = Object.entries(store.collection.favoriteTeams).sort((a, b) => b[1] - a[1]);
@@ -558,6 +597,92 @@ function CollectionModal({ onClose }: { onClose: () => void }) {
                   ))}
                 </div>
               )}
+            </div>
+          </section>
+
+          <section className="mb-5">
+            <div className="mb-2 flex items-center justify-between gap-3">
+              <h3 className="text-xs font-semibold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">3D models</h3>
+              <label className="cursor-pointer rounded-full bg-violet-600 px-3 py-1 text-[11px] font-semibold text-white hover:bg-violet-700">
+                import model
+                <input
+                  type="file"
+                  accept=".zip,.glb,.gltf,.fbx,.obj,application/zip,model/gltf-binary,model/gltf+json"
+                  className="hidden"
+                  onChange={(e) => {
+                    void onImportModel(e.currentTarget.files?.[0] ?? null);
+                    e.currentTarget.value = '';
+                  }}
+                />
+              </label>
+            </div>
+            {modelError && (
+              <p className="mb-2 rounded-xl bg-red-50 px-3 py-2 text-xs text-red-700 dark:bg-red-500/10 dark:text-red-300">{modelError}</p>
+            )}
+            <p className="mb-2 text-xs text-zinc-500 dark:text-zinc-400">
+              GLB is recommended. ZIP imports can include GLTF sidecar bin and texture files. Loose FBX and OBJ imports should be self-contained.
+            </p>
+            <div className="grid gap-2 sm:grid-cols-2">
+              {models.map((model) => (
+                <div key={model.avatar.id} className="flex items-center gap-3 rounded-2xl border border-zinc-200 bg-white p-3 dark:border-zinc-700 dark:bg-zinc-950/40">
+                  <span className="grid h-12 w-12 shrink-0 place-items-center rounded-xl bg-zinc-900 text-xs font-bold text-white dark:bg-zinc-100 dark:text-zinc-950">
+                    3D
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-semibold text-zinc-900 dark:text-zinc-50">{model.avatar.name}</p>
+                    <p className="truncate text-xs text-zinc-500 dark:text-zinc-400">{model.license ?? 'GLB/GLTF'} · {model.source}</p>
+                  </div>
+                  {model.source !== 'bundled' && (
+                    <button
+                      onClick={() => void removeModel3D(model.avatar.id).catch((e) => setModelError(e instanceof Error ? e.message : String(e)))}
+                      className="rounded-full px-2 py-1 text-[11px] text-red-600 hover:bg-red-50 dark:text-red-300 dark:hover:bg-red-500/10"
+                    >
+                      delete
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+            <div className="mt-3 rounded-2xl border border-zinc-200 bg-zinc-50 p-3 dark:border-zinc-700 dark:bg-zinc-800/70">
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">Remote catalog</p>
+                <button
+                  onClick={loadModelCatalog}
+                  disabled={modelCatalogLoading}
+                  className="rounded-full px-3 py-1 text-[11px] font-semibold text-violet-700 ring-1 ring-violet-200 hover:bg-violet-50 disabled:opacity-60 dark:text-violet-200 dark:ring-violet-500/40 dark:hover:bg-violet-500/10"
+                >
+                  {modelCatalogLoading ? 'loading...' : 'refresh'}
+                </button>
+              </div>
+              {modelCatalog.length > 0 && (
+                <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                  {modelCatalog.filter((model) => !installedModelIds.has(model.avatar.id)).map((model) => (
+                    <button
+                      key={model.avatar.id}
+                      onClick={() => void installCatalogModel(model).catch((e) => setModelError(e instanceof Error ? e.message : String(e)))}
+                      className="rounded-xl bg-white px-3 py-2 text-left text-xs ring-1 ring-zinc-200 hover:bg-zinc-100 dark:bg-zinc-950/50 dark:ring-zinc-700 dark:hover:bg-zinc-900"
+                    >
+                      <span className="block font-semibold text-zinc-900 dark:text-zinc-50">{model.avatar.name}</span>
+                      <span className="block text-zinc-500 dark:text-zinc-400">{model.license ?? 'GLB/GLTF'} · install</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+            <div className="mt-3 rounded-2xl border border-zinc-200 bg-zinc-50 p-3 dark:border-zinc-700 dark:bg-zinc-800/70">
+              <p className="mb-2 text-sm font-semibold text-zinc-900 dark:text-zinc-50">Community libraries</p>
+              <div className="flex flex-wrap gap-2">
+                {getModel3DCommunityLibraries().map((library) => (
+                  <button
+                    key={library.href}
+                    type="button"
+                    onClick={() => adapter.openExternal(library.href)}
+                    className="rounded-full px-3 py-1 text-[11px] font-semibold text-violet-700 ring-1 ring-violet-200 hover:bg-white dark:text-violet-200 dark:ring-violet-500/40 dark:hover:bg-zinc-900"
+                  >
+                    {library.label}
+                  </button>
+                ))}
+              </div>
             </div>
           </section>
 

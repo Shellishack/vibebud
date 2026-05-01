@@ -41,6 +41,8 @@ export interface PlatformAdapter {
 
   setFocusable(focusable: boolean): void;
 
+  openExternal(url: string): void;
+
   onSpawnRequest(cb: () => void): () => void;
 
   // Capacitor-only: fires when the user taps outside the published touchable

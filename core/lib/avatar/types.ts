@@ -46,10 +46,20 @@ export type Model3DAvatar = {
   id: string;
   name: string;
   modelSrc: string;
+  modelFormat?: 'glb' | 'gltf' | 'fbx' | 'obj';
   scale?: number;
   yOffset?: number;
   cameraZ?: number;
   animations?: Partial<Record<ShimejiAction, string[]>>;
+};
+
+export type InstalledModel3D = {
+  avatar: Model3DAvatar;
+  source: 'bundled' | 'catalog' | 'imported';
+  license?: string;
+  author?: string;
+  description?: string;
+  installedAt: number;
 };
 
 export type AvatarSelection =

@@ -136,6 +136,11 @@ export class CapacitorAdapter implements PlatformAdapter {
     // approach — likely a fresh focusable child window for inputs only.
   }
 
+  openExternal(url: string): void {
+    if (typeof window === 'undefined') return;
+    window.open(url, '_blank', 'noopener,noreferrer');
+  }
+
   onSpawnRequest(_cb: () => void): () => void { return () => {}; }
 
   stopOverlay(): void {
