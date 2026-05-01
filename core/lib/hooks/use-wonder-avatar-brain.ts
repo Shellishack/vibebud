@@ -54,7 +54,7 @@ export function useWonderAvatarBrain({
     }
 
     for (const b of buddiesRef.current) {
-      if (b.avatar?.kind !== 'shimeji' && b.avatar?.kind !== 'model3d') continue;
+      if (b.avatar?.kind !== 'shimeji' && b.avatar?.kind !== 'model3d' && b.avatar?.kind !== 'sprite') continue;
       hasActionAvatar = true;
       if (openBuddiesRef.current[b.id] || wonderPausedBuddiesRef.current[b.id]) {
         setAction(b.id, 'sit');

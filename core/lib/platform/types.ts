@@ -113,11 +113,16 @@ export type ClaudeStartOpts = {
   cwd?: string;
   model?: string;
   allowedTools?: string[];
+  artifact?: {
+    type: 'sprite-zip';
+    name: string;
+  };
+  skillPath?: string;
 };
 export type ClaudeEvent = { type: string; [key: string]: unknown };
 export type CodeAgentDescriptor = { id: string; label: string; env?: string; bin?: string };
 export interface ClaudeCodeBridge {
-  start(buddyId: string, opts?: ClaudeStartOpts): Promise<{ ok: boolean; alreadyRunning?: boolean; cwd?: string; error?: string }>;
+  start(buddyId: string, opts?: ClaudeStartOpts): Promise<{ ok: boolean; alreadyRunning?: boolean; cwd?: string; artifactPath?: string; error?: string }>;
   send(buddyId: string, text: string): Promise<{ ok: boolean; error?: string }>;
   stop(buddyId: string): Promise<{ ok: boolean; error?: string }>;
   list(): Promise<string[]>;

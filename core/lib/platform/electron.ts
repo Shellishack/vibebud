@@ -14,7 +14,7 @@ type VibebudBridge = {
   codex?: ClaudeCodeBridge;
   codeAgents?: {
     list: () => Promise<CodeAgentDescriptor[]>;
-    start: (agentId: string, buddyId: string, opts?: unknown) => Promise<{ ok: boolean; alreadyRunning?: boolean; cwd?: string; error?: string }>;
+    start: (agentId: string, buddyId: string, opts?: unknown) => Promise<{ ok: boolean; alreadyRunning?: boolean; cwd?: string; artifactPath?: string; error?: string }>;
     send: (agentId: string, buddyId: string, text: string) => Promise<{ ok: boolean; error?: string }>;
     stop: (agentId: string, buddyId: string) => Promise<{ ok: boolean; error?: string }>;
     onEvent: (cb: (agentId: string, buddyId: string, event: unknown) => void) => () => void;

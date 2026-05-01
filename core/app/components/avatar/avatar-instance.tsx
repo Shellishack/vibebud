@@ -68,6 +68,7 @@ export default function AvatarInstance({ state, anchor, canRemove, onChange, onS
   const [emotion, setEmotion] = useState<Emotion>('idle');
   const [busy, setBusy] = useState(false);
   const [chatDetailsOpen, setChatDetailsOpen] = useState(false);
+  const [avatarInfoOpen, setAvatarInfoOpen] = useState(false);
   const [familyMenu, setFamilyMenu] = useState<AvatarCategory | null>(null);
   const llmSettings = useBuddyLlmSettings({
     showLlmOnboarding,
@@ -703,9 +704,52 @@ export default function AvatarInstance({ state, anchor, canRemove, onChange, onS
           >
             <div className="border-b border-zinc-200 px-4 py-3 dark:border-zinc-700">
               <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">{personality.name} · {variant.name}</p>
-                  <p className="text-xs text-emerald-600 dark:text-emerald-400">Lv {progress.level} · {personality.role}</p>
+                <div
+                  className="relative min-w-0"
+                  onMouseEnter={() => setAvatarInfoOpen(true)}
+                  onMouseLeave={() => setAvatarInfoOpen(false)}
+                >
+                  <div className="flex min-w-0 items-center gap-1.5">
+                    <p className="truncate text-sm font-semibold text-zinc-900 dark:text-zinc-50">{personality.name} · {variant.name}</p>
+                    <button
+                      type="button"
+                      onFocus={() => setAvatarInfoOpen(true)}
+                      onBlur={() => setAvatarInfoOpen(false)}
+                      onClick={() => setAvatarInfoOpen((v) => !v)}
+                      aria-expanded={avatarInfoOpen}
+                      className="shrink-0 rounded-full bg-emerald-100 px-1.5 py-0.5 text-[10px] font-semibold leading-none text-emerald-700 ring-1 ring-emerald-200 hover:bg-emerald-200 dark:bg-emerald-500/15 dark:text-emerald-300 dark:ring-emerald-500/30"
+                    >
+                      Lv {progress.level}
+                    </button>
+                  </div>
+                  <p className="truncate text-xs text-emerald-600 dark:text-emerald-400">{personality.role}</p>
+                  {avatarInfoOpen && (
+                    <div
+                      className="absolute left-0 top-full z-10 mt-2 w-56 rounded-2xl bg-white p-2.5 text-[10px] text-zinc-600 shadow-xl ring-1 ring-zinc-200 dark:bg-zinc-950 dark:text-zinc-300 dark:ring-zinc-700"
+                    >
+                      <div className="mb-1 flex items-center justify-between font-medium uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
+                        <span>Level {progress.level}</span>
+                        <span>{progress.xp} / {progress.next} XP</span>
+                      </div>
+                      <div className="h-1.5 overflow-hidden rounded-full bg-zinc-200 dark:bg-zinc-800">
+                        <div
+                          className="h-full rounded-full bg-gradient-to-r from-emerald-400 to-violet-500 transition-[width] duration-500"
+                          style={{ width: `${progress.pct}%` }}
+                        />
+                      </div>
+                      <p className="mt-1.5">{progress.stats.chats} chats · {progress.stats.tasksCompleted} tasks · {progress.stats.pings} pings</p>
+                      <div className="mt-2 grid grid-cols-2 gap-1.5">
+                        <div className="rounded-xl bg-zinc-50 px-2 py-1.5 dark:bg-zinc-900">
+                          <p className="font-semibold uppercase tracking-wider text-zinc-400">Bond</p>
+                          <p className="mt-0.5">Lv {bond.bondLevel} · {bond.mood}</p>
+                        </div>
+                        <div className="rounded-xl bg-zinc-50 px-2 py-1.5 dark:bg-zinc-900">
+                          <p className="font-semibold uppercase tracking-wider text-zinc-400">Team</p>
+                          <p className="mt-0.5 truncate">{activeTeamBonus?.label ?? 'No bonus'}</p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
                 <div className="flex items-center gap-1">
                   {adapter.id === 'capacitor-android' && (
@@ -723,6 +767,18 @@ export default function AvatarInstance({ state, anchor, canRemove, onChange, onS
                     className="hidden rounded-full bg-violet-100 px-2.5 py-1 text-xs font-medium text-violet-700 hover:bg-violet-200 dark:bg-violet-500/20 dark:text-violet-300 sm:block"
                   >
                     ping
+                  </button>
+                  <button
+                    onClick={() => {
+                      setOpen(true);
+                      setChatDetailsOpen(true);
+                      setFamilyMenu('sprite');
+                    }}
+                    title="Generate a new avatar with AI"
+                    aria-label="Generate a new avatar with AI"
+                    className="grid h-7 w-7 place-items-center rounded-full bg-violet-100 text-violet-700 hover:bg-violet-200 dark:bg-violet-500/20 dark:text-violet-300 dark:hover:bg-violet-500/30"
+                  >
+                    <span className="text-[15px] leading-none" aria-hidden>✦</span>
                   </button>
                   <button
                     onClick={() => setChatDetailsOpen((v) => {
@@ -781,11 +837,6 @@ export default function AvatarInstance({ state, anchor, canRemove, onChange, onS
                   emotion={emotion}
                   familyMenu={familyMenu}
                   settingsOpen={llmSettings.open}
-                  progress={progress}
-                  bond={bond}
-                  unlockedMilestones={unlockedMilestones}
-                  dailyTasks={dailyTasks}
-                  activeTeamBonus={activeTeamBonus}
                   providerDraft={llmSettings.providerDraft}
                   keyDraft={llmSettings.keyDraft}
                   modelDraft={llmSettings.modelDraft}

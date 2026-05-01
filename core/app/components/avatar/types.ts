@@ -4,7 +4,7 @@ import type { Emotion, NotoGroup } from '../avatars';
 import type { Personality } from '../personalities';
 import type { ShimejiAction } from '@/lib/avatar/types';
 
-export type AvatarCategory = 'buddy' | 'noto' | 'shimeji' | 'model3d';
+export type AvatarCategory = 'buddy' | 'noto' | 'shimeji' | 'model3d' | 'sprite';
 
 export type NotoAvatarState = {
   kind: 'noto';

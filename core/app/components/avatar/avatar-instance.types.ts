@@ -1,6 +1,6 @@
 import type { FacesWithHandsComposition, NotoGroup } from '../avatars';
 import type { Teammate } from '../llm';
-import type { Model3DAvatar, ShimejiAction, ShimejiAvatar } from '../../../lib/avatar/types';
+import type { Model3DAvatar, ShimejiAction, ShimejiAvatar, SpriteAvatar } from '../../../lib/avatar/types';
 
 export type Toast = { id: number; title: string; body: string; tone: 'info' | 'action' | 'success' };
 export type ChatMsg = { id: number; from: 'buddy' | 'you'; text: string };
@@ -14,7 +14,7 @@ export type AvatarInstanceState = {
   minimized?: { edge: 'left' | 'right' | 'top' | 'bottom' };
   lastFreePos?: { x: number; y: number };
   scale?: number;
-  avatar?: { kind: 'noto'; group: NotoGroup; composition?: FacesWithHandsComposition } | ShimejiAvatar | Model3DAvatar;
+  avatar?: { kind: 'noto'; group: NotoGroup; composition?: FacesWithHandsComposition } | ShimejiAvatar | Model3DAvatar | SpriteAvatar;
   xp?: number;
   level?: number;
   stats?: import('../gamification').BuddyStats;

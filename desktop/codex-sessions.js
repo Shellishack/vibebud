@@ -2,7 +2,9 @@
 // one-shot `codex exec --json`, so a vibebud "session" tracks availability
 // per buddy while each user turn launches one exec process and streams JSONL.
 const { spawn } = require('child_process');
+const fs = require('fs');
 const os = require('os');
+const path = require('path');
 
 function codexBinary() {
   return process.env.VIBEBUD_CODEX_BIN || 'codex';
@@ -16,15 +18,63 @@ function codexSandboxMode() {
   return process.env.VIBEBUD_CODEX_SANDBOX || 'danger-full-access';
 }
 
+function resolveExistingPath(input) {
+  if (!input) return null;
+  const raw = String(input);
+  const candidates = path.isAbsolute(raw)
+    ? [raw]
+    : [
+        path.resolve(raw),
+        path.resolve(__dirname, '..', raw),
+        path.resolve(__dirname, '..', '..', raw),
+      ];
+  for (const candidate of candidates) {
+    try {
+      if (fs.existsSync(candidate)) return candidate;
+    } catch {
+      /* try the next candidate */
+    }
+  }
+  return path.resolve(raw);
+}
+
 function createCodexHost({ emit }) {
   const sessions = new Map(); // buddyId -> { cwd, proc, stdoutBuf, stderrBuf, busy, resultEmitted }
 
   function start(buddyId, opts = {}) {
     if (sessions.has(buddyId)) return { ok: true, alreadyRunning: true };
     const cwd = opts.cwd || process.env.VIBEBUD_CODEX_CWD || process.env.VIBEBUD_CLAUDE_CWD || os.homedir();
-    sessions.set(buddyId, { cwd, proc: null, stdoutBuf: '', stderrBuf: '', busy: false, resultEmitted: false });
-    emit(buddyId, { type: 'system', subtype: 'init', cwd, bin: codexBinary() });
-    return { ok: true, cwd };
+    let artifact = null;
+    if (opts.artifact?.type === 'sprite-zip') {
+      const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'vibebud-sprite-'));
+      artifact = {
+        type: 'sprite-zip',
+        dir,
+        name: path.basename(String(opts.artifact.name || 'vibebud-sprite.zip')),
+        skillPath: resolveExistingPath(opts.skillPath),
+      };
+      artifact.path = path.join(dir, artifact.name);
+    }
+    sessions.set(buddyId, { cwd, proc: null, stdoutBuf: '', stderrBuf: '', busy: false, resultEmitted: false, artifact });
+    emit(buddyId, { type: 'system', subtype: 'init', cwd, bin: codexBinary(), artifactPath: artifact?.path, skillPath: artifact?.skillPath });
+    return { ok: true, cwd, artifactPath: artifact?.path, skillPath: artifact?.skillPath };
+  }
+
+  function emitArtifact(buddyId, session) {
+    const artifact = session && session.artifact;
+    if (!artifact?.path) return;
+    try {
+      const stat = fs.statSync(artifact.path);
+      if (!stat.isFile()) return;
+      if (stat.size > 16 * 1024 * 1024) {
+        emit(buddyId, { type: 'error', text: 'Generated sprite ZIP is too large.' });
+        return;
+      }
+      const base64 = fs.readFileSync(artifact.path).toString('base64');
+      emit(buddyId, { type: 'artifact', artifactType: artifact.type, name: artifact.name, base64 });
+    } catch {
+      emit(buddyId, { type: 'error', text: `Codex did not write ${artifact.path}.` });
+    }
   }
 
   function handleJsonEvent(buddyId, evt) {
@@ -133,7 +183,10 @@ function createCodexHost({ emit }) {
       }
       const stderr = (session.stderrBuf || '').trim();
       if (code !== 0) emit(buddyId, { type: 'closed', code, stderr, bin: codexBinary(), cwd: session.cwd });
-      else if (!session.resultEmitted) emit(buddyId, { type: 'result' });
+      else {
+        emitArtifact(buddyId, session);
+        if (!session.resultEmitted) emit(buddyId, { type: 'result' });
+      }
       session.busy = false;
       session.proc = null;
       session.stdoutBuf = '';

@@ -1,5 +1,6 @@
 export type ShimejiAction = 'idle' | 'walk' | 'climb' | 'fall' | 'sit' | 'drag';
 export type Model3DAction = 'idle' | 'walk' | 'climb' | 'fall' | 'sit' | 'drag';
+export type SpriteAction = 'idle' | 'walk' | 'climb' | 'fall' | 'sit' | 'drag';
 
 export type ShimejiAnimation = {
   src: string;
@@ -63,6 +64,38 @@ export type Model3DAvatar = {
   animations?: Partial<Record<Model3DAction, string[]>>;
 };
 
+export type SpriteAnimation = {
+  src: string;
+  frames: number;
+  fps: number;
+  loop?: boolean;
+};
+
+export type SpritePackManifest = {
+  schemaVersion: 1;
+  id: string;
+  name: string;
+  license: string;
+  author?: string;
+  description?: string;
+  preview: string;
+  frameSize: { w: number; h: number };
+  scale?: number;
+  animations: Record<SpriteAction, SpriteAnimation>;
+};
+
+export type InstalledSpritePack = {
+  manifest: SpritePackManifest;
+  source: 'imported' | 'generated';
+  files: Record<string, string>;
+  installedAt: number;
+};
+
+export type SpriteAvatar = {
+  kind: 'sprite';
+  packId: string;
+};
+
 export type InstalledModel3D = {
   avatar: Model3DAvatar;
   source: 'bundled' | 'catalog' | 'imported';
@@ -75,4 +108,5 @@ export type InstalledModel3D = {
 export type AvatarSelection =
   | { kind: 'noto'; group: string; composition?: unknown }
   | ShimejiAvatar
-  | Model3DAvatar;
+  | Model3DAvatar
+  | SpriteAvatar;

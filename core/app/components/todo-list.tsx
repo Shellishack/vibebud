@@ -7,7 +7,8 @@ import { getPersonality } from './personalities';
 import { getCachedLottie, loadLottie } from '../../lib/noto-emoji';
 import { useTranslations } from '../../lib/hooks/use-translations';
 import ShimejiAvatarView from './avatar/shimeji/shimeji-avatar';
-import type { ShimejiAvatar } from '../../lib/avatar/types';
+import SpriteAvatarView from './avatar/sprite/sprite-avatar';
+import type { ShimejiAvatar, SpriteAvatar } from '../../lib/avatar/types';
 
 const Lottie = dynamic(() => import('lottie-react'), { ssr: false });
 
@@ -26,7 +27,7 @@ type BuddyTodoStore = {
 type BuddySnapshot = {
   id: string;
   variantId: string;
-  avatar?: { kind: 'noto'; group: NotoGroup; composition?: FacesWithHandsComposition } | ShimejiAvatar;
+  avatar?: { kind: 'noto'; group: NotoGroup; composition?: FacesWithHandsComposition } | ShimejiAvatar | SpriteAvatar;
 };
 
 const TODO_STORAGE_KEY = 'vibebud.todos.v1';
@@ -226,7 +227,9 @@ function AvatarPfp({ buddy, size }: { buddy: BuddySnapshot; size: 'sm' | 'md' })
     >
       {buddy.avatar?.kind === 'shimeji'
         ? <ShimejiAvatarView avatar={buddy.avatar} action="idle" />
-        : <Lottie animationData={notoData ?? fallbackAnimation} loop autoplay />}
+        : buddy.avatar?.kind === 'sprite'
+          ? <SpriteAvatarView avatar={buddy.avatar} action="idle" />
+          : <Lottie animationData={notoData ?? fallbackAnimation} loop autoplay />}
     </span>
   );
 }
