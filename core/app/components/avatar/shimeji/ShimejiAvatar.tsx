@@ -5,8 +5,8 @@ import {
   getShimejiCharacter,
   getShimejiPack,
   resolveShimejiAsset,
-} from '../../lib/avatar/shimeji';
-import type { InstalledShimejiPack, ShimejiAction, ShimejiAvatar } from '../../lib/avatar/types';
+} from '@/lib/avatar/shimeji';
+import type { InstalledShimejiPack, ShimejiAction, ShimejiAvatar } from '@/lib/avatar/types';
 
 type Props = {
   avatar: ShimejiAvatar;

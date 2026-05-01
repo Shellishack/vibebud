@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
-import type { Model3DAvatar, ShimejiAction } from '../../lib/avatar/types';
+import type { Model3DAvatar, ShimejiAction } from '@/lib/avatar/types';
 
 type Props = {
   avatar: Model3DAvatar;

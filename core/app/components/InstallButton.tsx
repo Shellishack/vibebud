@@ -7,7 +7,7 @@
 
 import { useEffect, useState } from 'react';
 import { useTranslations } from '../../lib/hooks/use-translations';
-import { usePlatform } from './hooks/usePlatform';
+import { usePlatform } from '@/lib/hooks/use-platform';
 
 type Target = { id: string; label: string; href: string; ext: string; directDownload?: boolean };
 

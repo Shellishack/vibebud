@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import Buddy from './components/Buddy';
+import Buddy from './components/dashboard/BuddyDashboard';
 import InstallButton from './components/InstallButton';
 import OverlayButton from './components/OverlayButton';
 import TodoList from './components/TodoList';

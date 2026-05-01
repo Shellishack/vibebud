@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useTranslations } from '../../lib/hooks/use-translations';
-import { usePlatform } from './hooks/usePlatform';
+import { usePlatform } from '@/lib/hooks/use-platform';
 
 type OverlayPlugin = {
   hasPermission: () => Promise<{ granted: boolean }>;

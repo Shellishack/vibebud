@@ -133,7 +133,7 @@ export class RemoteClaudeBridge implements ClaudeCodeBridge {
   }
 }
 
-// Shared singleton per (url, token) pair so multiple BuddyInstance components
+// Shared singleton per (url, token) pair so multiple AvatarInstance components
 // don't each open their own socket. Reset when the config changes.
 let cached: { key: string; bridge: RemoteClaudeBridge } | null = null;
 let cachedCodex: { key: string; bridge: RemoteClaudeBridge } | null = null;

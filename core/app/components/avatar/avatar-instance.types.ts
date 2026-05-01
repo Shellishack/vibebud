@@ -1,0 +1,59 @@
+import type { FacesWithHandsComposition, NotoGroup } from '../avatars';
+import type { Teammate } from '../llm';
+import type { Model3DAvatar, ShimejiAction, ShimejiAvatar } from '../../../lib/avatar/types';
+
+export type Toast = { id: number; title: string; body: string; tone: 'info' | 'action' | 'success' };
+export type ChatMsg = { id: number; from: 'buddy' | 'you'; text: string };
+
+export type AvatarInstanceState = {
+  id: string;
+  variantId: string;
+  pos: { x: number; y: number };
+  messages: ChatMsg[];
+  groupId?: string;
+  minimized?: { edge: 'left' | 'right' | 'top' | 'bottom' };
+  lastFreePos?: { x: number; y: number };
+  avatar?: { kind: 'noto'; group: NotoGroup; composition?: FacesWithHandsComposition } | ShimejiAvatar | Model3DAvatar;
+  xp?: number;
+  level?: number;
+  stats?: import('../gamification').BuddyStats;
+};
+
+export type AvatarInstanceProps = {
+  state: AvatarInstanceState;
+  anchor: { right: number; bottom: number };
+  canRemove: boolean;
+  onChange: (next: AvatarInstanceState) => void;
+  onSpawn: () => void;
+  onRemove: () => void;
+  onOpenChange?: (id: string, open: boolean) => void;
+  onDragMove?: (id: string, pos: { x: number; y: number }) => void;
+  onDragEnd?: (id: string, pos: { x: number; y: number }, moved: boolean) => void;
+  magnetState?: 'attractor' | 'target' | null;
+  edgeMagnet?: 'left' | 'right' | 'top' | 'bottom' | null;
+  teammates?: Teammate[];
+  groupMemberIds?: string[];
+  isGroupExpanded?: boolean;
+  isGroupMinimized?: boolean;
+  onGroupTap?: (gid: string) => void;
+  onRestore?: () => void;
+  onGroupRestore?: (gid: string) => void;
+  dockPeeked?: boolean;
+  groupDockPeeked?: boolean;
+  onDockPeek?: () => void;
+  onDockUnpeek?: () => void;
+  onGroupDockPeek?: (gid: string) => void;
+  onGroupDockUnpeek?: (gid: string) => void;
+  bumpTick?: number;
+  groupBumpTick?: number;
+  rotation?: number;
+  rotationActive?: boolean;
+  grabPivot?: { x: number; y: number };
+  onDragStart?: (id: string, grabOffset: { x: number; y: number }) => void;
+  onOpenAppSettings?: () => void;
+  shimejiAction?: ShimejiAction;
+  shimejiDirection?: -1 | 1;
+  showLlmOnboarding?: boolean;
+  onDismissLlmOnboarding?: () => void;
+  onWonderPauseChange?: (id: string, paused: boolean) => void;
+};

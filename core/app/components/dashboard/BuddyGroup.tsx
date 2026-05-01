@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { usePlatform } from './hooks/usePlatform';
+import { usePlatform } from '@/lib/hooks/use-platform';
 
 type Props = {
   groupId: string;
@@ -77,7 +77,7 @@ export default function BuddyGroup({
   }, [bumpTick]);
 
   // Capacitor drag plumbing — same shape as the per-buddy drag wiring in
-  // BuddyInstance. dragBaseRef + callbacksRef must be refs because the
+  // AvatarInstance. dragBaseRef + callbacksRef must be refs because the
   // parent re-renders on each onGroupDragMove (it does setGroups), and a
   // `let` would be reset every time the listener-binding effect re-ran.
   const dragBaseRef = useRef<{ x: number; y: number } | null>(null);

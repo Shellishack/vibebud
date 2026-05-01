@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { usePlatform } from './hooks/usePlatform';
+import { usePlatform } from '@/lib/hooks/use-platform';
 import { getNotifyMethod, setNotifyMethod, type NotifyMethod } from './llm';
 import {
   getRemoteClaudeConfig, setRemoteClaudeConfig, type RemoteClaudeConfig,

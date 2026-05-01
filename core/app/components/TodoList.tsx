@@ -6,7 +6,7 @@ import { buildAnimation, getNotoCodepoint, VARIANTS, type FacesWithHandsComposit
 import { getPersonality } from './personalities';
 import { getCachedLottie, loadLottie } from '../../lib/notoEmoji';
 import { useTranslations } from '../../lib/hooks/use-translations';
-import ShimejiAvatarView from './ShimejiAvatar';
+import ShimejiAvatarView from './avatar/shimeji/ShimejiAvatar';
 import type { ShimejiAvatar } from '../../lib/avatar/types';
 
 const Lottie = dynamic(() => import('lottie-react'), { ssr: false });
