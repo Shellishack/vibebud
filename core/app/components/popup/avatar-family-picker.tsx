@@ -44,7 +44,7 @@ export default function AvatarFamilyPicker({ state, emotion, openCategory, onOpe
           id={`avatar-scale-${state.id}`}
           type="range"
           min="0.5"
-          max="2.5"
+          max="10"
           step="0.05"
           value={scale}
           onChange={(event) => update({ scale: Number(event.currentTarget.value) })}

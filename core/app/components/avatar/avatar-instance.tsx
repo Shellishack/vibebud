@@ -50,6 +50,7 @@ const DESKTOP_PANEL_W = 384;
 const DESKTOP_PANEL_H = 560;
 const DESKTOP_PANEL_GAP = 8;
 const VIEWPORT_PAD = 12;
+const BASE_AVATAR_SIZE = 112;
 
 export default function AvatarInstance({ state, anchor, canRemove, onChange, onSpawn, onRemove, onOpenChange, onDragMove, onDragEnd, magnetState, edgeMagnet, teammates, groupMemberIds, isGroupExpanded, isGroupMinimized, onGroupTap, onRestore, onGroupRestore, dockPeeked, groupDockPeeked, onDockPeek, onDockUnpeek, onGroupDockPeek, onGroupDockUnpeek, bumpTick, groupBumpTick, rotation, rotationActive, grabPivot, onDragStart, onOpenAppSettings, shimejiAction, shimejiDirection, showLlmOnboarding, onDismissLlmOnboarding, onWonderPauseChange }: AvatarInstanceProps) {
   const personality: Personality =
@@ -120,7 +121,8 @@ export default function AvatarInstance({ state, anchor, canRemove, onChange, onS
     onChange,
   });
   const avatarIsMoving = avatarRuntime.isMoving;
-  const instanceScale = Math.min(2.5, Math.max(0.5, state.scale ?? 1));
+  const instanceScale = Math.min(10, Math.max(0.5, state.scale ?? 1));
+  const avatarSize = BASE_AVATAR_SIZE * instanceScale;
   const [desktopPanelPos, setDesktopPanelPos] = useState<{ left: number; top: number } | null>(null);
   const justDraggedRef = useRef(false);
   const toastIdRef = useRef(100);
@@ -594,23 +596,23 @@ export default function AvatarInstance({ state, anchor, canRemove, onChange, onS
     const vv = typeof window !== 'undefined' ? window.visualViewport : undefined;
     const w = vv?.width ?? (typeof window !== 'undefined' ? window.innerWidth : 0);
     const h = vv?.height ?? (typeof window !== 'undefined' ? window.innerHeight : 0);
-    const half = 56; // AVATAR_SIZE / 2 (112 / 2)
+    const half = avatarSize / 2;
     const lf = state.lastFreePos;
     // While the user is hover-peeking the dock, render fully visible at
     // the edge (uses same negative-pad gap as clampBuddyPos).
     if (dockPeeked) {
       const PAD = -16;
       switch (state.minimized.edge) {
-        case 'left':   return { x: -(w - anchor.right - 112 - PAD), y: lf?.y ?? 0 };
+        case 'left':   return { x: -(w - anchor.right - avatarSize - PAD), y: lf?.y ?? 0 };
         case 'right':  return { x: anchor.right - PAD, y: lf?.y ?? 0 };
-        case 'top':    return { x: lf?.x ?? 0, y: -(h - anchor.bottom - 112 - PAD) };
+        case 'top':    return { x: lf?.x ?? 0, y: -(h - anchor.bottom - avatarSize - PAD) };
         case 'bottom': return { x: lf?.x ?? 0, y: anchor.bottom - PAD };
       }
     }
     switch (state.minimized.edge) {
-      case 'left':   return { x: anchor.right + 112 - w - half, y: lf?.y ?? 0 };
+      case 'left':   return { x: anchor.right + avatarSize - w - half, y: lf?.y ?? 0 };
       case 'right':  return { x: anchor.right + half,            y: lf?.y ?? 0 };
-      case 'top':    return { x: lf?.x ?? 0, y: anchor.bottom + 112 - h - half };
+      case 'top':    return { x: lf?.x ?? 0, y: anchor.bottom + avatarSize - h - half };
       case 'bottom': return { x: lf?.x ?? 0, y: anchor.bottom + half };
     }
   })();
@@ -948,9 +950,8 @@ export default function AvatarInstance({ state, anchor, canRemove, onChange, onS
                 else if (isGroupMinimized && state.groupId) onGroupDockUnpeek?.(state.groupId);
               }
             }}
-            className={`pointer-events-auto relative h-28 w-28 cursor-grab touch-none rounded-full transition-transform hover:scale-105 active:cursor-grabbing active:scale-95 ${
-              magnetState === 'target' ? 'scale-110' : magnetState === 'attractor' ? 'scale-105' : ''
-            }`}
+            className="pointer-events-auto relative cursor-grab touch-none active:cursor-grabbing"
+            style={{ width: avatarSize, height: avatarSize }}
             aria-label={`open ${personality.name}`}
           >
             <span
@@ -959,16 +960,10 @@ export default function AvatarInstance({ state, anchor, canRemove, onChange, onS
             >
               Lv {progress.level}
             </span>
-            <div
-              className="h-full w-full"
-              style={{
-                transform: instanceScale !== 1 ? `scale(${instanceScale})` : undefined,
-                transformOrigin: '50% 50%',
-              }}
-            >
+            <div className="h-full w-full">
               <div
                 className="h-full w-full"
-                style={{ animation: shaking ? 'buddy-shake 420ms ease-out' : avatarIsMoving ? undefined : 'buddy-bob 3s ease-in-out infinite' }}
+                style={{ animation: shaking ? 'buddy-shake 420ms ease-out' : undefined }}
               >
                 {avatarRuntime.visual}
               </div>

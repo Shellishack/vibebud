@@ -5,9 +5,8 @@ import * as THREE from 'three';
 import { FBXLoader } from 'three/examples/jsm/loaders/FBXLoader.js';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js';
-import * as SkeletonUtils from 'three/examples/jsm/utils/SkeletonUtils.js';
 import type { Model3DAvatar, ShimejiAction } from '@/lib/avatar/types';
-import { bundledModel3DAvatars, listModel3DAnimationPacks, updateModel3DAvatar } from '@/lib/avatar/model3d';
+import { bundledModel3DAvatars, updateModel3DAvatar } from '@/lib/avatar/model3d';
 
 type Props = {
   avatar: Model3DAvatar;
@@ -56,11 +55,31 @@ function modelFormat(avatar: Model3DAvatar): NonNullable<Model3DAvatar['modelFor
   return 'glb';
 }
 
+function analyzeSkeleton(root: THREE.Object3D): NonNullable<Model3DAvatar['skeleton']> {
+  const bones: string[] = [];
+  root.traverse((obj) => {
+    if ((obj as THREE.Bone).isBone) bones.push(obj.name);
+  });
+  const normalized = bones.map((name) => name.toLowerCase().replace(/[^a-z0-9]/g, ''));
+  const hasAny = (...needles: string[]) => normalized.some((name) => needles.some((needle) => name.includes(needle)));
+  return {
+    hasSkeleton: bones.length > 0,
+    humanoid: bones.length > 0
+      && hasAny('hips', 'pelvis')
+      && hasAny('spine')
+      && hasAny('head')
+      && hasAny('leftarm', 'leftupperarm', 'leftshoulder', 'mixamorigleftarm')
+      && hasAny('rightarm', 'rightupperarm', 'rightshoulder', 'mixamorigrightarm')
+      && hasAny('leftleg', 'leftupleg', 'leftthigh', 'mixamorigleftupleg')
+      && hasAny('rightleg', 'rightupleg', 'rightthigh', 'mixamorigrightupleg'),
+    bones,
+  };
+}
+
 export default function Model3DAvatarView({ avatar, action = 'idle', direction = -1, className = '' }: Props) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const mixerRef = useRef<THREE.AnimationMixer | null>(null);
   const clipsRef = useRef<THREE.AnimationClip[]>([]);
-  const retargetClipsRef = useRef<THREE.AnimationClip[]>([]);
   const activeActionRef = useRef<THREE.AnimationAction | null>(null);
   const rootRef = useRef<THREE.Object3D | null>(null);
   const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
@@ -70,7 +89,6 @@ export default function Model3DAvatarView({ avatar, action = 'idle', direction =
   const rotateDragRef = useRef<{ x: number; y: number; pointerId: number } | null>(null);
   const [loadVersion, setLoadVersion] = useState(0);
   const [failed, setFailed] = useState(false);
-  const [missingAction, setMissingAction] = useState<ShimejiAction | null>(null);
 
   useEffect(() => {
     const host = hostRef.current;
@@ -142,41 +160,6 @@ export default function Model3DAvatarView({ avatar, action = 'idle', direction =
     scene.add(key);
 
     const clock = new THREE.Clock();
-    const loadAnimationPacks = async (target: THREE.Object3D) => {
-      try {
-        const packs = await listModel3DAnimationPacks();
-        if (!packs.length || disposed) return;
-        const gltfLoader = new GLTFLoader();
-        const fbxLoader = new FBXLoader();
-        const loadClip = (src: string, format: 'glb' | 'gltf' | 'fbx') => new Promise<{ root: THREE.Object3D; clips: THREE.AnimationClip[] } | null>((resolve) => {
-          if (format === 'fbx') {
-            fbxLoader.load(src, (root) => resolve({ root, clips: root.animations ?? [] }), undefined, () => resolve(null));
-          } else {
-            gltfLoader.load(src, (gltf) => resolve({ root: gltf.scene, clips: gltf.animations ?? [] }), undefined, () => resolve(null));
-          }
-        });
-        const loaded: THREE.AnimationClip[] = [];
-        for (const pack of packs) {
-          for (const clipAsset of pack.clips) {
-            const loadedClip = await loadClip(clipAsset.src, clipAsset.format);
-            if (!loadedClip) continue;
-            for (const clip of loadedClip.clips) {
-              try {
-                const retargeted = SkeletonUtils.retargetClip(target, loadedClip.root, clip);
-                retargeted.name = clip.name || clipAsset.name;
-                loaded.push(retargeted);
-              } catch {
-                loaded.push(clip);
-              }
-            }
-          }
-        }
-        if (!disposed) {
-          retargetClipsRef.current = loaded;
-          setLoadVersion((version) => version + 1);
-        }
-      } catch { /* imported animation packs are optional */ }
-    };
     const onLoaded = (root: THREE.Object3D, animations: THREE.AnimationClip[] = []) => {
       if (disposed) return;
       root.rotation.set(modelRotationRef.current.x, baseRotationYRef.current + modelRotationRef.current.y, 0);
@@ -186,11 +169,19 @@ export default function Model3DAvatarView({ avatar, action = 'idle', direction =
       rootRef.current = root;
       frameModel(camera, root, host);
       clipsRef.current = animations;
-      if (animations.length && !avatar.availableAnimations?.length) {
-        void updateModel3DAvatar({ ...avatar, availableAnimations: animations.map((clip) => clip.name) });
+      const skeleton = analyzeSkeleton(root);
+      const nextAvailableAnimations = animations.length && !avatar.availableAnimations?.length
+        ? animations.map((clip) => clip.name)
+        : avatar.availableAnimations;
+      if (
+        nextAvailableAnimations !== avatar.availableAnimations
+        || !avatar.skeleton
+        || avatar.skeleton.hasSkeleton !== skeleton.hasSkeleton
+        || avatar.skeleton.humanoid !== skeleton.humanoid
+      ) {
+        void updateModel3DAvatar({ ...avatar, availableAnimations: nextAvailableAnimations, skeleton });
       }
       mixerRef.current = new THREE.AnimationMixer(root);
-      void loadAnimationPacks(root);
       setLoadVersion((version) => version + 1);
       setFailed(false);
     };
@@ -246,7 +237,6 @@ export default function Model3DAvatarView({ avatar, action = 'idle', direction =
       hostElementRef.current = null;
       rotateDragRef.current = null;
       clipsRef.current = [];
-      retargetClipsRef.current = [];
       scene.traverse((obj) => {
         const mesh = obj as THREE.Mesh;
         mesh.geometry?.dispose();
@@ -269,7 +259,7 @@ export default function Model3DAvatarView({ avatar, action = 'idle', direction =
   useEffect(() => {
     const mixer = mixerRef.current;
     if (!mixer) return;
-    const clips = [...clipsRef.current, ...retargetClipsRef.current];
+    const clips = clipsRef.current;
     const directCandidates = [...(avatar.animations?.[action] ?? []), ...DEFAULT_CLIPS[action]];
     const fallbackCandidates = action === 'idle' ? [] : DEFAULT_CLIPS.idle;
     const directClip = directCandidates
@@ -280,7 +270,6 @@ export default function Model3DAvatarView({ avatar, action = 'idle', direction =
       .find((c): c is THREE.AnimationClip => !!c);
     const clip = directClip ?? fallbackClip ?? clips[0];
     if (!clip) return;
-    setMissingAction(directClip ? null : action);
 
     const next = mixer.clipAction(clip);
     if (activeActionRef.current === next) return;
@@ -302,11 +291,6 @@ export default function Model3DAvatarView({ avatar, action = 'idle', direction =
       {failed && (
         <span className="absolute inset-0 grid place-items-center rounded-full bg-zinc-100 text-xs text-zinc-400 dark:bg-zinc-800">
           3D
-        </span>
-      )}
-      {!failed && missingAction && (
-        <span className="pointer-events-none absolute bottom-0 left-1/2 max-w-[104px] -translate-x-1/2 rounded-full bg-amber-500/95 px-2 py-0.5 text-center text-[9px] font-semibold leading-3 text-white shadow-lg">
-          missing {missingAction}
         </span>
       )}
     </span>

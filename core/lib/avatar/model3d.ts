@@ -1,31 +1,12 @@
-import type { InstalledModel3D, InstalledModel3DAnimationPack, Model3DAvatar, ShimejiAction } from './types';
+import type { InstalledModel3D, Model3DAvatar } from './types';
 import { readZip } from './zip';
 
 const DB_NAME = 'vibebud-model3d';
 const STORE = 'models';
-const ANIMATION_STORE = 'animationPacks';
 const MODEL_EVENT = 'vibebud:model3dChanged';
-const ANIMATION_EVENT = 'vibebud:model3dAnimationsChanged';
-const CATALOG_URL = process.env.NEXT_PUBLIC_MODEL3D_CATALOG_URL || '/model3d/catalog.json';
 const MAX_MODEL_BYTES = 80 * 1024 * 1024;
 const MAX_ZIP_BYTES = 200 * 1024 * 1024;
 const textDecoder = new TextDecoder();
-
-type CatalogModel = {
-  avatar: Model3DAvatar;
-  license?: string;
-  author?: string;
-  description?: string;
-};
-
-const ACTION_ALIASES: Record<ShimejiAction, string[]> = {
-  idle: ['idle', 'standing', 'stand', 'breathing', 'mixamo.com'],
-  walk: ['walk', 'walking'],
-  climb: ['climb', 'climbing'],
-  fall: ['fall', 'falling', 'jump', 'death'],
-  sit: ['sit', 'sitting'],
-  drag: ['grab', 'carry'],
-};
 
 const bundledModels: InstalledModel3D[] = [
   {
@@ -54,11 +35,10 @@ const bundledModels: InstalledModel3D[] = [
 
 function openDb(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
-    const req = indexedDB.open(DB_NAME, 2);
+    const req = indexedDB.open(DB_NAME, 4);
     req.onupgradeneeded = () => {
       const db = req.result;
       if (!db.objectStoreNames.contains(STORE)) db.createObjectStore(STORE, { keyPath: 'avatar.id' });
-      if (!db.objectStoreNames.contains(ANIMATION_STORE)) db.createObjectStore(ANIMATION_STORE, { keyPath: 'id' });
     };
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error ?? new Error('IndexedDB failed.'));
@@ -82,10 +62,6 @@ async function withStore<T>(mode: IDBTransactionMode, fn: (store: IDBObjectStore
 
 function changed() {
   if (typeof window !== 'undefined') window.dispatchEvent(new Event(MODEL_EVENT));
-}
-
-function animationsChanged() {
-  if (typeof window !== 'undefined') window.dispatchEvent(new Event(ANIMATION_EVENT));
 }
 
 function modelToDataUrl(file: File): Promise<string> {
@@ -160,50 +136,21 @@ function formatFromFileName(name: string): Model3DAvatar['modelFormat'] {
   return undefined;
 }
 
-function animationFormatFromFileName(name: string): InstalledModel3DAnimationPack['clips'][number]['format'] | null {
-  const ext = name.match(/\.([^.]+)$/)?.[1]?.toLowerCase();
-  if (ext === 'glb' || ext === 'gltf' || ext === 'fbx') return ext;
-  return null;
-}
-
 function clipNamesFromGltfJson(input: unknown): string[] {
   const animations = (input as { animations?: Array<{ name?: string }> })?.animations;
   if (!Array.isArray(animations)) return [];
   return animations.map((animation, index) => animation.name?.trim() || `Animation ${index + 1}`);
 }
 
-function validateAvatar(input: unknown): Model3DAvatar {
-  const avatar = input as Model3DAvatar;
-  if (!avatar || avatar.kind !== 'model3d' || typeof avatar.id !== 'string' || typeof avatar.name !== 'string' || typeof avatar.modelSrc !== 'string') {
-    throw new Error('Invalid 3D model catalog entry.');
-  }
-  if (!/^[a-z0-9][a-z0-9._-]{1,63}$/i.test(avatar.id)) throw new Error('Model id must be URL-safe.');
-  if (!avatar.modelSrc.startsWith('http://') && !avatar.modelSrc.startsWith('https://') && !avatar.modelSrc.startsWith('/')) {
-    throw new Error('Catalog modelSrc must be an absolute or site-relative URL.');
-  }
-  return avatar;
-}
-
 export function bundledModel3DAvatars(): Model3DAvatar[] {
   return bundledModels.map((model) => model.avatar);
 }
 
-export function getModel3DCommunityLibraries() {
-  return [
-    { label: 'Sketchfab', href: 'https://sketchfab.com/3d-models?features=downloadable&sort_by=-likeCount&type=characters-creatures' },
-    { label: 'Quaternius', href: 'https://quaternius.com/' },
-    { label: 'Poly Pizza', href: 'https://poly.pizza/' },
-  ];
-}
-
-export function missingModel3DActions(avatar: Model3DAvatar): ShimejiAction[] {
-  const clips = avatar.availableAnimations?.map((name) => name.toLowerCase()) ?? [];
-  if (!clips.length) return ['idle', 'walk', 'climb', 'fall', 'sit', 'drag'];
-  return (Object.keys(ACTION_ALIASES) as ShimejiAction[]).filter((action) => {
-    const explicit = avatar.animations?.[action]?.map((name) => name.toLowerCase()) ?? [];
-    const aliases = [...explicit, ...ACTION_ALIASES[action]];
-    return !clips.some((clip) => aliases.some((alias) => clip === alias || clip.includes(alias)));
-  });
+export function model3DAnimationReadiness(avatar: Model3DAvatar): 'unknown' | 'ready' | 'no-skeleton' | 'non-humanoid' {
+  if (!avatar.skeleton) return 'unknown';
+  if (!avatar.skeleton.hasSkeleton) return 'no-skeleton';
+  if (!avatar.skeleton.humanoid) return 'non-humanoid';
+  return 'ready';
 }
 
 export async function listModel3D(): Promise<InstalledModel3D[]> {
@@ -216,15 +163,6 @@ export async function listModel3D(): Promise<InstalledModel3D[]> {
     return Array.from(byId.values()).sort((a, b) => a.avatar.name.localeCompare(b.avatar.name));
   } catch {
     return bundledModels;
-  }
-}
-
-export async function listModel3DAnimationPacks(): Promise<InstalledModel3DAnimationPack[]> {
-  if (typeof indexedDB === 'undefined') return [];
-  try {
-    return await withStore<InstalledModel3DAnimationPack[]>('readonly', (store) => store.getAll(), ANIMATION_STORE);
-  } catch {
-    return [];
   }
 }
 
@@ -247,39 +185,6 @@ export async function importModel3D(file: File): Promise<InstalledModel3D> {
   await withStore('readwrite', (store) => store.put(model));
   changed();
   return model;
-}
-
-export async function importModel3DAnimationPack(file: File): Promise<InstalledModel3DAnimationPack> {
-  const clips: InstalledModel3DAnimationPack['clips'] = [];
-  if (/\.zip$/i.test(file.name)) {
-    if (file.size > MAX_ZIP_BYTES) throw new Error(`ZIP is too large (${formatBytes(file.size)}). Limit is ${formatBytes(MAX_ZIP_BYTES)}.`);
-    const entries = await readZip(file);
-    for (const path of Object.keys(entries).sort()) {
-      const format = animationFormatFromFileName(path);
-      if (!format) continue;
-      clips.push({
-        name: titleFromFileName(path.split('/').at(-1) ?? path),
-        src: await bytesToDataUrl(entries[path], format === 'fbx' ? 'application/octet-stream' : format === 'glb' ? 'model/gltf-binary' : 'model/gltf+json'),
-        format,
-      });
-    }
-  } else {
-    const format = animationFormatFromFileName(file.name);
-    if (!format) throw new Error('Import an animation FBX, GLB, GLTF, or ZIP package.');
-    if (file.size > MAX_MODEL_BYTES) throw new Error(`Animation file is too large (${formatBytes(file.size)}). Limit is ${formatBytes(MAX_MODEL_BYTES)}.`);
-    clips.push({ name: titleFromFileName(file.name), src: await modelToDataUrl(file), format });
-  }
-  if (!clips.length) throw new Error('Animation pack must contain FBX, GLB, or GLTF animation files.');
-
-  const pack: InstalledModel3DAnimationPack = {
-    id: safeModelId(file.name),
-    name: titleFromFileName(file.name),
-    clips,
-    installedAt: Date.now(),
-  };
-  await withStore('readwrite', (store) => store.put(pack), ANIMATION_STORE);
-  animationsChanged();
-  return pack;
 }
 
 async function importModel3DZip(file: File): Promise<InstalledModel3D> {
@@ -350,30 +255,6 @@ async function importModel3DZip(file: File): Promise<InstalledModel3D> {
   throw new Error('ZIP must contain a GLTF or GLB model.');
 }
 
-export async function fetchModel3DCatalog(): Promise<CatalogModel[]> {
-  const res = await fetch(CATALOG_URL, { cache: 'no-store' });
-  if (!res.ok) throw new Error(`Catalog ${res.status}`);
-  const raw = await res.json() as { models?: CatalogModel[] };
-  return (raw.models ?? []).map((model) => ({
-    ...model,
-    avatar: validateAvatar(model.avatar),
-  }));
-}
-
-export async function installCatalogModel(model: CatalogModel): Promise<InstalledModel3D> {
-  const installed: InstalledModel3D = {
-    avatar: validateAvatar(model.avatar),
-    source: 'catalog',
-    license: model.license,
-    author: model.author,
-    description: model.description,
-    installedAt: Date.now(),
-  };
-  await withStore('readwrite', (store) => store.put(installed));
-  changed();
-  return installed;
-}
-
 export async function updateModel3DAvatar(avatar: Model3DAvatar): Promise<void> {
   if (bundledModels.some((model) => model.avatar.id === avatar.id)) return;
   const existing = await withStore<InstalledModel3D | undefined>('readonly', (store) => store.get(avatar.id));
@@ -388,17 +269,7 @@ export async function removeModel3D(id: string): Promise<void> {
   changed();
 }
 
-export async function removeModel3DAnimationPack(id: string): Promise<void> {
-  await withStore('readwrite', (store) => store.delete(id), ANIMATION_STORE);
-  animationsChanged();
-}
-
 export function subscribeModel3D(cb: () => void): () => void {
   window.addEventListener(MODEL_EVENT, cb);
   return () => window.removeEventListener(MODEL_EVENT, cb);
-}
-
-export function subscribeModel3DAnimationPacks(cb: () => void): () => void {
-  window.addEventListener(ANIMATION_EVENT, cb);
-  return () => window.removeEventListener(ANIMATION_EVENT, cb);
 }

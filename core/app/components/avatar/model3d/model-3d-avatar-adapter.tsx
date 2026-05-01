@@ -2,21 +2,13 @@
 
 import { useEffect, useState } from 'react';
 import {
-  fetchModel3DCatalog,
-  getModel3DCommunityLibraries,
   importModel3D,
-  importModel3DAnimationPack,
-  installCatalogModel,
   listModel3D,
-  listModel3DAnimationPacks,
-  missingModel3DActions,
+  model3DAnimationReadiness,
   removeModel3D,
-  removeModel3DAnimationPack,
   subscribeModel3D,
-  subscribeModel3DAnimationPacks,
 } from '@/lib/avatar/model3d';
-import { usePlatform } from '@/lib/hooks/use-platform';
-import type { InstalledModel3D, InstalledModel3DAnimationPack, Model3DAvatar } from '@/lib/avatar/types';
+import type { InstalledModel3D } from '@/lib/avatar/types';
 import type { AvatarAdapter } from '../types';
 import Model3DAvatarView from './model-3d-avatar';
 
@@ -36,20 +28,8 @@ export const model3dAvatarAdapter: AvatarAdapter = {
   Picker: (props) => <Model3DPicker {...props} />,
 };
 
-type CatalogModel = {
-  avatar: Model3DAvatar;
-  license?: string;
-  author?: string;
-  description?: string;
-};
-
 function Model3DPicker({ state, update, close }: Parameters<AvatarAdapter['Picker']>[0]) {
-  const platform = usePlatform();
   const [models, setModels] = useState<InstalledModel3D[]>([]);
-  const [animationPacks, setAnimationPacks] = useState<InstalledModel3DAnimationPack[]>([]);
-  const [catalog, setCatalog] = useState<CatalogModel[]>([]);
-  const [catalogLoading, setCatalogLoading] = useState(false);
-  const [catalogChecked, setCatalogChecked] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -61,34 +41,8 @@ function Model3DPicker({ state, update, close }: Parameters<AvatarAdapter['Picke
     const unsub = subscribeModel3D(refresh);
     return () => { cancelled = true; unsub(); };
   }, []);
-  useEffect(() => {
-    let cancelled = false;
-    const refresh = () => {
-      listModel3DAnimationPacks().then((next) => { if (!cancelled) setAnimationPacks(next); });
-    };
-    refresh();
-    const unsub = subscribeModel3DAnimationPacks(refresh);
-    return () => { cancelled = true; unsub(); };
-  }, []);
 
-  useEffect(() => {
-    if (catalogChecked || catalogLoading) return;
-    setError(null);
-    setCatalogLoading(true);
-    fetchModel3DCatalog()
-      .then((next) => {
-        setCatalog(next);
-        setCatalogChecked(true);
-      })
-      .catch((e) => {
-        const message = e instanceof Error ? e.message : String(e);
-        if (!message.includes('404')) setError(message);
-        setCatalogChecked(true);
-      })
-      .finally(() => setCatalogLoading(false));
-  }, [catalogChecked, catalogLoading]);
-
-  const useModel = (model: InstalledModel3D) => {
+  const useModel = async (model: InstalledModel3D) => {
     update({ avatar: model.avatar });
     close();
   };
@@ -97,7 +51,7 @@ function Model3DPicker({ state, update, close }: Parameters<AvatarAdapter['Picke
     if (!file) return;
     setError(null);
     try {
-      useModel(await importModel3D(file));
+      await useModel(await importModel3D(file));
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     }
@@ -112,26 +66,8 @@ function Model3DPicker({ state, update, close }: Parameters<AvatarAdapter['Picke
       setError(e instanceof Error ? e.message : String(e));
     }
   };
-  const importAnimationPack = async (file: File | null) => {
-    if (!file) return;
-    setError(null);
-    try {
-      await importModel3DAnimationPack(file);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-    }
-  };
-
-  const installAndUse = async (model: CatalogModel) => {
-    setError(null);
-    try {
-      useModel(await installCatalogModel(model));
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-    }
-  };
-
-  const installedIds = new Set(models.map((model) => model.avatar.id));
+  const selectedAvatar = state.avatar?.kind === 'model3d' ? state.avatar : null;
+  const selectedReadiness = selectedAvatar ? model3DAnimationReadiness(selectedAvatar) : null;
 
   return (
     <div className="mt-2 flex flex-wrap items-center gap-1.5 rounded-2xl bg-zinc-50 px-2.5 py-2 dark:bg-zinc-800/60">
@@ -143,18 +79,6 @@ function Model3DPicker({ state, update, close }: Parameters<AvatarAdapter['Picke
           className="hidden"
           onChange={(e) => {
             void importModel(e.currentTarget.files?.[0] ?? null);
-            e.currentTarget.value = '';
-          }}
-        />
-      </label>
-      <label className="cursor-pointer rounded-full bg-white px-2.5 py-1 text-[11px] font-medium text-violet-700 ring-1 ring-violet-200 hover:bg-violet-50 dark:bg-zinc-900 dark:text-violet-200 dark:ring-violet-500/40 dark:hover:bg-violet-500/10">
-        import animations
-        <input
-          type="file"
-          accept=".zip,.glb,.gltf,.fbx,application/zip,model/gltf-binary,model/gltf+json"
-          className="hidden"
-          onChange={(e) => {
-            void importAnimationPack(e.currentTarget.files?.[0] ?? null);
             e.currentTarget.value = '';
           }}
         />
@@ -172,7 +96,7 @@ function Model3DPicker({ state, update, close }: Parameters<AvatarAdapter['Picke
             }`}
           >
             <button
-              onClick={() => useModel(model)}
+              onClick={() => void useModel(model)}
               title={`${model.avatar.name} · ${model.source}`}
               aria-label={`Use ${model.avatar.name} 3D avatar`}
               className="flex min-w-0 items-center gap-1.5"
@@ -182,16 +106,16 @@ function Model3DPicker({ state, update, close }: Parameters<AvatarAdapter['Picke
               </span>
               <span className="truncate">{model.avatar.name}</span>
             </button>
-            {model.avatar.availableAnimations && missingModel3DActions(model.avatar).length > 0 && (
+            {model.avatar.skeleton && !model.avatar.skeleton.humanoid && (
               <span
-                title={`Missing action clips: ${missingModel3DActions(model.avatar).join(', ')}`}
+                title={model.avatar.skeleton.hasSkeleton ? 'Skeleton is not recognized as humanoid.' : 'No skeleton found.'}
                 className={`rounded-full px-1 text-[9px] leading-4 ${
                   selected
                     ? 'bg-white/15 text-white'
-                    : 'bg-amber-100 text-amber-800 dark:bg-amber-500/15 dark:text-amber-200'
+                    : 'bg-red-100 text-red-700 dark:bg-red-500/15 dark:text-red-200'
                 }`}
               >
-                warn
+                no anim
               </span>
             )}
             {model.source !== 'bundled' && (
@@ -215,65 +139,19 @@ function Model3DPicker({ state, update, close }: Parameters<AvatarAdapter['Picke
           </div>
         );
       })}
-      {catalog.filter((model) => !installedIds.has(model.avatar.id)).map((model) => (
-        <button
-          key={model.avatar.id}
-          onClick={() => void installAndUse(model)}
-          className="basis-full rounded-xl bg-white px-2.5 py-1.5 text-left text-[11px] ring-1 ring-zinc-200 hover:bg-zinc-100 dark:bg-zinc-900 dark:ring-zinc-700 dark:hover:bg-zinc-800"
-        >
-          <span className="block font-semibold text-zinc-900 dark:text-zinc-50">{model.avatar.name}</span>
-          <span className="block text-zinc-500 dark:text-zinc-400">{model.license ?? 'GLB/GLTF'} · install and use</span>
-        </button>
-      ))}
       <p className="basis-full px-1 text-[10px] leading-relaxed text-zinc-500 dark:text-zinc-400">
-        GLB is recommended. ZIP imports can include GLTF sidecar bin and texture files. Loose FBX and OBJ imports should be self-contained.
+        GLB or ZIP packages are recommended.
       </p>
-      {animationPacks.length > 0 && (
-        <div className="basis-full rounded-xl bg-white px-2.5 py-2 text-[11px] ring-1 ring-zinc-200 dark:bg-zinc-900 dark:ring-zinc-700">
-          <p className="mb-1 font-semibold text-zinc-700 dark:text-zinc-200">Animation packs</p>
-          <div className="flex flex-wrap gap-1.5">
-            {animationPacks.map((pack) => (
-              <span key={pack.id} className="inline-flex items-center gap-1 rounded-full bg-zinc-100 px-2 py-0.5 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-200">
-                {pack.name}
-                <button
-                  type="button"
-                  onClick={() => void removeModel3DAnimationPack(pack.id).catch((e) => setError(e instanceof Error ? e.message : String(e)))}
-                  className="text-red-600 hover:text-red-700 dark:text-red-300"
-                  aria-label={`Delete ${pack.name} animation pack`}
-                >
-                  x
-                </button>
-              </span>
-            ))}
-          </div>
-        </div>
-      )}
-      {state.avatar?.kind === 'model3d' && state.avatar.availableAnimations && missingModel3DActions(state.avatar).length > 0 && (
-        <p className="basis-full rounded-xl bg-amber-50 px-2.5 py-1.5 text-[11px] leading-relaxed text-amber-800 dark:bg-amber-500/10 dark:text-amber-200">
-          This model is missing native action clips: {missingModel3DActions(state.avatar).join(', ')}. Imported animation packs will be tried when skeletons are compatible.
+      {selectedAvatar && selectedReadiness === 'no-skeleton' && (
+        <p className="basis-full rounded-xl bg-red-50 px-2.5 py-1.5 text-[11px] leading-relaxed text-red-700 dark:bg-red-500/10 dark:text-red-200">
+          No skeleton was found in this model. Embedded mesh animations may still play, but humanoid action matching will be limited.
         </p>
       )}
-      {state.avatar?.kind === 'model3d' && !state.avatar.availableAnimations?.length && (
-        <p className="basis-full rounded-xl bg-amber-50 px-2.5 py-1.5 text-[11px] leading-relaxed text-amber-800 dark:bg-amber-500/10 dark:text-amber-200">
-          Animation compatibility will be checked after the model loads once.
+      {selectedAvatar && selectedReadiness === 'non-humanoid' && (
+        <p className="basis-full rounded-xl bg-red-50 px-2.5 py-1.5 text-[11px] leading-relaxed text-red-700 dark:bg-red-500/10 dark:text-red-200">
+          This skeleton is not recognized as humanoid. Embedded animations may still work, but automatic action matching may be limited.
         </p>
       )}
-      <div className="basis-full rounded-xl bg-white px-2.5 py-2 text-[11px] ring-1 ring-zinc-200 dark:bg-zinc-900 dark:ring-zinc-700">
-        <p className="mb-1 font-semibold text-zinc-700 dark:text-zinc-200">Community libraries</p>
-        <div className="flex flex-wrap gap-1.5">
-          {getModel3DCommunityLibraries().map((library) => (
-            <button
-              key={library.href}
-              data-buddy-interactive
-              type="button"
-              onClick={() => platform.openExternal(library.href)}
-              className="rounded-full px-2.5 py-1 font-medium text-violet-700 ring-1 ring-violet-200 hover:bg-violet-50 dark:text-violet-200 dark:ring-violet-500/40 dark:hover:bg-violet-500/10"
-            >
-              {library.label}
-            </button>
-          ))}
-        </div>
-      </div>
     </div>
   );
 }

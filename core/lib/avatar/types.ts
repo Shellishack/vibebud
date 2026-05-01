@@ -1,4 +1,5 @@
 export type ShimejiAction = 'idle' | 'walk' | 'climb' | 'fall' | 'sit' | 'drag';
+export type Model3DAction = 'idle' | 'walk' | 'climb' | 'fall' | 'sit' | 'drag';
 
 export type ShimejiAnimation = {
   src: string;
@@ -51,7 +52,12 @@ export type Model3DAvatar = {
   yOffset?: number;
   cameraZ?: number;
   availableAnimations?: string[];
-  animations?: Partial<Record<ShimejiAction, string[]>>;
+  skeleton?: {
+    hasSkeleton: boolean;
+    humanoid: boolean;
+    bones: string[];
+  };
+  animations?: Partial<Record<Model3DAction, string[]>>;
 };
 
 export type InstalledModel3D = {
@@ -60,17 +66,6 @@ export type InstalledModel3D = {
   license?: string;
   author?: string;
   description?: string;
-  installedAt: number;
-};
-
-export type InstalledModel3DAnimationPack = {
-  id: string;
-  name: string;
-  clips: Array<{
-    name: string;
-    src: string;
-    format: 'glb' | 'gltf' | 'fbx';
-  }>;
   installedAt: number;
 };
 
