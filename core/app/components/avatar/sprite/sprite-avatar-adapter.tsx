@@ -16,7 +16,7 @@ import type { AvatarAdapter } from '../types';
 import SpriteAvatarView from './sprite-avatar';
 
 const MOVING_ACTIONS = new Set(['walk', 'climb', 'fall', 'drag']);
-const VENDORED_SKILL_PATH = 'frontend/core/public/skills/generate2dsprite';
+const VENDORED_SKILL_PATH = 'generate2dsprite';
 
 export const spriteAvatarAdapter: AvatarAdapter = {
   category: 'sprite',
@@ -42,6 +42,11 @@ function SpritePicker({ state, update, close }: Parameters<AvatarAdapter['Picker
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
   const [codexLog, setCodexLog] = useState<string[]>([]);
+  const appendCodexLog = (lines: string | string[]) => {
+    const next = (Array.isArray(lines) ? lines : [lines]).filter(Boolean);
+    if (!next.length) return;
+    setCodexLog((log) => [...log, ...next]);
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -65,29 +70,41 @@ function SpritePicker({ state, update, close }: Parameters<AvatarAdapter['Picker
           .then((pack) => {
             update({ avatar: { kind: 'sprite', packId: pack.manifest.id } });
             setStatus(`Imported ${pack.manifest.name}.`);
-            setCodexLog((log) => [...log, `Imported ${pack.manifest.name}.`]);
+            appendCodexLog(`Imported ${pack.manifest.name}.`);
             close();
           })
           .catch((e) => setError(e instanceof Error ? e.message : String(e)))
           .finally(() => setBusy(null));
       } else if (type === 'assistant_delta') {
         const text = (event as { delta?: { text?: string } }).delta?.text;
-        if (text) setCodexLog((log) => [...log, text]);
+        if (text) appendCodexLog(text);
+      } else if (type === 'system' && (event as { subtype?: string }).subtype === 'init') {
+        const cwd = String((event as { cwd?: string }).cwd || '');
+        const skillPath = String((event as { skillPath?: string }).skillPath || '');
+        appendCodexLog([
+          cwd ? `Codex cwd: ${cwd}` : 'Codex initialized.',
+          skillPath ? `Skill: ${skillPath}` : '',
+        ]);
       } else if (type === 'tool_use') {
         const name = String((event as { name?: string }).name || 'tool');
-        setCodexLog((log) => [...log, `Running ${name}...`]);
+        appendCodexLog(`Running ${name}...`);
+      } else if (type === 'raw') {
+        const text = String((event as { text?: string }).text || '').trim();
+        if (text) appendCodexLog(text);
+      } else if (type === 'result') {
+        appendCodexLog('Codex finished. Waiting for generated sprite ZIP...');
       } else if (type === 'closed') {
         const code = (event as { code?: number }).code;
         if (code !== 0) {
           const stderr = String((event as { stderr?: string }).stderr || '').trim();
           setError(stderr || `Codex exited with code ${code ?? '?'}.`);
-          setCodexLog((log) => [...log, stderr || `Codex exited with code ${code ?? '?'}.`]);
+          appendCodexLog(stderr || `Codex exited with code ${code ?? '?'}.`);
           setBusy(null);
         }
       } else if (type === 'error') {
         const message = String((event as { text?: string }).text || 'Codex failed.');
         setError(message);
-        setCodexLog((log) => [...log, message]);
+        appendCodexLog(message);
         setBusy(null);
       }
     });
@@ -136,16 +153,18 @@ function SpritePicker({ state, update, close }: Parameters<AvatarAdapter['Picker
     }
     const artifactPath = ('artifactPath' in result && result.artifactPath) ? result.artifactPath : 'vibebud-sprite.zip';
     const skillPath = ('skillPath' in result && typeof result.skillPath === 'string' && result.skillPath) ? result.skillPath : VENDORED_SKILL_PATH;
+    appendCodexLog(`Prompt sent to Codex. Output: ${artifactPath}`);
     const processorUrl = typeof window !== 'undefined' ? `${window.location.origin}/api/sprite/process` : '/api/sprite/process';
     const text = [
       `Use the app-bundled Codex skill at ${skillPath} to generate a 2D sprite avatar.`,
       'Do not run the skill Python script. Vibebud owns processing.',
+      'Do not edit Vibebud source files or inspect the processor implementation. Treat a successful processor response as the final artifact.',
       `Use the skill only to plan/prompt/generate the raw image. Generate a 4 column by 6 row sprite sheet with square cells, ideally 1024x1536 pixels. Use a solid #FF00FF magenta background only where transparency should be. Convert the generated image to a data:image URL, POST JSON { "name", "prompt", "imageDataUrl" } to ${processorUrl}, save the application/zip response bytes to the artifact path, and stop.`,
       `Avatar name: ${name.trim() || 'Custom Sprite'}.`,
       `User concept: ${prompt.trim()}.`,
       `Create a Vibebud Sprite ZIP at this exact artifact path: ${artifactPath}`,
-      'The ZIP must contain sprite-manifest.json plus preview and six transparent horizontal action strips: idle, walk, climb, fall, sit, drag.',
-      'Use schemaVersion 1, frameSize, frames, fps, and image paths in the manifest. Keep the character consistent across all actions.',
+      'The processor may return a compact ZIP with sprite-manifest.json plus a shared SVG sheet referenced by fragment paths such as sheet.svg#idle. This is valid. Do not reject it for not having separate strip files.',
+      'Keep the character consistent across all actions.',
       'When the ZIP is written, do not ask the user to import it manually; the host will automatically load it as the current avatar.',
     ].join('\n');
     const sent = await codex.send(state.id, text).catch((e) => ({ ok: false, error: String(e) }));

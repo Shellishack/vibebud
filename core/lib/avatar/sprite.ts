@@ -33,6 +33,7 @@ async function withStore<T>(mode: IDBTransactionMode, fn: (store: IDBObjectStore
 }
 
 const cleanPath = (path: string) => path.replace(/^\.?\//, '').replace(/\\/g, '/');
+const assetPath = (path: string) => cleanPath(path).split('#')[0] || cleanPath(path);
 
 function changed() {
   if (typeof window !== 'undefined') window.dispatchEvent(new Event(PACK_EVENT));
@@ -92,7 +93,9 @@ export async function getSpritePack(id: string): Promise<InstalledSpritePack | n
 
 export function resolveSpriteAsset(pack: InstalledSpritePack, path: string): string {
   const clean = cleanPath(path);
-  return pack.files[clean] ?? '';
+  const [base, fragment] = clean.split('#');
+  const src = pack.files[base] ?? '';
+  return src && fragment ? `${src}#${fragment}` : src;
 }
 
 export async function importSpriteZip(file: File, source: InstalledSpritePack['source'] = 'imported'): Promise<InstalledSpritePack> {
@@ -101,11 +104,11 @@ export async function importSpriteZip(file: File, source: InstalledSpritePack['s
   const manifestEntry = entries['sprite-manifest.json'] ?? entries['manifest.json'];
   if (!manifestEntry) throw new Error('ZIP must contain sprite-manifest.json.');
   const manifest = validateManifest(JSON.parse(textDecoder.decode(manifestEntry)));
-  const needed = new Set<string>([manifest.preview]);
-  for (const anim of Object.values(manifest.animations)) needed.add(anim.src);
+  const needed = new Set<string>([assetPath(manifest.preview)]);
+  for (const anim of Object.values(manifest.animations)) needed.add(assetPath(anim.src));
   const files: Record<string, string> = {};
   for (const path of needed) {
-    const clean = cleanPath(path);
+    const clean = assetPath(path);
     const bytes = entries[clean];
     if (!bytes) throw new Error(`Missing asset: ${path}`);
     const type = mimeForPath(clean);

@@ -38,12 +38,51 @@ function resolveExistingPath(input) {
   return path.resolve(raw);
 }
 
+function desktopSkillCandidates(skillName) {
+  return [
+    path.join(__dirname, 'skills', skillName),
+    path.join(process.resourcesPath || '', 'skills', skillName),
+    path.resolve(__dirname, '..', 'core', 'public', 'skills', skillName),
+    path.resolve(__dirname, '..', '..', 'frontend', 'core', 'public', 'skills', skillName),
+  ];
+}
+
+function bundledSkillPath(input) {
+  const raw = input ? String(input) : '';
+  const skillName = path.basename(raw || 'generate2dsprite');
+  if (skillName !== 'generate2dsprite' && !raw.includes('generate2dsprite')) return resolveExistingPath(input);
+  for (const candidate of desktopSkillCandidates('generate2dsprite')) {
+    try {
+      if (fs.existsSync(path.join(candidate, 'SKILL.md'))) return candidate;
+    } catch {
+      /* try the next candidate */
+    }
+  }
+  return resolveExistingPath(input) || desktopSkillCandidates('generate2dsprite')[0];
+}
+
+function cwdForSkillPath(skillPath) {
+  if (!skillPath) return null;
+  const normalized = path.resolve(skillPath);
+  const publicSkills = `${path.sep}core${path.sep}public${path.sep}skills${path.sep}`;
+  const publicIndex = normalized.indexOf(publicSkills);
+  if (publicIndex >= 0) {
+    return normalized.slice(0, publicIndex);
+  }
+  const skillsIndex = normalized.indexOf(`${path.sep}skills${path.sep}`);
+  if (skillsIndex >= 0) {
+    return normalized.slice(0, skillsIndex);
+  }
+  return path.dirname(normalized);
+}
+
 function createCodexHost({ emit }) {
   const sessions = new Map(); // buddyId -> { cwd, proc, stdoutBuf, stderrBuf, busy, resultEmitted }
 
   function start(buddyId, opts = {}) {
     if (sessions.has(buddyId)) return { ok: true, alreadyRunning: true };
-    const cwd = opts.cwd || process.env.VIBEBUD_CODEX_CWD || process.env.VIBEBUD_CLAUDE_CWD || os.homedir();
+    const skillPath = bundledSkillPath(opts.skillPath);
+    const cwd = opts.cwd || process.env.VIBEBUD_CODEX_CWD || process.env.VIBEBUD_CLAUDE_CWD || cwdForSkillPath(skillPath) || os.homedir();
     let artifact = null;
     if (opts.artifact?.type === 'sprite-zip') {
       const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'vibebud-sprite-'));
@@ -51,7 +90,7 @@ function createCodexHost({ emit }) {
         type: 'sprite-zip',
         dir,
         name: path.basename(String(opts.artifact.name || 'vibebud-sprite.zip')),
-        skillPath: resolveExistingPath(opts.skillPath),
+        skillPath,
       };
       artifact.path = path.join(dir, artifact.name);
     }

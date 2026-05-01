@@ -12,31 +12,23 @@ function xmlEscape(input: string) {
   return input.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
-function generatedPreviewSvg(name: string, imageDataUrl: string) {
-  return Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
-    <title>${xmlEscape(name)} preview</title>
-    <rect width="256" height="256" fill="none"/>
-    <image href="${xmlEscape(imageDataUrl)}" x="0" y="0" width="256" height="256" preserveAspectRatio="xMidYMid meet"/>
-  </svg>`, 'utf8');
-}
-
-function generatedRowStripSvg(name: string, action: string, row: number, imageDataUrl: string) {
+function generatedSheetSvg(name: string, imageDataUrl: string) {
   const frame = 256;
   const sheetW = frame * 4;
   const sheetH = frame * 6;
-  const cells = Array.from({ length: 4 }, (_v, col) => {
-    const x = col * frame;
-    const y = row * frame;
-    return `<svg x="${x}" y="0" width="${frame}" height="${frame}" viewBox="${x} ${y} ${frame} ${frame}">
-      <image href="${xmlEscape(imageDataUrl)}" x="0" y="0" width="${sheetW}" height="${sheetH}"/>
-    </svg>`;
-  }).join('');
-  return Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="${sheetW}" height="${frame}" viewBox="0 0 ${sheetW} ${frame}">
-    <title>${xmlEscape(name)} ${xmlEscape(action)}</title>
+  const views = [
+    `<view id="preview" viewBox="0 0 ${frame} ${frame}"/>`,
+    ...ACTIONS.map((action, row) => `<view id="${action}" viewBox="0 ${row * frame} ${sheetW} ${frame}"/>`),
+  ].join('');
+  return Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="${sheetW}" height="${sheetH}" viewBox="0 0 ${sheetW} ${sheetH}">
+    <title>${xmlEscape(name)} sheet</title>
+    ${views}
     <filter id="remove-magenta" color-interpolation-filters="sRGB">
       <feColorMatrix type="matrix" values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  -1 1 -1 1 0"/>
     </filter>
-    <g filter="url(#remove-magenta)">${cells}</g>
+    <g filter="url(#remove-magenta)">
+      <image href="${xmlEscape(imageDataUrl)}" x="0" y="0" width="${sheetW}" height="${sheetH}"/>
+    </g>
   </svg>`, 'utf8');
 }
 
@@ -100,11 +92,11 @@ function makeSpriteZip(name: string, prompt: string, imageDataUrl: string) {
     license: 'Generated for Vibebud user',
     author: 'Vibebud local processor',
     description: prompt.trim().slice(0, 300),
-    preview: 'preview.svg',
+    preview: 'sheet.svg#preview',
     frameSize: { w: 256, h: 256 },
     scale: 1,
     animations: Object.fromEntries(ACTIONS.map((action) => [action, {
-      src: `${action}.svg`,
+      src: `sheet.svg#${action}`,
       frames: 4,
       fps: action === 'walk' ? 8 : 5,
       loop: true,
@@ -112,8 +104,7 @@ function makeSpriteZip(name: string, prompt: string, imageDataUrl: string) {
   };
   return makeZip([
     { name: 'sprite-manifest.json', data: Buffer.from(JSON.stringify(manifest, null, 2), 'utf8') },
-    { name: 'preview.svg', data: generatedPreviewSvg(cleanName, imageDataUrl) },
-    ...ACTIONS.map((action, row) => ({ name: `${action}.svg`, data: generatedRowStripSvg(cleanName, action, row, imageDataUrl) })),
+    { name: 'sheet.svg', data: generatedSheetSvg(cleanName, imageDataUrl) },
   ]);
 }
 
