@@ -1,5 +1,6 @@
 'use client';
 
+import dynamic from 'next/dynamic';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { usePlatform, useLayout } from '@/lib/hooks/use-platform';
@@ -34,10 +35,11 @@ import type { AvatarCategory } from './types';
 import BuddyChatInput from '../popup/buddy-chat-input';
 import BuddyChatMessages from '../popup/buddy-chat-messages';
 import BuddyContextMenu from '../popup/buddy-context-menu';
-import BuddyDetailsPanel from '../popup/buddy-details-panel';
 import ToastStack from '../popup/toast-stack';
 import type { ShimejiAction } from '../../../lib/avatar/types';
 import type { AvatarInstanceProps, AvatarInstanceState, ChatMsg, Toast } from './avatar-instance.types';
+
+const BuddyDetailsPanel = dynamic(() => import('../popup/buddy-details-panel'), { ssr: false });
 
 const SCRIPTED_TOASTS: Omit<Toast, 'id'>[] = [
   { title: 'Agent dispatched', body: 'Started work on issue #42 — "Add dark mode toggle"', tone: 'info' },
@@ -686,8 +688,8 @@ export default function AvatarInstance({ state, anchor, canRemove, onChange, onS
           <div
             data-buddy-interactive
             className={isMobile
-              ? "pointer-events-auto fixed left-3 right-3 bottom-3 z-[60] flex flex-col rounded-3xl border border-zinc-200 bg-white/95 shadow-2xl backdrop-blur-md dark:border-zinc-700 dark:bg-zinc-900/95"
-              : "pointer-events-auto fixed z-[60] flex w-96 flex-col rounded-3xl border border-zinc-200 bg-white/95 shadow-2xl backdrop-blur-md dark:border-zinc-700 dark:bg-zinc-900/95"
+              ? "pointer-events-auto fixed left-3 right-3 bottom-3 z-[85] flex flex-col rounded-3xl border border-zinc-200 bg-white/95 shadow-2xl backdrop-blur-md dark:border-zinc-700 dark:bg-zinc-900/95"
+              : "pointer-events-auto fixed z-[85] flex w-96 flex-col rounded-3xl border border-zinc-200 bg-white/95 shadow-2xl backdrop-blur-md dark:border-zinc-700 dark:bg-zinc-900/95"
             }
             style={isMobile
               ? { height: 'min(92dvh, 720px)', animation: 'buddy-bubble-in 220ms ease-out' }
@@ -834,7 +836,7 @@ export default function AvatarInstance({ state, anchor, canRemove, onChange, onS
                 <div
                   data-buddy-interactive
                   onClick={() => setOpen(false)}
-                  className="fixed inset-0 z-[55] bg-black/30 backdrop-blur-sm"
+                  className="fixed inset-0 z-[84] bg-black/30 backdrop-blur-sm"
                   style={{ animation: 'buddy-bubble-in 180ms ease-out' }}
                 />
                 {panel}

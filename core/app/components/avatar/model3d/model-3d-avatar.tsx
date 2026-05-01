@@ -23,6 +23,11 @@ const DEFAULT_CLIPS: Record<ShimejiAction, string[]> = {
   sit: ['sit', 'sitting', 'sad_idle', 'idle'],
   drag: ['grab', 'carry', 'idle', 'standing'],
 };
+const DEFAULT_RENDER_FPS = 30;
+
+function normalizedFpsLimit(value: number | undefined): number {
+  return Math.min(60, Math.max(1, value ?? DEFAULT_RENDER_FPS));
+}
 
 function frameModel(camera: THREE.PerspectiveCamera, root: THREE.Object3D, host: HTMLElement) {
   const box = new THREE.Box3().setFromObject(root);
@@ -96,6 +101,7 @@ export default function Model3DAvatarView({ avatar, action = 'idle', direction =
 
     let disposed = false;
     let frame = 0;
+    const minRenderIntervalMs = 1000 / normalizedFpsLimit(avatar.fpsLimit);
     const scene = new THREE.Scene();
     const camera = new THREE.PerspectiveCamera(32, 1, 0.1, 100);
     camera.position.set(0, 0, avatar.cameraZ ?? 4.2);
@@ -160,14 +166,15 @@ export default function Model3DAvatarView({ avatar, action = 'idle', direction =
     scene.add(key);
 
     const clock = new THREE.Clock();
+    let lastRenderAt = 0;
     const onLoaded = (root: THREE.Object3D, animations: THREE.AnimationClip[] = []) => {
       if (disposed) return;
       root.rotation.set(modelRotationRef.current.x, baseRotationYRef.current + modelRotationRef.current.y, 0);
-      root.scale.setScalar(avatar.scale ?? 1);
-      root.position.y = avatar.yOffset ?? -1;
       scene.add(root);
       rootRef.current = root;
       frameModel(camera, root, host);
+      root.scale.setScalar(avatar.scale ?? 1);
+      root.position.set(avatar.xOffset ?? 0, avatar.yOffset ?? -1, avatar.zOffset ?? 0);
       clipsRef.current = animations;
       const skeleton = analyzeSkeleton(root);
       const nextAvailableAnimations = animations.length && !avatar.availableAnimations?.length
@@ -209,10 +216,13 @@ export default function Model3DAvatarView({ avatar, action = 'idle', direction =
     observer.observe(host);
     resize();
 
-    const tick = () => {
+    const tick = (time = 0) => {
       if (disposed) return;
-      mixerRef.current?.update(clock.getDelta());
-      renderer.render(scene, camera);
+      if (time - lastRenderAt >= minRenderIntervalMs) {
+        lastRenderAt = time;
+        mixerRef.current?.update(clock.getDelta());
+        renderer.render(scene, camera);
+      }
       frame = requestAnimationFrame(tick);
     };
     tick();
@@ -247,7 +257,7 @@ export default function Model3DAvatarView({ avatar, action = 'idle', direction =
       renderer.dispose();
       host.replaceChildren();
     };
-  }, [avatar.cameraZ, avatar.modelFormat, avatar.modelSrc, avatar.scale, avatar.yOffset, direction]);
+  }, [avatar.cameraZ, avatar.fpsLimit, avatar.modelFormat, avatar.modelSrc, avatar.scale, avatar.xOffset, avatar.yOffset, avatar.zOffset, direction]);
 
   const startRotate = (event: ReactPointerEvent) => {
     if (event.button !== 1) return;

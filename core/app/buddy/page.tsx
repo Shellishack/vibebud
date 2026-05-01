@@ -1,4 +1,8 @@
-import Buddy from '../components/dashboard/buddy-dashboard';
+'use client';
+
+import dynamic from 'next/dynamic';
+
+const Buddy = dynamic(() => import('../components/dashboard/buddy-dashboard'), { ssr: false });
 
 export default function BuddyOnly() {
   return (

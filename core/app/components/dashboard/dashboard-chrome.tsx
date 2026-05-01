@@ -1,9 +1,11 @@
-import AppSettings from '../app-settings';
+import dynamic from 'next/dynamic';
 import DiscordLink from '../discord-link';
 import GitHubLink from '../github-link';
 import LanguageSelector from '../language-selector';
 import SignInStatus from '../sign-in-status';
 import type { PlatformAdapter } from '@/lib/platform/types';
+
+const AppSettings = dynamic(() => import('../app-settings'), { ssr: false });
 
 type Props = {
   adapter: PlatformAdapter;

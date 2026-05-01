@@ -15,8 +15,11 @@ export const notoAvatarAdapter: AvatarAdapter = {
   useRuntime: ({ state, personality, emotion, onChange }) => {
     const [fetched, setFetched] = useState<Record<string, unknown>>({});
     const variant = VARIANTS.find((v) => v.id === personality.colorId) ?? VARIANTS[0];
-    const fallbackAnimation = useMemo(() => buildAnimation(variant, emotion), [variant, emotion]);
     const avatar = state.avatar?.kind === 'noto' ? state.avatar : null;
+    const fallbackAnimation = useMemo(
+      () => (avatar ? buildAnimation(variant, emotion) : null),
+      [avatar, emotion, variant],
+    );
     const isComposite = avatar?.group === 'facesWithHands';
     const composition = isComposite ? avatar?.composition : undefined;
     const notoCp = avatar && !isComposite ? getNotoCodepoint(avatar.group, emotion) : null;
@@ -59,7 +62,7 @@ export const notoAvatarAdapter: AvatarAdapter = {
     return {
       visual: isComposite && composition
         ? <CompositeFace composition={composition} fetched={fetched} />
-        : <Lottie animationData={animation} loop autoplay />,
+        : animation ? <Lottie animationData={animation} loop autoplay /> : null,
       accessories: isComposite && composition
         ? <CompositeHands composition={composition} fetched={fetched} />
         : undefined,

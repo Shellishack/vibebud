@@ -1,11 +1,13 @@
 'use client';
 
+import dynamic from 'next/dynamic';
 import Link from 'next/link';
-import Buddy from './components/dashboard/buddy-dashboard';
 import InstallButton from './components/install-button';
 import OverlayButton from './components/overlay-button';
-import TodoList from './components/todo-list';
 import { useTranslations } from '../lib/hooks/use-translations';
+
+const Buddy = dynamic(() => import('./components/dashboard/buddy-dashboard'), { ssr: false });
+const TodoList = dynamic(() => import('./components/todo-list'), { ssr: false });
 
 export default function Home() {
   const { t } = useTranslations();

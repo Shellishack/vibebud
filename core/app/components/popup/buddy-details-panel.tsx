@@ -107,8 +107,8 @@ export default function BuddyDetailsPanel({
   onSaveSettings,
 }: Props) {
   return (
-    <>
-      <div className="mt-2 max-h-[40vh] overflow-y-auto pr-1">
+    <div className="mt-2 max-h-[min(58vh,390px)] overflow-y-auto overscroll-contain pr-1">
+      <div>
         <div className="mb-1 flex items-center justify-between text-[10px] font-medium uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
           <span>Level {progress.level}</span>
           <span>{progress.xp} / {progress.next} XP</span>
@@ -184,6 +184,6 @@ export default function BuddyDetailsPanel({
         onCancel={onCancelSettings}
         onSave={onSaveSettings}
       />
-    </>
+    </div>
   );
 }

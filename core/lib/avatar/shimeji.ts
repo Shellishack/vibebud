@@ -107,6 +107,39 @@ function validateManifest(input: unknown): ShimejiPackManifest {
   return m;
 }
 
+type ExportedShimejiManifest = {
+  schemaVersion?: number;
+  name?: string;
+  nameSlug?: string;
+  description?: string;
+  animationSchema?: { path?: string };
+  sprites?: {
+    basePath?: string;
+    filePattern?: string;
+    spriteCount?: number;
+    size?: [number, number];
+  };
+  preview?: { thumbnail?: string };
+  author?: { name?: string };
+  license?: { text?: string; attribution?: string };
+};
+
+type ExportedShimejiAnimation = {
+  key?: string;
+  subtype?: string;
+  loop?: string;
+  frames?: Array<{ sprite?: number; durationTicks?: number }>;
+};
+
+type ExportedShimejiAnimationFile = {
+  animations?: ExportedShimejiAnimation[];
+};
+
+function isExportedShimejiManifest(input: unknown): input is ExportedShimejiManifest {
+  const m = input as ExportedShimejiManifest;
+  return !!m?.animationSchema?.path && !!m.sprites?.basePath && !!m.sprites?.filePattern && Array.isArray(m.sprites?.size);
+}
+
 function characterFor(pack: InstalledShimejiPack, characterId?: string): ShimejiCharacter {
   return pack.manifest.characters.find((c) => c.id === characterId) ?? pack.manifest.characters[0];
 }
@@ -154,7 +187,11 @@ export async function importShimejiZip(file: File): Promise<InstalledShimejiPack
   const manifestEntry = manifestPath ? entries[manifestPath] : null;
   if (!manifestEntry) throw new Error('ZIP must contain manifest.json.');
   const assetPrefix = manifestPath === 'manifest.json' ? '' : manifestPath.slice(0, -'manifest.json'.length);
-  const manifest = validateManifest(JSON.parse(textDecoder.decode(manifestEntry)));
+  const rawManifest = JSON.parse(textDecoder.decode(manifestEntry));
+  if (isExportedShimejiManifest(rawManifest)) {
+    return importExportedShimeji(entries, rawManifest, assetPrefix, file.name);
+  }
+  const manifest = validateManifest(rawManifest);
   const files: Record<string, string> = {};
   const needed = new Set<string>();
   for (const c of manifest.characters) {
@@ -177,6 +214,149 @@ export async function importShimejiZip(file: File): Promise<InstalledShimejiPack
   await withStore('readwrite', (store) => store.put(pack));
   changed();
   return pack;
+}
+
+async function importExportedShimeji(
+  entries: Record<string, Uint8Array>,
+  raw: ExportedShimejiManifest,
+  assetPrefix: string,
+  fileName: string,
+): Promise<InstalledShimejiPack> {
+  const animationPath = cleanPath(raw.animationSchema?.path ?? 'animation.json');
+  const animationBytes = entries[animationPath] ?? entries[joinZipPath(assetPrefix, animationPath)];
+  if (!animationBytes) throw new Error(`Missing animation schema: ${animationPath}`);
+  const animationFile = JSON.parse(textDecoder.decode(animationBytes)) as ExportedShimejiAnimationFile;
+  const animations = Array.isArray(animationFile.animations) ? animationFile.animations : [];
+  if (!animations.length) throw new Error('Animation schema does not include animations.');
+
+  const name = titleFromPath(raw.name || fileName.replace(/\.zip$/i, ''));
+  const id = safePackId(raw.nameSlug || name);
+  const spriteBase = cleanPath(raw.sprites?.basePath ?? 'sprites/');
+  const spritePattern = raw.sprites?.filePattern || '%04d.webp';
+  const [w, h] = raw.sprites?.size ?? [512, 512];
+  const size = { w, h };
+  const files: Record<string, string> = {};
+
+  const selected: Record<ShimejiAction, ExportedShimejiAnimation | undefined> = {
+    idle: findExportedAnimation(animations, ['stand_left', 'stand', 'idle'], ['STAND']),
+    walk: findExportedAnimation(animations, ['walk_left', 'walk'], ['WALK']),
+    climb: findExportedAnimation(animations, ['climb_left', 'climb'], ['CLIMB']),
+    fall: findExportedAnimation(animations, ['fall'], ['FALL']),
+    sit: findExportedAnimation(animations, ['sit_left', 'sit'], ['SIT']),
+    drag: findExportedAnimation(animations, ['drag'], ['DRAG', 'FALL']),
+  };
+  const fallback = selected.fall ?? selected.idle ?? animations[0];
+
+  for (const action of REQUIRED_ACTIONS) {
+    const anim = selected[action] ?? fallback;
+    const frames = exportedFrameSprites(anim);
+    const paths = frames.length ? frames.map((sprite) => exportedSpritePath(spriteBase, spritePattern, sprite)) : [exportedSpritePath(spriteBase, spritePattern, 0)];
+    const src = `${action}.svg`;
+    files[src] = await exportedSpriteDataUrl(paths, entries, assetPrefix, size);
+  }
+
+  const preview = cleanPath(raw.preview?.thumbnail ?? exportedSpritePath(spriteBase, spritePattern, 0));
+  const previewBytes = entries[preview] ?? entries[joinZipPath(assetPrefix, preview)];
+  if (!previewBytes) throw new Error(`Missing preview asset: ${preview}`);
+  files['preview.webp'] = await bytesToDataUrl(previewBytes, mimeForPath(preview));
+
+  const manifest: ShimejiPackManifest = {
+    schemaVersion: 1,
+    id,
+    name,
+    license: raw.license?.text || 'Third-party',
+    author: raw.author?.name || raw.license?.attribution,
+    description: raw.description || 'Imported from a Shimeji export package.',
+    characters: [{
+      id: 'default',
+      name,
+      preview: 'preview.webp',
+      frameSize: size,
+      scale: 1,
+      anchor: { x: Math.round(size.w / 2), y: size.h },
+      animations: {
+        idle: exportedActionManifest('idle', selected.idle ?? fallback),
+        walk: exportedActionManifest('walk', selected.walk ?? fallback),
+        climb: exportedActionManifest('climb', selected.climb ?? fallback),
+        fall: exportedActionManifest('fall', selected.fall ?? fallback),
+        sit: exportedActionManifest('sit', selected.sit ?? fallback),
+        drag: exportedActionManifest('drag', selected.drag ?? fallback),
+      },
+    }],
+  };
+  const pack: InstalledShimejiPack = { manifest, files, source: 'imported', installedAt: Date.now() };
+  await withStore('readwrite', (store) => store.put(pack));
+  changed();
+  return pack;
+}
+
+function findExportedAnimation(
+  animations: ExportedShimejiAnimation[],
+  keyNeedles: string[],
+  subtypeNeedles: string[],
+): ExportedShimejiAnimation | undefined {
+  const lowerKeys = keyNeedles.map((key) => key.toLowerCase());
+  const upperSubtypes = subtypeNeedles.map((subtype) => subtype.toUpperCase());
+  return animations.find((animation) => {
+    const key = animation.key?.toLowerCase() ?? '';
+    return lowerKeys.some((needle) => key === needle || key.includes(needle));
+  }) ?? animations.find((animation) => {
+    const subtype = animation.subtype?.toUpperCase() ?? '';
+    return upperSubtypes.some((needle) => subtype === needle || subtype.includes(needle));
+  });
+}
+
+function exportedFrameSprites(animation: ExportedShimejiAnimation | undefined): number[] {
+  return (animation?.frames ?? [])
+    .map((frame) => frame.sprite)
+    .filter((sprite): sprite is number => typeof sprite === 'number' && Number.isInteger(sprite) && sprite >= 0);
+}
+
+function exportedActionManifest(action: ShimejiAction, animation: ExportedShimejiAnimation) {
+  const frames = Math.max(1, exportedFrameSprites(animation).length);
+  const durations = (animation.frames ?? [])
+    .map((frame) => frame.durationTicks)
+    .filter((duration): duration is number => typeof duration === 'number' && duration > 0);
+  const avgTicks = durations.length
+    ? durations.reduce((sum, duration) => sum + duration, 0) / durations.length
+    : 12;
+  const fps = Math.max(1, Math.min(24, Math.round(60 / avgTicks)));
+  return { src: `${action}.svg`, frames, fps, loop: animation.loop !== 'ONESHOT' };
+}
+
+function exportedSpritePath(basePath: string, pattern: string, index: number): string {
+  const fileName = pattern.includes('%04d')
+    ? pattern.replace('%04d', index.toString().padStart(4, '0'))
+    : pattern.includes('%d')
+      ? pattern.replace('%d', String(index))
+      : index.toString().padStart(4, '0');
+  return joinZipPath(basePath.endsWith('/') ? basePath : `${basePath}/`, fileName);
+}
+
+function mimeForPath(path: string): string {
+  const lower = path.toLowerCase();
+  if (lower.endsWith('.svg')) return 'image/svg+xml';
+  if (lower.endsWith('.png')) return 'image/png';
+  if (lower.endsWith('.jpg') || lower.endsWith('.jpeg')) return 'image/jpeg';
+  if (lower.endsWith('.webp')) return 'image/webp';
+  return '';
+}
+
+async function exportedSpriteDataUrl(
+  paths: string[],
+  entries: Record<string, Uint8Array>,
+  assetPrefix: string,
+  size: { w: number; h: number },
+): Promise<string> {
+  const images = await Promise.all(paths.map(async (path, i) => {
+    const clean = cleanPath(path);
+    const bytes = entries[clean] ?? entries[joinZipPath(assetPrefix, clean)];
+    if (!bytes) throw new Error(`Missing sprite asset: ${path}`);
+    const href = await bytesToDataUrl(bytes, mimeForPath(path));
+    return `<image href="${href}" x="${i * size.w}" y="0" width="${size.w}" height="${size.h}"/>`;
+  }));
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${size.w * paths.length}" height="${size.h}" viewBox="0 0 ${size.w * paths.length} ${size.h}">${images.join('')}</svg>`;
+  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
 }
 
 async function importClassicShimeji(entries: Record<string, Uint8Array>, fileName: string): Promise<InstalledShimejiPack> {

@@ -49,8 +49,11 @@ export type Model3DAvatar = {
   modelSrc: string;
   modelFormat?: 'glb' | 'gltf' | 'fbx' | 'obj';
   scale?: number;
+  xOffset?: number;
   yOffset?: number;
+  zOffset?: number;
   cameraZ?: number;
+  fpsLimit?: number;
   availableAnimations?: string[];
   skeleton?: {
     hasSkeleton: boolean;

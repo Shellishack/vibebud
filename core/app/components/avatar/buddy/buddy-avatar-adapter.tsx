@@ -11,11 +11,14 @@ export const buddyAvatarAdapter: AvatarAdapter = {
   category: 'buddy',
   label: 'Buddy',
   matches: (state) => !state.avatar,
-  useRuntime: ({ personality, emotion }) => {
+  useRuntime: ({ state, personality, emotion }) => {
     const variant = VARIANTS.find((v) => v.id === personality.colorId) ?? VARIANTS[0];
-    const animation = useMemo(() => buildAnimation(variant, emotion), [variant, emotion]);
+    const animation = useMemo(
+      () => (!state.avatar ? buildAnimation(variant, emotion) : null),
+      [emotion, state.avatar, variant],
+    );
     return {
-      visual: <Lottie animationData={animation} loop autoplay />,
+      visual: animation ? <Lottie animationData={animation} loop autoplay /> : null,
       isMoving: false,
     };
   },
