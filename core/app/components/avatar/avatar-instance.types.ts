@@ -13,6 +13,7 @@ export type AvatarInstanceState = {
   groupId?: string;
   minimized?: { edge: 'left' | 'right' | 'top' | 'bottom' };
   lastFreePos?: { x: number; y: number };
+  scale?: number;
   avatar?: { kind: 'noto'; group: NotoGroup; composition?: FacesWithHandsComposition } | ShimejiAvatar | Model3DAvatar;
   xp?: number;
   level?: number;

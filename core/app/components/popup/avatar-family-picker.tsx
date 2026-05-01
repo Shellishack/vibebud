@@ -16,6 +16,7 @@ type Props = {
 export default function AvatarFamilyPicker({ state, emotion, openCategory, onOpenCategoryChange, update }: Props) {
   const openAdapter = AVATAR_ADAPTERS.find((adapter) => adapter.category === openCategory);
   const Picker = openAdapter?.Picker;
+  const scale = state.scale ?? 1;
   return (
     <div className="mt-3">
       <div className="flex items-center gap-2">
@@ -31,6 +32,24 @@ export default function AvatarFamilyPicker({ state, emotion, openCategory, onOpe
             />
           ))}
         </div>
+      </div>
+      <div className="mt-2 rounded-xl bg-zinc-50 px-2.5 py-2 text-[11px] dark:bg-zinc-800/60">
+        <div className="mb-1 flex items-center justify-between gap-2">
+          <label htmlFor={`avatar-scale-${state.id}`} className="font-semibold text-zinc-700 dark:text-zinc-200">
+            size
+          </label>
+          <span className="tabular-nums text-zinc-500 dark:text-zinc-400">{scale.toFixed(2)}x</span>
+        </div>
+        <input
+          id={`avatar-scale-${state.id}`}
+          type="range"
+          min="0.5"
+          max="2.5"
+          step="0.05"
+          value={scale}
+          onChange={(event) => update({ scale: Number(event.currentTarget.value) })}
+          className="block w-full accent-violet-600"
+        />
       </div>
       {Picker && (
         <Picker

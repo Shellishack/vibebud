@@ -120,6 +120,7 @@ export default function AvatarInstance({ state, anchor, canRemove, onChange, onS
     onChange,
   });
   const avatarIsMoving = avatarRuntime.isMoving;
+  const instanceScale = Math.min(2.5, Math.max(0.5, state.scale ?? 1));
   const [desktopPanelPos, setDesktopPanelPos] = useState<{ left: number; top: number } | null>(null);
   const justDraggedRef = useRef(false);
   const toastIdRef = useRef(100);
@@ -469,6 +470,7 @@ export default function AvatarInstance({ state, anchor, canRemove, onChange, onS
   };
 
   const onPointerDown = (e: React.PointerEvent) => {
+    if (e.button !== 0) return;
     e.preventDefault();
     pressPauseRef.current = true;
     publishWonderPause(hoverPauseRef.current, true);
@@ -957,8 +959,19 @@ export default function AvatarInstance({ state, anchor, canRemove, onChange, onS
             >
               Lv {progress.level}
             </span>
-            <div className="h-full w-full" style={{ animation: shaking ? 'buddy-shake 420ms ease-out' : avatarIsMoving ? undefined : 'buddy-bob 3s ease-in-out infinite' }}>
-              {avatarRuntime.visual}
+            <div
+              className="h-full w-full"
+              style={{
+                transform: instanceScale !== 1 ? `scale(${instanceScale})` : undefined,
+                transformOrigin: '50% 50%',
+              }}
+            >
+              <div
+                className="h-full w-full"
+                style={{ animation: shaking ? 'buddy-shake 420ms ease-out' : avatarIsMoving ? undefined : 'buddy-bob 3s ease-in-out infinite' }}
+              >
+                {avatarRuntime.visual}
+              </div>
             </div>
           </button>
           {avatarRuntime.accessories}

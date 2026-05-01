@@ -12,10 +12,14 @@ export type AuthSession = {
 export const SERVER_ORIGIN = (process.env.NEXT_PUBLIC_VIBEBUD_SERVER_URL || 'http://localhost:3070').replace(/\/+$/, '');
 
 export async function fetchAuthSession(): Promise<AuthSession | null> {
-  const res = await fetch(`${SERVER_ORIGIN}/auth/session`, { credentials: 'include' });
-  if (!res.ok) return null;
-  const session = await res.json() as AuthSession;
-  return session?.user ? session : null;
+  try {
+    const res = await fetch(`${SERVER_ORIGIN}/auth/session`, { credentials: 'include' });
+    if (!res.ok) return null;
+    const session = await res.json() as AuthSession;
+    return session?.user ? session : null;
+  } catch {
+    return null;
+  }
 }
 
 export function signInUrl(callbackUrl = window.location.href) {
