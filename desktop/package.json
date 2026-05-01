@@ -40,6 +40,7 @@
       "pairing.js",
       "pairing-preload.js",
       "core-out/**/*",
+      "build/icon.png",
       "build/tray.png",
       "build/tray@2x.png",
       "package.json"
@@ -77,6 +78,7 @@
           ]
         }
       ],
+      "icon": "build/icon.png",
       "artifactName": "vibebud-desktop.${ext}",
       "category": "Development"
     },
