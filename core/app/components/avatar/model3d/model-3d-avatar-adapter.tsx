@@ -30,7 +30,7 @@ export const model3dAvatarAdapter: AvatarAdapter = {
   Picker: (props) => <Model3DPicker {...props} />,
 };
 
-function Model3DPicker({ state, update, close }: Parameters<AvatarAdapter['Picker']>[0]) {
+function Model3DPicker({ state, update }: Parameters<AvatarAdapter['Picker']>[0]) {
   const [models, setModels] = useState<InstalledModel3D[]>([]);
   const [error, setError] = useState<string | null>(null);
 
@@ -46,7 +46,6 @@ function Model3DPicker({ state, update, close }: Parameters<AvatarAdapter['Picke
 
   const useModel = async (model: InstalledModel3D) => {
     update({ avatar: model.avatar });
-    close();
   };
 
   const importModel = async (file: File | null) => {
