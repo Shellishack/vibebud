@@ -163,7 +163,7 @@ function SpritePicker({ state, update, close }: Parameters<AvatarAdapter['Picker
       `Avatar name: ${name.trim() || 'Custom Sprite'}.`,
       `User concept: ${prompt.trim()}.`,
       `Create a Vibebud Sprite ZIP at this exact artifact path: ${artifactPath}`,
-      'The processor may return a compact ZIP with sprite-manifest.json plus a shared SVG sheet referenced by fragment paths such as sheet.svg#idle. This is valid. Do not reject it for not having separate strip files.',
+      'The processor may return a compact ZIP with sprite-manifest.json plus preview.svg and a shared sheet.svg. Animations may all reference sheet.svg with a row index. This is valid. Do not reject it for not having separate strip files.',
       'Keep the character consistent across all actions.',
       'When the ZIP is written, do not ask the user to import it manually; the host will automatically load it as the current avatar.',
     ].join('\n');

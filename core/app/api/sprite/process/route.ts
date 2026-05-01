@@ -16,13 +16,23 @@ function generatedSheetSvg(name: string, imageDataUrl: string) {
   const frame = 256;
   const sheetW = frame * 4;
   const sheetH = frame * 6;
-  const views = [
-    `<view id="preview" viewBox="0 0 ${frame} ${frame}"/>`,
-    ...ACTIONS.map((action, row) => `<view id="${action}" viewBox="0 ${row * frame} ${sheetW} ${frame}"/>`),
-  ].join('');
   return Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="${sheetW}" height="${sheetH}" viewBox="0 0 ${sheetW} ${sheetH}">
     <title>${xmlEscape(name)} sheet</title>
-    ${views}
+    <filter id="remove-magenta" color-interpolation-filters="sRGB">
+      <feColorMatrix type="matrix" values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  -1 1 -1 1 0"/>
+    </filter>
+    <g filter="url(#remove-magenta)">
+      <image href="${xmlEscape(imageDataUrl)}" x="0" y="0" width="${sheetW}" height="${sheetH}"/>
+    </g>
+  </svg>`, 'utf8');
+}
+
+function generatedPreviewSvg(name: string, imageDataUrl: string) {
+  const frame = 256;
+  const sheetW = frame * 4;
+  const sheetH = frame * 6;
+  return Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="${frame}" height="${frame}" viewBox="0 0 ${frame} ${frame}">
+    <title>${xmlEscape(name)} preview</title>
     <filter id="remove-magenta" color-interpolation-filters="sRGB">
       <feColorMatrix type="matrix" values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  -1 1 -1 1 0"/>
     </filter>
@@ -92,18 +102,20 @@ function makeSpriteZip(name: string, prompt: string, imageDataUrl: string) {
     license: 'Generated for Vibebud user',
     author: 'Vibebud local processor',
     description: prompt.trim().slice(0, 300),
-    preview: 'sheet.svg#preview',
+    preview: 'preview.svg',
     frameSize: { w: 256, h: 256 },
     scale: 1,
-    animations: Object.fromEntries(ACTIONS.map((action) => [action, {
-      src: `sheet.svg#${action}`,
+    animations: Object.fromEntries(ACTIONS.map((action, row) => [action, {
+      src: 'sheet.svg',
       frames: 4,
       fps: action === 'walk' ? 8 : 5,
       loop: true,
+      row,
     }])),
   };
   return makeZip([
     { name: 'sprite-manifest.json', data: Buffer.from(JSON.stringify(manifest, null, 2), 'utf8') },
+    { name: 'preview.svg', data: generatedPreviewSvg(cleanName, imageDataUrl) },
     { name: 'sheet.svg', data: generatedSheetSvg(cleanName, imageDataUrl) },
   ]);
 }

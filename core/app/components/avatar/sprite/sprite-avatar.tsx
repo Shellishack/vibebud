@@ -32,6 +32,25 @@ export default function SpriteAvatarView({ avatar, action = 'idle', direction = 
   }
 
   const duration = Math.max(0.1, resolved.anim.frames / Math.max(1, resolved.anim.fps));
+  const row = Number.isInteger(resolved.anim.row) && (resolved.anim.row ?? 0) >= 0 ? resolved.anim.row as number : null;
+  const sheetRows = 6;
+  const sheetFrameStyle = {
+    '--shimeji-frames': resolved.anim.frames,
+    width: `${resolved.anim.frames * 100}%`,
+    height: '100%',
+    maxWidth: 'none',
+    animation: resolved.anim.frames > 1
+      ? `shimeji-sheet ${duration}s steps(${Math.max(1, resolved.anim.frames - 1)}, end) ${resolved.anim.loop === false ? '1' : 'infinite'}`
+      : undefined,
+  } as CSSProperties;
+  const sheetImageStyle = {
+    width: '100%',
+    height: `${sheetRows * 100}%`,
+    maxWidth: 'none',
+    objectFit: 'fill',
+    transform: `translateY(-${(row ?? 0) * (100 / sheetRows)}%)`,
+    transformOrigin: '0 0',
+  } as CSSProperties;
   const frameStyle = {
     '--shimeji-frames': resolved.anim.frames,
     width: `${resolved.anim.frames * 100}%`,
@@ -51,7 +70,13 @@ export default function SpriteAvatarView({ avatar, action = 'idle', direction = 
         transformOrigin: '50% 100%',
       }}
     >
-      <img src={resolved.src} alt="" draggable={false} className="block select-none" style={frameStyle} />
+      {row === null ? (
+        <img src={resolved.src} alt="" draggable={false} className="block select-none" style={frameStyle} />
+      ) : (
+        <span className="block h-full" style={sheetFrameStyle}>
+          <img src={resolved.src} alt="" draggable={false} className="block select-none" style={sheetImageStyle} />
+        </span>
+      )}
     </span>
   );
 }

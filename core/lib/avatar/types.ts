@@ -69,6 +69,7 @@ export type SpriteAnimation = {
   frames: number;
   fps: number;
   loop?: boolean;
+  row?: number;
 };
 
 export type SpritePackManifest = {
