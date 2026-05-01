@@ -50,6 +50,7 @@ export type Model3DAvatar = {
   scale?: number;
   yOffset?: number;
   cameraZ?: number;
+  availableAnimations?: string[];
   animations?: Partial<Record<ShimejiAction, string[]>>;
 };
 
@@ -59,6 +60,17 @@ export type InstalledModel3D = {
   license?: string;
   author?: string;
   description?: string;
+  installedAt: number;
+};
+
+export type InstalledModel3DAnimationPack = {
+  id: string;
+  name: string;
+  clips: Array<{
+    name: string;
+    src: string;
+    format: 'glb' | 'gltf' | 'fbx';
+  }>;
   installedAt: number;
 };
 

@@ -5,8 +5,9 @@ import * as THREE from 'three';
 import { FBXLoader } from 'three/examples/jsm/loaders/FBXLoader.js';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js';
+import * as SkeletonUtils from 'three/examples/jsm/utils/SkeletonUtils.js';
 import type { Model3DAvatar, ShimejiAction } from '@/lib/avatar/types';
-import { bundledModel3DAvatars } from '@/lib/avatar/model3d';
+import { bundledModel3DAvatars, listModel3DAnimationPacks, updateModel3DAvatar } from '@/lib/avatar/model3d';
 
 type Props = {
   avatar: Model3DAvatar;
@@ -59,6 +60,7 @@ export default function Model3DAvatarView({ avatar, action = 'idle', direction =
   const hostRef = useRef<HTMLDivElement | null>(null);
   const mixerRef = useRef<THREE.AnimationMixer | null>(null);
   const clipsRef = useRef<THREE.AnimationClip[]>([]);
+  const retargetClipsRef = useRef<THREE.AnimationClip[]>([]);
   const activeActionRef = useRef<THREE.AnimationAction | null>(null);
   const rootRef = useRef<THREE.Object3D | null>(null);
   const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
@@ -140,6 +142,41 @@ export default function Model3DAvatarView({ avatar, action = 'idle', direction =
     scene.add(key);
 
     const clock = new THREE.Clock();
+    const loadAnimationPacks = async (target: THREE.Object3D) => {
+      try {
+        const packs = await listModel3DAnimationPacks();
+        if (!packs.length || disposed) return;
+        const gltfLoader = new GLTFLoader();
+        const fbxLoader = new FBXLoader();
+        const loadClip = (src: string, format: 'glb' | 'gltf' | 'fbx') => new Promise<{ root: THREE.Object3D; clips: THREE.AnimationClip[] } | null>((resolve) => {
+          if (format === 'fbx') {
+            fbxLoader.load(src, (root) => resolve({ root, clips: root.animations ?? [] }), undefined, () => resolve(null));
+          } else {
+            gltfLoader.load(src, (gltf) => resolve({ root: gltf.scene, clips: gltf.animations ?? [] }), undefined, () => resolve(null));
+          }
+        });
+        const loaded: THREE.AnimationClip[] = [];
+        for (const pack of packs) {
+          for (const clipAsset of pack.clips) {
+            const loadedClip = await loadClip(clipAsset.src, clipAsset.format);
+            if (!loadedClip) continue;
+            for (const clip of loadedClip.clips) {
+              try {
+                const retargeted = SkeletonUtils.retargetClip(target, loadedClip.root, clip);
+                retargeted.name = clip.name || clipAsset.name;
+                loaded.push(retargeted);
+              } catch {
+                loaded.push(clip);
+              }
+            }
+          }
+        }
+        if (!disposed) {
+          retargetClipsRef.current = loaded;
+          setLoadVersion((version) => version + 1);
+        }
+      } catch { /* imported animation packs are optional */ }
+    };
     const onLoaded = (root: THREE.Object3D, animations: THREE.AnimationClip[] = []) => {
       if (disposed) return;
       root.rotation.set(modelRotationRef.current.x, baseRotationYRef.current + modelRotationRef.current.y, 0);
@@ -149,7 +186,11 @@ export default function Model3DAvatarView({ avatar, action = 'idle', direction =
       rootRef.current = root;
       frameModel(camera, root, host);
       clipsRef.current = animations;
+      if (animations.length && !avatar.availableAnimations?.length) {
+        void updateModel3DAvatar({ ...avatar, availableAnimations: animations.map((clip) => clip.name) });
+      }
       mixerRef.current = new THREE.AnimationMixer(root);
+      void loadAnimationPacks(root);
       setLoadVersion((version) => version + 1);
       setFailed(false);
     };
@@ -205,6 +246,7 @@ export default function Model3DAvatarView({ avatar, action = 'idle', direction =
       hostElementRef.current = null;
       rotateDragRef.current = null;
       clipsRef.current = [];
+      retargetClipsRef.current = [];
       scene.traverse((obj) => {
         const mesh = obj as THREE.Mesh;
         mesh.geometry?.dispose();
@@ -227,7 +269,7 @@ export default function Model3DAvatarView({ avatar, action = 'idle', direction =
   useEffect(() => {
     const mixer = mixerRef.current;
     if (!mixer) return;
-    const clips = clipsRef.current;
+    const clips = [...clipsRef.current, ...retargetClipsRef.current];
     const directCandidates = [...(avatar.animations?.[action] ?? []), ...DEFAULT_CLIPS[action]];
     const fallbackCandidates = action === 'idle' ? [] : DEFAULT_CLIPS.idle;
     const directClip = directCandidates
