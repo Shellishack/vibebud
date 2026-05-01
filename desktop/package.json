@@ -37,6 +37,7 @@
       "claude-bridge-server.js",
       "claude-sessions.js",
       "codex-sessions.js",
+      "generic-agent-sessions.js",
       "pairing.js",
       "pairing-preload.js",
       "core-out/**/*",
