@@ -48,4 +48,19 @@ contextBridge.exposeInMainWorld('vibebud', {
       return () => ipcRenderer.off('codex:event', handler);
     },
   },
+  codeAgents: {
+    list: () => ipcRenderer.invoke('code-agents:list'),
+    start: (agentId, buddyId, opts) => ipcRenderer.invoke('code-agent:start', { agentId, buddyId, opts }),
+    send: (agentId, buddyId, text) => ipcRenderer.invoke('code-agent:send', { agentId, buddyId, text }),
+    stop: (agentId, buddyId) => ipcRenderer.invoke('code-agent:stop', { agentId, buddyId }),
+    onEvent: (cb) => {
+      const handler = (_e, payload) => {
+        if (payload && typeof payload.buddyId === 'string' && typeof payload.agentId === 'string') {
+          cb(payload.agentId, payload.buddyId, payload.event);
+        }
+      };
+      ipcRenderer.on('code-agent:event', handler);
+      return () => ipcRenderer.off('code-agent:event', handler);
+    },
+  },
 });

@@ -1,4 +1,4 @@
-import type { ClaudeCodeBridge, InteractiveRect, NotificationPayload, PlatformAdapter } from './types';
+import type { ClaudeCodeBridge, CodeAgentDescriptor, InteractiveRect, NotificationPayload, PlatformAdapter } from './types';
 import { getRemoteClaudeBridge, getRemoteCodexBridge } from './remoteClaude';
 
 type VibebudNative = {
@@ -289,6 +289,8 @@ export class CapacitorAdapter implements PlatformAdapter {
   // config, returns null and the UI hides the Claude Code toggle.
   claudeCode(): ClaudeCodeBridge | null { return getRemoteClaudeBridge(); }
   codexCode(): ClaudeCodeBridge | null { return getRemoteCodexBridge(); }
+  async codeAgents(): Promise<CodeAgentDescriptor[]> { return []; }
+  codeAgent(_id: string): ClaudeCodeBridge | null { return null; }
 
   onOutsideTap(cb: () => void): () => void {
     if (typeof window === 'undefined') return () => {};

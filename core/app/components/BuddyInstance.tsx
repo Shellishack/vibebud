@@ -45,12 +45,14 @@ import {
   subscribeShimejiPacks,
 } from '../../lib/avatar/shimeji';
 import type { InstalledShimejiPack, Model3DAvatar, ShimejiAction, ShimejiAvatar, ShimejiPackManifest } from '../../lib/avatar/types';
+import type { ClaudeCodeBridge, CodeAgentDescriptor } from '../../lib/platform/types';
 
 const Lottie = dynamic(() => import('lottie-react'), { ssr: false });
 
 export type Toast = { id: number; title: string; body: string; tone: 'info' | 'action' | 'success' };
 export type ChatMsg = { id: number; from: 'buddy' | 'you'; text: string };
-type CodeAgent = 'claude' | 'codex';
+type CodeAgent = string;
+type CodeAgentOption = CodeAgentDescriptor & { bridge: ClaudeCodeBridge };
 
 const SCRIPTED_TOASTS: Omit<Toast, 'id'>[] = [
   { title: 'Agent dispatched', body: 'Started work on issue #42 — "Add dark mode toggle"', tone: 'info' },
@@ -178,20 +180,42 @@ export default function BuddyInstance({ state, anchor, canRemove, onChange, onSp
   const [claudeBridgeTick, setClaudeBridgeTick] = useState(0);
   const claudeBridge = useMemo(() => adapter.claudeCode(), [adapter, claudeBridgeTick]);
   const codexBridge = useMemo(() => adapter.codexCode(), [adapter, claudeBridgeTick]);
+  const [extraCodeAgents, setExtraCodeAgents] = useState<CodeAgentDescriptor[]>([]);
   useEffect(() => {
     const onPaired = () => setClaudeBridgeTick((n) => n + 1);
     window.addEventListener('vibebud:paired', onPaired);
     return () => window.removeEventListener('vibebud:paired', onPaired);
   }, []);
+  useEffect(() => {
+    let cancelled = false;
+    adapter.codeAgents().then((agents) => {
+      if (!cancelled) setExtraCodeAgents(agents);
+    }).catch(() => {
+      if (!cancelled) setExtraCodeAgents([]);
+    });
+    return () => { cancelled = true; };
+  }, [adapter, claudeBridgeTick]);
   const [claudeActive, setClaudeActive] = useState(false);
   const [claudeBusy, setClaudeBusy] = useState(false);
   const [activeCodeAgent, setActiveCodeAgent] = useState<CodeAgent | null>(null);
   const claudeReplyIdRef = useRef<number | null>(null);
+  const codeAgentOptions = useMemo<CodeAgentOption[]>(() => {
+    const options: CodeAgentOption[] = [];
+    if (claudeBridge) options.push({ id: 'claude', label: 'Claude Code', bridge: claudeBridge });
+    if (codexBridge) options.push({ id: 'codex', label: 'Codex', bridge: codexBridge });
+    for (const agent of extraCodeAgents) {
+      const bridge = adapter.codeAgent(agent.id);
+      if (bridge) options.push({ ...agent, bridge });
+    }
+    return options;
+  }, [adapter, claudeBridge, codexBridge, extraCodeAgents]);
+  const codeAgentOptionsRef = useRef<CodeAgentOption[]>([]);
+  useEffect(() => { codeAgentOptionsRef.current = codeAgentOptions; }, [codeAgentOptions]);
   const activeCodeBridge = useMemo(
-    () => activeCodeAgent === 'codex' ? codexBridge : activeCodeAgent === 'claude' ? claudeBridge : null,
-    [activeCodeAgent, codexBridge, claudeBridge],
+    () => codeAgentOptions.find((agent) => agent.id === activeCodeAgent)?.bridge ?? null,
+    [activeCodeAgent, codeAgentOptions],
   );
-  const activeCodeLabel = activeCodeAgent === 'codex' ? 'Codex' : 'Claude Code';
+  const activeCodeLabel = codeAgentOptions.find((agent) => agent.id === activeCodeAgent)?.label ?? 'Code agent';
   const [providerDraft, setProviderDraft] = useState<ProviderId>('openai');
   const [keyDraft, setKeyDraft] = useState('');
   const [modelDraft, setModelDraft] = useState('');
@@ -658,7 +682,7 @@ export default function BuddyInstance({ state, anchor, canRemove, onChange, onSp
         if (code !== 0) {
           const detail = stderr
             ? stderr.trim()
-            : `no stderr - likely '${bin || (activeCodeAgent === 'codex' ? 'codex' : 'claude')}' is not on PATH or not authenticated (cwd: ${cwd || '?'}). Try authenticating in a terminal, or set ${activeCodeAgent === 'codex' ? 'VIBEBUD_CODEX_BIN' : 'VIBEBUD_CLAUDE_BIN'} to the full path.`;
+            : `no stderr - likely '${bin || activeCodeAgent || 'agent'}' is not on PATH or not authenticated (cwd: ${cwd || '?'}). Try authenticating in a terminal, or set this agent's VIBEBUD_*_BIN environment variable to the full path.`;
           appendStatus(`(${activeCodeLabel} exited with code ${code ?? '?'}: ${detail})`);
         }
         setClaudeBusy(false);
@@ -675,6 +699,7 @@ export default function BuddyInstance({ state, anchor, canRemove, onChange, onSp
     return () => {
       if (claudeBridge && claudeActive) void claudeBridge.stop(state.id).catch(() => {});
       if (codexBridge && claudeActive) void codexBridge.stop(state.id).catch(() => {});
+      for (const agent of codeAgentOptionsRef.current) void agent.bridge.stop(state.id).catch(() => {});
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -724,9 +749,10 @@ export default function BuddyInstance({ state, anchor, canRemove, onChange, onSp
   };
 
   const toggleCodeAgent = async (agent: CodeAgent) => {
-    const bridge = agent === 'codex' ? codexBridge : claudeBridge;
+    const option = codeAgentOptions.find((item) => item.id === agent);
+    const bridge = option?.bridge;
     if (!bridge) return;
-    const label = agent === 'codex' ? 'Codex' : 'Claude Code';
+    const label = option.label;
     if (claudeActive && activeCodeAgent === agent) {
       await bridge.stop(state.id).catch(() => {});
       setClaudeActive(false);
@@ -1313,10 +1339,7 @@ export default function BuddyInstance({ state, anchor, canRemove, onChange, onSp
                       onClick={() => setFamilyMenu((m) => (m === 'model3d' ? null : 'model3d'))}
                     />
                   </div>
-                  {(claudeBridge || codexBridge) && (
-                  <div className="ml-auto flex gap-1">
-                    </div>
-                  )}
+                  {codeAgentOptions.length > 0 && <div className="ml-auto" />}
                 </div>
                 {familyMenu === 'buddy' && (
                   <div className="mt-2 flex flex-wrap items-center gap-1.5 rounded-2xl bg-zinc-50 px-2.5 py-2 dark:bg-zinc-800/60">
@@ -1558,38 +1581,25 @@ export default function BuddyInstance({ state, anchor, canRemove, onChange, onSp
                         </button>
                       ))}
                     </div>
-                    {(claudeBridge || codexBridge) && (
+                    {codeAgentOptions.length > 0 && (
                       <div className="mb-2">
                         <p className="mb-1 text-[11px] text-zinc-600 dark:text-zinc-400">Local code agent</p>
                         <div className="flex flex-wrap gap-1">
-                          {claudeBridge && (
+                          {codeAgentOptions.map((agent) => (
                             <button
+                              key={agent.id}
                               data-buddy-interactive
-                              onClick={() => void toggleCodeAgent('claude')}
+                              onClick={() => void toggleCodeAgent(agent.id)}
                               className={`rounded-full px-2.5 py-1 text-[11px] font-medium transition-colors ${
-                                claudeActive && activeCodeAgent === 'claude'
+                                claudeActive && activeCodeAgent === agent.id
                                   ? 'bg-emerald-600 text-white'
                                   : 'bg-white text-zinc-700 ring-1 ring-zinc-200 hover:bg-zinc-100 dark:bg-zinc-900 dark:text-zinc-200 dark:ring-zinc-700 dark:hover:bg-zinc-800'
                               }`}
-                              title={claudeActive && activeCodeAgent === 'claude' ? 'Claude Code session running - click to stop' : 'Start a local Claude Code session for this buddy'}
+                              title={claudeActive && activeCodeAgent === agent.id ? `${agent.label} session running - click to stop` : `Start a local ${agent.label} session for this buddy`}
                             >
-                              {claudeActive && activeCodeAgent === 'claude' ? '● Claude Code' : 'Claude Code'}
+                              {claudeActive && activeCodeAgent === agent.id ? `● ${agent.label}` : agent.label}
                             </button>
-                          )}
-                          {codexBridge && (
-                            <button
-                              data-buddy-interactive
-                              onClick={() => void toggleCodeAgent('codex')}
-                              className={`rounded-full px-2.5 py-1 text-[11px] font-medium transition-colors ${
-                                claudeActive && activeCodeAgent === 'codex'
-                                  ? 'bg-emerald-600 text-white'
-                                  : 'bg-white text-zinc-700 ring-1 ring-zinc-200 hover:bg-zinc-100 dark:bg-zinc-900 dark:text-zinc-200 dark:ring-zinc-700 dark:hover:bg-zinc-800'
-                              }`}
-                              title={claudeActive && activeCodeAgent === 'codex' ? 'Codex session running - click to stop' : 'Start a local Codex CLI session for this buddy'}
-                            >
-                              {claudeActive && activeCodeAgent === 'codex' ? '● Codex' : 'Codex'}
-                            </button>
-                          )}
+                          ))}
                         </div>
                       </div>
                     )}

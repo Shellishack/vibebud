@@ -1,4 +1,4 @@
-import type { ClaudeCodeBridge, InteractiveRect, NotificationPayload, PlatformAdapter } from './types';
+import type { ClaudeCodeBridge, CodeAgentDescriptor, InteractiveRect, NotificationPayload, PlatformAdapter } from './types';
 
 type VibebudBridge = {
   setInteractive?: (v: boolean) => void;
@@ -11,6 +11,13 @@ type VibebudBridge = {
   showPairing?: () => void;
   claude?: ClaudeCodeBridge;
   codex?: ClaudeCodeBridge;
+  codeAgents?: {
+    list: () => Promise<CodeAgentDescriptor[]>;
+    start: (agentId: string, buddyId: string, opts?: unknown) => Promise<{ ok: boolean; alreadyRunning?: boolean; cwd?: string; error?: string }>;
+    send: (agentId: string, buddyId: string, text: string) => Promise<{ ok: boolean; error?: string }>;
+    stop: (agentId: string, buddyId: string) => Promise<{ ok: boolean; error?: string }>;
+    onEvent: (cb: (agentId: string, buddyId: string, event: unknown) => void) => () => void;
+  };
   isElectron?: boolean;
 };
 
@@ -73,6 +80,25 @@ export class ElectronAdapter implements PlatformAdapter {
 
   codexCode(): ClaudeCodeBridge | null {
     return bridge()?.codex ?? null;
+  }
+
+  async codeAgents(): Promise<CodeAgentDescriptor[]> {
+    const list = bridge()?.codeAgents?.list;
+    return list ? list() : [];
+  }
+
+  codeAgent(id: string): ClaudeCodeBridge | null {
+    const b = bridge()?.codeAgents;
+    if (!b) return null;
+    return {
+      start: (buddyId, opts) => b.start(id, buddyId, opts),
+      send: (buddyId, text) => b.send(id, buddyId, text),
+      stop: (buddyId) => b.stop(id, buddyId),
+      list: async () => [],
+      onEvent: (cb) => b.onEvent((agentId, buddyId, event) => {
+        if (agentId === id) cb(buddyId, event as Parameters<typeof cb>[1]);
+      }),
+    };
   }
 
   showPairingWindow(): void {

@@ -1,4 +1,4 @@
-import type { ClaudeCodeBridge, InteractiveRect, NotificationPayload, PlatformAdapter, PlatformId } from './types';
+import type { ClaudeCodeBridge, CodeAgentDescriptor, InteractiveRect, NotificationPayload, PlatformAdapter, PlatformId } from './types';
 import { getRemoteClaudeBridge, getRemoteCodexBridge } from './remoteClaude';
 
 export class WebAdapter implements PlatformAdapter {
@@ -52,4 +52,6 @@ export class WebAdapter implements PlatformAdapter {
   // localStorage; otherwise the UI hides the Claude Code toggle.
   claudeCode(): ClaudeCodeBridge | null { return getRemoteClaudeBridge(); }
   codexCode(): ClaudeCodeBridge | null { return getRemoteCodexBridge(); }
+  async codeAgents(): Promise<CodeAgentDescriptor[]> { return []; }
+  codeAgent(_id: string): ClaudeCodeBridge | null { return null; }
 }

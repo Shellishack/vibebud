@@ -3,6 +3,7 @@ const path = require('path');
 const url = require('url');
 const { createClaudeHost } = require('./claudeSessions');
 const { createCodexHost } = require('./codexSessions');
+const { createGenericAgentHost, agentDescriptors } = require('./genericAgentSessions');
 const { startBridgeServer } = require('./claude-bridge-server');
 const { getOrCreateToken, showPairingWindow, refreshPairingWindow, DEFAULT_PORT } = require('./pairing');
 
@@ -18,6 +19,12 @@ const localClaude = createClaudeHost({
 const localCodex = createCodexHost({
   emit: (buddyId, event) => {
     win?.webContents.send('codex:event', { buddyId, event });
+  },
+});
+const localCodeAgents = createGenericAgentHost({
+  emit: (buddyId, event) => {
+    const agentId = typeof event?.agent === 'string' ? event.agent : undefined;
+    win?.webContents.send('code-agent:event', { agentId, buddyId, event });
   },
 });
 
@@ -196,6 +203,20 @@ app.whenReady().then(() => {
   });
   ipcMain.handle('codex:list', () => localCodex.list());
 
+  ipcMain.handle('code-agents:list', () => agentDescriptors());
+  ipcMain.handle('code-agent:start', (_event, payload) => {
+    if (!payload || typeof payload.buddyId !== 'string' || typeof payload.agentId !== 'string') return { ok: false, error: 'bad-payload' };
+    return localCodeAgents.start(payload.buddyId, { ...(payload.opts || {}), agent: payload.agentId });
+  });
+  ipcMain.handle('code-agent:send', (_event, payload) => {
+    if (!payload || typeof payload.buddyId !== 'string' || typeof payload.agentId !== 'string') return { ok: false, error: 'bad-payload' };
+    return localCodeAgents.send(payload.buddyId, payload.text || '');
+  });
+  ipcMain.handle('code-agent:stop', (_event, payload) => {
+    if (!payload || typeof payload.buddyId !== 'string' || typeof payload.agentId !== 'string') return { ok: false, error: 'bad-payload' };
+    return localCodeAgents.stop(payload.buddyId);
+  });
+
   // WS bridge: lets paired vibebud clients (Android, web) drive a `claude`
   // subprocess running on this PC. Token is auto-generated and persisted in
   // userData; phone pairs by scanning the QR from the tray menu (deep link
@@ -229,10 +250,11 @@ app.whenReady().then(() => {
 app.on('window-all-closed', () => {
   localClaude.stopAll();
   localCodex.stopAll();
+  localCodeAgents.stopAll();
   if (process.platform !== 'darwin') app.quit();
 });
 
-app.on('before-quit', () => { localClaude.stopAll(); localCodex.stopAll(); });
+app.on('before-quit', () => { localClaude.stopAll(); localCodex.stopAll(); localCodeAgents.stopAll(); });
 
 app.on('activate', () => {
   if (BrowserWindow.getAllWindows().length === 0) createWindow();

@@ -79,6 +79,11 @@ export interface PlatformAdapter {
   // cannot reach a local/paired Codex CLI host.
   codexCode(): ClaudeCodeBridge | null;
 
+  // Extra local code-agent CLIs exposed by the desktop shell. These are thin
+  // one-shot bridges for CLIs that can accept a prompt through stdin or argv.
+  codeAgents(): Promise<CodeAgentDescriptor[]>;
+  codeAgent(id: string): ClaudeCodeBridge | null;
+
   // Electron-only: opens the desktop pairing-QR window (the same one the tray
   // menu's "Pair phone…" launches). Surfaced from in-app context menus so the
   // user doesn't have to hunt through the system tray. No-op elsewhere.
@@ -108,6 +113,7 @@ export type ClaudeStartOpts = {
   allowedTools?: string[];
 };
 export type ClaudeEvent = { type: string; [key: string]: unknown };
+export type CodeAgentDescriptor = { id: string; label: string; env?: string; bin?: string };
 export interface ClaudeCodeBridge {
   start(buddyId: string, opts?: ClaudeStartOpts): Promise<{ ok: boolean; alreadyRunning?: boolean; cwd?: string; error?: string }>;
   send(buddyId: string, text: string): Promise<{ ok: boolean; error?: string }>;
