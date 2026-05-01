@@ -29,6 +29,21 @@ function normalizedFpsLimit(value: number | undefined): number {
   return Math.min(60, Math.max(1, value ?? DEFAULT_RENDER_FPS));
 }
 
+function applyModelTransform(root: THREE.Object3D, avatar: Model3DAvatar) {
+  root.scale.setScalar(avatar.scale ?? 1);
+  root.position.set(avatar.xOffset ?? 0, avatar.yOffset ?? -1, avatar.zOffset ?? 0);
+}
+
+function disposeMaterial(material: THREE.Material) {
+  const values = Object.values(material as unknown as Record<string, unknown>);
+  for (const value of values) {
+    if (value && typeof value === 'object' && 'isTexture' in value) {
+      (value as THREE.Texture).dispose();
+    }
+  }
+  material.dispose();
+}
+
 function frameModel(camera: THREE.PerspectiveCamera, root: THREE.Object3D, host: HTMLElement) {
   const box = new THREE.Box3().setFromObject(root);
   if (box.isEmpty()) return;
@@ -89,19 +104,28 @@ export default function Model3DAvatarView({ avatar, action = 'idle', direction =
   const rootRef = useRef<THREE.Object3D | null>(null);
   const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
   const hostElementRef = useRef<HTMLElement | null>(null);
+  const fpsLimitRef = useRef(normalizedFpsLimit(avatar.fpsLimit));
   const baseRotationYRef = useRef(0);
   const modelRotationRef = useRef({ x: 0, y: 0 });
   const rotateDragRef = useRef<{ x: number; y: number; pointerId: number } | null>(null);
   const [loadVersion, setLoadVersion] = useState(0);
   const [failed, setFailed] = useState(false);
+  useEffect(() => {
+    fpsLimitRef.current = normalizedFpsLimit(avatar.fpsLimit);
+  }, [avatar.fpsLimit]);
+
+  useEffect(() => {
+    if (rootRef.current) applyModelTransform(rootRef.current, avatar);
+  }, [avatar.scale, avatar.xOffset, avatar.yOffset, avatar.zOffset]);
 
   useEffect(() => {
     const host = hostRef.current;
     if (!host) return;
 
     let disposed = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
     let frame = 0;
-    const minRenderIntervalMs = 1000 / normalizedFpsLimit(avatar.fpsLimit);
+    let running = true;
     const scene = new THREE.Scene();
     const camera = new THREE.PerspectiveCamera(32, 1, 0.1, 100);
     camera.position.set(0, 0, avatar.cameraZ ?? 4.2);
@@ -173,8 +197,7 @@ export default function Model3DAvatarView({ avatar, action = 'idle', direction =
       scene.add(root);
       rootRef.current = root;
       frameModel(camera, root, host);
-      root.scale.setScalar(avatar.scale ?? 1);
-      root.position.set(avatar.xOffset ?? 0, avatar.yOffset ?? -1, avatar.zOffset ?? 0);
+      applyModelTransform(root, avatar);
       clipsRef.current = animations;
       const skeleton = analyzeSkeleton(root);
       const nextAvailableAnimations = animations.length && !avatar.availableAnimations?.length
@@ -216,20 +239,35 @@ export default function Model3DAvatarView({ avatar, action = 'idle', direction =
     observer.observe(host);
     resize();
 
-    const tick = (time = 0) => {
-      if (disposed) return;
-      if (time - lastRenderAt >= minRenderIntervalMs) {
-        lastRenderAt = time;
+    const renderFrame = (time = 0) => {
+      if (disposed || !running) return;
+      lastRenderAt = time;
+      if (!document.hidden) {
         mixerRef.current?.update(clock.getDelta());
         renderer.render(scene, camera);
       }
-      frame = requestAnimationFrame(tick);
+      const elapsed = performance.now() - lastRenderAt;
+      const delay = Math.max(0, 1000 / fpsLimitRef.current - elapsed);
+      timer = setTimeout(() => {
+        frame = requestAnimationFrame(renderFrame);
+      }, delay);
     };
-    tick();
+    const onVisibilityChange = () => {
+      if (document.hidden) clock.stop();
+      else {
+        clock.start();
+        renderer.render(scene, camera);
+      }
+    };
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    frame = requestAnimationFrame(renderFrame);
 
     return () => {
       disposed = true;
+      running = false;
       observer.disconnect();
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+      if (timer) clearTimeout(timer);
       renderer.domElement.removeEventListener('pointermove', onPointerMove);
       renderer.domElement.removeEventListener('pointerup', onPointerUp);
       renderer.domElement.removeEventListener('pointercancel', onPointerUp);
@@ -251,13 +289,14 @@ export default function Model3DAvatarView({ avatar, action = 'idle', direction =
         const mesh = obj as THREE.Mesh;
         mesh.geometry?.dispose();
         const material = mesh.material;
-        if (Array.isArray(material)) material.forEach((m) => m.dispose());
-        else material?.dispose();
+        if (Array.isArray(material)) material.forEach(disposeMaterial);
+        else if (material) disposeMaterial(material);
       });
+      renderer.forceContextLoss();
       renderer.dispose();
       host.replaceChildren();
     };
-  }, [avatar.cameraZ, avatar.fpsLimit, avatar.modelFormat, avatar.modelSrc, avatar.scale, avatar.xOffset, avatar.yOffset, avatar.zOffset, direction]);
+  }, [avatar.cameraZ, avatar.modelFormat, avatar.modelSrc, direction]);
 
   const startRotate = (event: ReactPointerEvent) => {
     if (event.button !== 1) return;
