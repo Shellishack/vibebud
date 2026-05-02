@@ -2,49 +2,23 @@
 
 English | [中文](./README.zh-CN.md)
 
-**A little AI buddy that stays with you while you vibe code.**
+**A floating AI buddy for Codex, Claude Code, and other agents.**
+
+Vibebud gives your coding agents a visible presence: a floating virtual character that stays with you on desktop, web, and Android. Connect it to multiple Codex or Claude Code agents, drag it around, dock it when you need focus, chat with it, organize agents into teams, assign tasks, and get notifications when something needs attention.
 
 [GitHub](https://github.com/shellishack/vibebud) · [Discord](https://discord.gg/9tPu9SQhVz)
 
-Vibebud gives your coding agents a visible presence: a floating companion on your desktop, web app, or phone that can chat, show status, and tap you when something needs attention.
+## Demos
 
-```text
-       your code editor                 Vibebud
-  +------------------------+        +-------------+
-  | issue, branch, tests   |  <-->  |  floating   |
-  | AI agents doing work   |        |  buddy      |
-  | commits, PRs, reviews  |        |  status     |
-  +------------------------+        |  chat       |
-                                    +-------------+
-```
+**Connect VibeBud to Codex and Claude Code**
 
-Instead of letting AI agent work disappear into terminals, logs, and background processes, Vibebud makes it feel present and easy to follow.
+![Connect VibeBud to Codex and Claude Code](https://cdn.palmos.ai/assets/VibeBud_0.1_en_under5mb.gif)
+
+**Generate a new animated buddy look with Codex**
+
+![Generate a new animated buddy look with Codex](https://cdn.palmos.ai/assets/vibebud_generated_under5mb.gif)
 
 ![Vibebud floating buddies preview](./assets/buds.png)
-
-## The Idea
-
-Vibe coding is more fun when your tools feel alive.
-
-Vibebud is a small companion layer for AI-assisted development. It is not trying to replace your editor, terminal, GitHub, or agent framework. It gives those workflows a friendlier face:
-
-- See what your agents are doing at a glance
-- Chat with a buddy without changing context
-- Get quiet pings when a task finishes or needs input
-- Assign lightweight todos to different buddy avatars
-- Keep multiple agent personalities visible while you work
-
-## How It Feels
-
-```text
-Agent starts a task      -> buddy appears active
-Agent needs a decision   -> buddy sends a quiet ping
-Agent finishes work      -> buddy shows a short status
-You want to respond      -> open a small chat bubble
-You need focus           -> dock or move the buddy away
-```
-
-The goal is simple: make AI collaborators easier to supervise without making your workspace heavier.
 
 ## What You Can Build With It
 
@@ -54,7 +28,7 @@ Vibebud is meant for developers experimenting with AI coding agents, desktop com
 | --- | --- |
 | Web preview (`core/`) | Working |
 | Electron desktop - Windows | Working, NSIS installer builds end-to-end |
-| Electron desktop - macOS / Linux | Planned, not yet wired up |
+| Electron desktop - macOS / Linux | Working |
 | Android (Capacitor 8) | Scaffolded overlay shell via `OverlayService` |
 | iOS | Out of scope |
 
@@ -130,12 +104,7 @@ Chat features can call OpenAI, Anthropic, or OpenRouter directly from the render
 
 ## Why Open Source?
 
-AI coding agents are becoming part of everyday development, but the interface around them is still early. Vibebud is an experiment in making agent work:
-
-- more visible
-- more approachable
-- easier to supervise
-- a little more personal
+AI coding agents are becoming part of everyday development, but the interface around them is still early. Vibebud is an open experiment in making agent work easier to follow and more personal.
 
 Contributions are welcome around UI polish, agent integrations, buddy behaviors, desktop/mobile shells, accessibility, docs, and product ideas.
 
